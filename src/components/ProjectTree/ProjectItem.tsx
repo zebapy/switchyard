@@ -88,7 +88,7 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
     // Find existing tab for this project or create one
     let tab = tabs.find((t) => t.projectPath === project.path);
     if (!tab) {
-      const tabId = addTab(project.path, project.name);
+      const tabId = addTab(project.path, project.name, kind);
       setActiveTab(tabId);
     } else {
       setActiveTab(tab.id);
@@ -265,7 +265,7 @@ function WorktreeChildItem({ project }: { project: ProjectInfo }) {
   const handleSpawn = (kind: PaneKind) => {
     let tab = tabs.find((t) => t.projectPath === project.path);
     if (!tab) {
-      const tabId = addTab(project.path, project.name);
+      const tabId = addTab(project.path, project.name, kind);
       setActiveTab(tabId);
     } else {
       setActiveTab(tab.id);

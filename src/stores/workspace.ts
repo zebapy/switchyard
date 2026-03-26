@@ -81,7 +81,7 @@ interface WorkspaceState {
   sidebarWidth: number;
 
   // Tab actions
-  addTab: (projectPath: string, label: string) => string;
+  addTab: (projectPath: string, label: string, kind?: PaneKind) => string;
   removeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
 
@@ -118,10 +118,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
   activePaneId: null,
   sidebarWidth: 260,
 
-  addTab: (projectPath, label) => {
+  addTab: (projectPath, label, kind) => {
     const tabId = generateId();
     const paneId = generateId();
-    const paneInfo: PaneInfo = { id: paneId, kind: 'Shell', cwd: projectPath };
+    const paneInfo: PaneInfo = { id: paneId, kind: kind ?? 'Shell', cwd: projectPath };
     const tab: Tab = {
       id: tabId,
       label,
