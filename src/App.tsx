@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useWorkspaceStore } from './stores/workspace';
 import { ProjectTree } from './components/ProjectTree/ProjectTree';
 import { TabBar } from './components/Workspace/TabBar';
@@ -17,16 +18,44 @@ export default function App() {
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const addTab = useWorkspaceStore((s) => s.addTab);
   const sidebarWidth = useWorkspaceStore((s) => s.sidebarWidth);
+  const saveSession = useWorkspaceStore((s) => s.saveSession);
+  const loadSession = useWorkspaceStore((s) => s.loadSession);
+  const sessionLoaded = useRef(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
-  // Create a default tab if none exist
+  // Load session on startup, fall back to default tab
   useEffect(() => {
-    if (tabs.length === 0) {
+    if (sessionLoaded.current) return;
+    sessionLoaded.current = true;
+
+    loadSession().then((restored) => {
+      if (!restored) {
+        const cwd = '/home';
+        addTab(cwd, 'Home');
+      }
+    }).catch(() => {
       const cwd = '/home';
       addTab(cwd, 'Home');
-    }
+    });
   }, []);
+
+  // Save session on window close
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested(async () => {
+      await saveSession();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [saveSession]);
+
+  // Save session on beforeunload as fallback
+  useEffect(() => {
+    const handler = () => {
+      saveSession();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [saveSession]);
 
   const togglePalette = useCallback(() => {
     setPaletteOpen((v) => !v);
@@ -40,9 +69,10 @@ export default function App() {
     setHelpOpen((v) => !v);
   }, []);
 
-  const handleQuit = useCallback(() => {
-    console.log('Quit requested');
-  }, []);
+  const handleQuit = useCallback(async () => {
+    await saveSession();
+    getCurrentWindow().close();
+  }, [saveSession]);
 
   useKeybindings({
     onTogglePalette: togglePalette,

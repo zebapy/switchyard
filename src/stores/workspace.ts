@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import type { PaneTree, PaneInfo, PaneKind, Tab, LeafNode, SplitNode, AgentStatus } from '../types/pane';
 
 function generateId(): string {
@@ -104,6 +105,10 @@ interface WorkspaceState {
 
   // Layout
   setSidebarWidth: (width: number) => void;
+
+  // Session persistence
+  saveSession: () => Promise<void>;
+  loadSession: () => Promise<boolean>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
@@ -378,4 +383,118 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
   setSidebarWidth: (width) => {
     set({ sidebarWidth: Math.max(200, Math.min(500, width)) });
   },
+
+  saveSession: async () => {
+    const state = useWorkspaceStore.getState();
+    // Don't save if all panes are closed
+    if (state.tabs.length === 0) return;
+
+    const tabs = state.tabs.map((tab) => ({
+      id: tab.id,
+      label: tab.label,
+      project_path: tab.projectPath,
+      pane_tree: serializePaneTree(tab.paneTree, state.panes),
+    }));
+
+    await invoke('save_session', {
+      data: {
+        tabs,
+        active_tab_id: state.activeTabId,
+        sidebar_width: state.sidebarWidth,
+      },
+    });
+  },
+
+  loadSession: async () => {
+    const result = await invoke<SessionData | null>('load_session');
+    if (!result || result.tabs.length === 0) return false;
+
+    const panes = new Map<string, PaneInfo>();
+    const tabs: Tab[] = result.tabs.map((tabData) => {
+      const paneTree = deserializePaneTree(tabData.pane_tree, panes);
+      return {
+        id: tabData.id,
+        label: tabData.label,
+        projectPath: tabData.project_path,
+        paneTree,
+      };
+    });
+
+    set({
+      tabs,
+      activeTabId: result.active_tab_id ?? tabs[0]?.id ?? null,
+      panes,
+      sidebarWidth: result.sidebar_width ?? 260,
+      activePaneId: (() => {
+        const activeTab = tabs.find((t) => t.id === result.active_tab_id) ?? tabs[0];
+        if (!activeTab) return null;
+        const leaves = findAllLeaves(activeTab.paneTree);
+        return leaves[0] ?? null;
+      })(),
+    });
+
+    return true;
+  },
 }));
+
+// Session serialization types
+interface SessionData {
+  tabs: SessionTabData[];
+  active_tab_id: string | null;
+  sidebar_width: number;
+}
+
+interface SessionTabData {
+  id: string;
+  label: string;
+  project_path: string;
+  pane_tree: SerializedPaneTree;
+}
+
+type SerializedPaneTree =
+  | { type: 'leaf'; pane_id: string; kind: PaneKind; cwd: string; command?: string }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; ratio: number; children: [SerializedPaneTree, SerializedPaneTree] };
+
+function serializePaneTree(tree: PaneTree, panes: Map<string, PaneInfo>): SerializedPaneTree {
+  if (tree.type === 'leaf') {
+    const pane = panes.get(tree.paneId);
+    return {
+      type: 'leaf',
+      pane_id: tree.paneId,
+      kind: pane?.kind ?? 'Shell',
+      cwd: pane?.cwd ?? '/home',
+      command: pane?.command,
+    };
+  }
+  return {
+    type: 'split',
+    direction: tree.direction,
+    ratio: tree.ratio,
+    children: [
+      serializePaneTree(tree.children[0], panes),
+      serializePaneTree(tree.children[1], panes),
+    ],
+  };
+}
+
+function deserializePaneTree(data: SerializedPaneTree, panes: Map<string, PaneInfo>): PaneTree {
+  if (data.type === 'leaf') {
+    const paneId = data.pane_id;
+    panes.set(paneId, {
+      id: paneId,
+      kind: data.kind,
+      cwd: data.cwd,
+      command: data.command,
+    });
+    return { type: 'leaf', paneId };
+  }
+  return {
+    type: 'split',
+    direction: data.direction,
+    ratio: data.ratio,
+    children: [
+      deserializePaneTree(data.children[0], panes),
+      deserializePaneTree(data.children[1], panes),
+    ],
+  };
+}
