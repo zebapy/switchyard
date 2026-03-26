@@ -50,17 +50,35 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     return () => clearInterval(interval);
   }, []);
 
-  // Build the flat navigable list: pinned first, then unpinned
+  // Build a map of worktrees grouped by parent project path
+  const worktreeChildren = useMemo(() => {
+    const map = new Map<string, typeof projects>();
+    for (const p of projects) {
+      if (p.worktree_parent) {
+        const children = map.get(p.worktree_parent) ?? [];
+        children.push(p);
+        map.set(p.worktree_parent, children);
+      }
+    }
+    return map;
+  }, [projects]);
+
+  // Build the flat navigable list: pinned first, then unpinned (excluding worktree children)
   const { pinned, unpinned, navList } = useMemo(() => {
     const filtered = projects.filter((p) => {
+      // Exclude worktree children from top-level list
+      if (p.worktree_parent) return false;
       if (!filter) return true;
-      return p.name.toLowerCase().includes(filter.toLowerCase());
+      // When filtering, also match if any child worktree matches
+      const children = worktreeChildren.get(p.path) ?? [];
+      const childMatch = children.some((c) => c.name.toLowerCase().includes(filter.toLowerCase()));
+      return p.name.toLowerCase().includes(filter.toLowerCase()) || childMatch;
     });
     const pinned = filtered.filter((p) => pins.has(p.path));
     const unpinned = filtered.filter((p) => !pins.has(p.path));
     const navList = [...pinned, ...unpinned];
     return { pinned, unpinned, navList };
-  }, [projects, pins, filter]);
+  }, [projects, pins, filter, worktreeChildren]);
 
   // Clamp selectedIndex when list changes
   useEffect(() => {
@@ -301,6 +319,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
                 project={project}
                 isPinned={true}
                 isSelected={isFocused && navList[selectedIndex]?.path === project.path}
+                worktreeChildren={worktreeChildren.get(project.path)}
               />
             ))}
           </div>
@@ -325,6 +344,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
               project={project}
               isPinned={false}
               isSelected={isFocused && navList[selectedIndex]?.path === project.path}
+              worktreeChildren={worktreeChildren.get(project.path)}
             />
           ))}
         </div>

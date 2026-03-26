@@ -7,6 +7,8 @@ pub struct ProjectInfo {
     pub name: String,
     pub path: String,
     pub is_git: bool,
+    /// If this project is a git worktree, the path of the main worktree (parent project)
+    pub worktree_parent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +44,28 @@ fn ensure_config_dir() -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Detect if a .git file points to a worktree and return the parent repo's workdir path.
+/// A linked worktree's .git file contains: `gitdir: /path/to/parent/.git/worktrees/<name>`
+fn detect_worktree_parent(git_file: &Path) -> Option<String> {
+    let content = fs::read_to_string(git_file).ok()?;
+    let gitdir = content.trim().strip_prefix("gitdir: ")?;
+    let gitdir_path = PathBuf::from(gitdir);
+
+    // Expected structure: <parent>/.git/worktrees/<name>
+    // Walk up to find the .git directory, then get the parent repo workdir
+    let mut ancestor = gitdir_path.as_path();
+    loop {
+        if ancestor.file_name().map(|n| n == "worktrees").unwrap_or(false) {
+            let dot_git = ancestor.parent()?; // the .git directory
+            if dot_git.file_name().map(|n| n == ".git").unwrap_or(false) {
+                let parent_workdir = dot_git.parent()?;
+                return Some(parent_workdir.to_string_lossy().to_string());
+            }
+        }
+        ancestor = ancestor.parent()?;
+    }
+}
+
 #[tauri::command]
 pub fn scan_projects(root_dir: String) -> Result<Vec<ProjectInfo>, String> {
     let root = Path::new(&root_dir);
@@ -65,12 +89,21 @@ pub fn scan_projects(root_dir: String) -> Result<Vec<ProjectInfo>, String> {
                 continue;
             }
 
-            let is_git = path.join(".git").exists();
+            let git_path = path.join(".git");
+            let is_git = git_path.exists();
+
+            // Detect if this is a linked worktree: .git is a file, not a directory
+            let worktree_parent = if is_git && git_path.is_file() {
+                detect_worktree_parent(&git_path)
+            } else {
+                None
+            };
 
             projects.push(ProjectInfo {
                 name,
                 path: path.to_string_lossy().to_string(),
                 is_git,
+                worktree_parent,
             });
         }
     }
@@ -233,6 +266,7 @@ pub fn create_project(parent_dir: String, name: String) -> Result<ProjectInfo, S
         name,
         path: project_path.to_string_lossy().to_string(),
         is_git: true,
+        worktree_parent: None,
     })
 }
 

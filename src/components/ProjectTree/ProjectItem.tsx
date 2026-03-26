@@ -8,9 +8,10 @@ interface ProjectItemProps {
   project: ProjectInfo;
   isPinned: boolean;
   isSelected?: boolean;
+  worktreeChildren?: ProjectInfo[];
 }
 
-export function ProjectItem({ project, isPinned, isSelected }: ProjectItemProps) {
+export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }: ProjectItemProps) {
   const togglePin = useProjectsStore((s) => s.togglePin);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const expandedProjects = useProjectsStore((s) => s.expandedProjects);
@@ -142,7 +143,16 @@ export function ProjectItem({ project, isPinned, isSelected }: ProjectItemProps)
             </div>
           )}
 
-          {git && git.worktrees.length > 1 && (
+          {worktreeChildren && worktreeChildren.length > 0 && (
+            <div className="project-worktrees">
+              <div className="worktrees-label">Worktrees</div>
+              {worktreeChildren.map((wt) => (
+                <WorktreeChildItem key={wt.path} project={wt} />
+              ))}
+            </div>
+          )}
+
+          {(!worktreeChildren || worktreeChildren.length === 0) && git && git.worktrees.length > 1 && (
             <div className="project-worktrees">
               {git.worktrees.filter((w) => !w.is_main).map((wt) => (
                 <div key={wt.path} className="worktree-row">
@@ -184,6 +194,60 @@ export function ProjectItem({ project, isPinned, isSelected }: ProjectItemProps)
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function WorktreeChildItem({ project }: { project: ProjectInfo }) {
+  const gitInfo = useProjectsStore((s) => s.gitInfo);
+  const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
+  const tabs = useWorkspaceStore((s) => s.tabs);
+  const addTab = useWorkspaceStore((s) => s.addTab);
+  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
+  const addPane = useWorkspaceStore((s) => s.addPane);
+
+  const git = gitInfo.get(project.path);
+
+  useEffect(() => {
+    if (project.is_git) {
+      refreshGitInfo(project.path);
+    }
+  }, [project.path, project.is_git, refreshGitInfo]);
+
+  const handleSpawn = (kind: PaneKind) => {
+    let tab = tabs.find((t) => t.projectPath === project.path);
+    if (!tab) {
+      const tabId = addTab(project.path, project.name);
+      setActiveTab(tabId);
+    } else {
+      setActiveTab(tab.id);
+      addPane(tab.id, kind, project.path);
+    }
+  };
+
+  return (
+    <div className="worktree-child">
+      <div className="worktree-child-header">
+        <span className="worktree-child-icon">↳</span>
+        <span className="worktree-child-name">{project.name}</span>
+        {git?.branch && (
+          <span className="worktree-child-branch">{git.branch}</span>
+        )}
+      </div>
+      <div className="worktree-child-actions">
+        <button
+          className="project-action-btn"
+          onClick={(e) => { e.stopPropagation(); handleSpawn('Agent'); }}
+        >
+          + agent
+        </button>
+        <button
+          className="project-action-btn"
+          onClick={(e) => { e.stopPropagation(); handleSpawn('Shell'); }}
+        >
+          + terminal
+        </button>
+      </div>
     </div>
   );
 }

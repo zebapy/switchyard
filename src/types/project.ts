@@ -2,6 +2,7 @@ export interface ProjectInfo {
   name: string;
   path: string;
   is_git: boolean;
+  worktree_parent: string | null;
 }
 
 export interface GitInfo {

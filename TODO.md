@@ -16,7 +16,7 @@
 ## Git worktree support
 
 - [x] Auto-detect and display git worktrees
-- [ ] Group worktrees under parent project
+- [x] Group worktrees under parent project
 - [x] Create new worktrees with random slug names (editable before confirm)
 - [x] Delete worktrees
 
