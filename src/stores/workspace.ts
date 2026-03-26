@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { PaneTree, PaneInfo, PaneKind, Tab, LeafNode, SplitNode } from '../types/pane';
+import type { PaneTree, PaneInfo, PaneKind, Tab, LeafNode, SplitNode, AgentStatus } from '../types/pane';
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -96,6 +96,10 @@ interface WorkspaceState {
   cyclePaneBackward: () => void;
   nextTab: () => void;
   prevTab: () => void;
+
+  // Pane metadata
+  setPaneTitle: (paneId: string, title: string) => void;
+  setAgentStatus: (paneId: string, status: AgentStatus) => void;
 
   // Layout
   setSidebarWidth: (width: number) => void;
@@ -337,6 +341,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
       const prev = state.tabs[(idx - 1 + state.tabs.length) % state.tabs.length];
       return { activeTabId: prev.id };
+    });
+  },
+
+  setPaneTitle: (paneId, title) => {
+    set((state) => {
+      const pane = state.panes.get(paneId);
+      if (!pane) return state;
+      const newPanes = new Map(state.panes);
+      newPanes.set(paneId, { ...pane, title });
+      return { panes: newPanes };
+    });
+  },
+
+  setAgentStatus: (paneId, status) => {
+    set((state) => {
+      const pane = state.panes.get(paneId);
+      if (!pane || pane.agentStatus === status) return state;
+      const newPanes = new Map(state.panes);
+      newPanes.set(paneId, { ...pane, agentStatus: status });
+      return { panes: newPanes };
     });
   },
 

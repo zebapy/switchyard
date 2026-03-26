@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTerminal } from './useTerminal';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { PaneKind } from '../../types/pane';
@@ -13,12 +14,18 @@ interface TerminalPaneProps {
 
 export function TerminalPane({ paneId, kind, cwd, command, isActive }: TerminalPaneProps) {
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
+  const setPaneTitle = useWorkspaceStore((s) => s.setPaneTitle);
+
+  const handleTitleChange = useCallback((title: string) => {
+    setPaneTitle(paneId, title);
+  }, [paneId, setPaneTitle]);
 
   const { termRef } = useTerminal({
     paneId,
     kind,
     cwd,
     command,
+    onTitleChange: handleTitleChange,
   });
 
   return (

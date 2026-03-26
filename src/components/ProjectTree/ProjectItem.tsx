@@ -2,7 +2,19 @@ import { useEffect, useMemo } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { ProjectInfo } from '../../types/project';
-import type { PaneKind } from '../../types/pane';
+import type { PaneKind, AgentStatus } from '../../types/pane';
+
+const AGENT_STATUS_ICONS: Record<AgentStatus, string> = {
+  working: '●',
+  waiting: '◉',
+  idle: '○',
+};
+
+const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
+  working: 'Working',
+  waiting: 'Waiting for input',
+  idle: 'Idle',
+};
 
 interface ProjectItemProps {
   project: ProjectInfo;
@@ -41,6 +53,25 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
     return counts;
   }, [panes, project.path]);
 
+  // Aggregate agent status: show worst status across all agents for this project
+  const agentAggregateStatus = useMemo((): AgentStatus | null => {
+    const agentPanes = Array.from(panes.values()).filter(
+      (p) => p.kind === 'Agent' && (p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
+    );
+    if (agentPanes.length === 0) return null;
+
+    // Priority: waiting > working > idle
+    let hasWaiting = false;
+    let hasWorking = false;
+    for (const p of agentPanes) {
+      if (p.agentStatus === 'waiting') hasWaiting = true;
+      if (p.agentStatus === 'working') hasWorking = true;
+    }
+    if (hasWaiting) return 'waiting';
+    if (hasWorking) return 'working';
+    return 'idle';
+  }, [panes, project.path]);
+
   useEffect(() => {
     if (isExpanded && project.is_git) {
       refreshGitInfo(project.path);
@@ -77,8 +108,11 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
         {Object.keys(runningPanes).length > 0 && (
           <span className="project-running-indicators">
             {runningPanes.Agent && (
-              <span className="running-indicator running-indicator--agent" title={`${runningPanes.Agent} agent${runningPanes.Agent > 1 ? 's' : ''}`}>
-                ● {runningPanes.Agent}
+              <span
+                className={`running-indicator running-indicator--agent ${agentAggregateStatus ? `agent-status--${agentAggregateStatus}` : ''}`}
+                title={`${runningPanes.Agent} agent${runningPanes.Agent > 1 ? 's' : ''}${agentAggregateStatus ? ` (${AGENT_STATUS_LABELS[agentAggregateStatus]})` : ''}`}
+              >
+                {agentAggregateStatus ? AGENT_STATUS_ICONS[agentAggregateStatus] : '●'} {runningPanes.Agent}
               </span>
             )}
             {runningPanes.Shell && (
@@ -107,12 +141,17 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
               {Array.from(panes.values())
                 .filter((p) => p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
                 .map((p) => (
-                  <div key={p.id} className="running-pane-row">
+                  <div key={p.id} className={`running-pane-row ${p.kind === 'Agent' && p.agentStatus ? `agent-status--${p.agentStatus}` : ''}`}>
                     <span className={`running-pane-icon running-indicator--${p.kind.toLowerCase()}`}>
-                      {p.kind === 'Agent' ? '●' : p.kind === 'Shell' ? '$' : p.kind === 'Lazygit' ? 'G' : '⚡'}
+                      {p.kind === 'Agent'
+                        ? (p.agentStatus ? AGENT_STATUS_ICONS[p.agentStatus] : '●')
+                        : p.kind === 'Shell' ? '$' : p.kind === 'Lazygit' ? 'G' : '⚡'}
                     </span>
                     <span className="running-pane-label">
                       {p.title ?? p.kind}
+                      {p.kind === 'Agent' && p.agentStatus && (
+                        <span className="agent-status-label"> ({AGENT_STATUS_LABELS[p.agentStatus]})</span>
+                      )}
                     </span>
                   </div>
                 ))}

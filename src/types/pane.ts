@@ -1,5 +1,7 @@
 export type PaneKind = 'Agent' | 'Shell' | 'Lazygit' | 'Custom';
 
+export type AgentStatus = 'working' | 'waiting' | 'idle';
+
 export interface LeafNode {
   type: 'leaf';
   paneId: string;
@@ -20,6 +22,7 @@ export interface PaneInfo {
   cwd: string;
   title?: string;
   command?: string;
+  agentStatus?: AgentStatus;
 }
 
 export interface Tab {

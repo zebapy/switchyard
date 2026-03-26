@@ -349,6 +349,26 @@ html, body, #root {
 .running-indicator--lazygit { color: var(--magenta); }
 .running-indicator--custom { color: var(--yellow); }
 
+/* Agent status states */
+.agent-status--working { color: var(--green); }
+.agent-status--waiting { color: var(--yellow); }
+.agent-status--idle { color: var(--text-muted); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.agent-status--working .running-pane-icon,
+.running-indicator.agent-status--working {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.agent-status-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .project-running-list {
   margin-bottom: 4px;
 }

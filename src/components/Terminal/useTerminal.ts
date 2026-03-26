@@ -5,6 +5,22 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PaneKind } from '../../types/pane';
+import { useWorkspaceStore } from '../../stores/workspace';
+
+// Patterns that indicate the agent is waiting for user input
+const WAITING_PATTERNS = [
+  /Allow|Deny/,           // Permission prompts
+  /\(y\/n\)/i,            // Yes/no prompts
+  /\(Y\/n\)/,             // Yes/no prompts
+  /\? \(/,                // Question with options
+  /Do you want to/i,      // Confirmation prompts
+  /Press Enter/i,         // Press enter prompts
+];
+
+// Braille spinner characters indicate active work
+const SPINNER_CHARS = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷';
+
+const IDLE_TIMEOUT_MS = 4000;   // No output for 4s → idle
 
 interface UseTerminalOptions {
   paneId: string;
@@ -90,11 +106,60 @@ export function useTerminal({
       terminal.onTitleChange(onTitleChange);
     }
 
+    // Agent status detection state
+    let lastOutputTime = 0;
+    let recentText = '';
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const setAgentStatus = useWorkspaceStore.getState().setAgentStatus;
+
+    function detectAgentStatus(text: string) {
+      if (kind !== 'Agent') return;
+
+      lastOutputTime = Date.now();
+      // Keep a sliding window of recent text for pattern matching
+      recentText = (recentText + text).slice(-500);
+
+      // Check for waiting patterns first (higher priority)
+      for (const pattern of WAITING_PATTERNS) {
+        if (pattern.test(recentText)) {
+          setAgentStatus(paneId, 'waiting');
+          recentText = ''; // Reset to avoid re-triggering
+          return;
+        }
+      }
+
+      // Check for spinner chars → working
+      let hasSpinner = false;
+      for (const ch of text) {
+        if (SPINNER_CHARS.includes(ch)) {
+          hasSpinner = true;
+          break;
+        }
+      }
+      if (hasSpinner || text.length > 10) {
+        setAgentStatus(paneId, 'working');
+      }
+
+      // Reset idle timer
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        const elapsed = Date.now() - lastOutputTime;
+        if (elapsed >= IDLE_TIMEOUT_MS) {
+          setAgentStatus(paneId, 'idle');
+        }
+      }, IDLE_TIMEOUT_MS);
+    }
+
     // Listen for PTY output
     let unlisten: (() => void) | undefined;
     listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
       const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
       terminal.write(bytes);
+      // Decode for agent status detection
+      if (kind === 'Agent') {
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        detectAgentStatus(decoder.decode(bytes));
+      }
     }).then((fn) => {
       unlisten = fn;
     });
@@ -141,6 +206,7 @@ export function useTerminal({
     observer.observe(termRef.current);
 
     return () => {
+      clearTimeout(idleTimer);
       observer.disconnect();
       resizeDisposable.dispose();
       dataDisposable.dispose();

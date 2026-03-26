@@ -1,12 +1,18 @@
 import { useWorkspaceStore } from '../../stores/workspace';
 import { TerminalPane } from '../Terminal/TerminalPane';
-import type { PaneInfo } from '../../types/pane';
+import type { PaneInfo, AgentStatus } from '../../types/pane';
 
 const KIND_ICONS: Record<string, string> = {
   Agent: '●',
   Shell: '$',
   Lazygit: 'G',
   Custom: '⚡',
+};
+
+const AGENT_STATUS_ICONS: Record<AgentStatus, string> = {
+  working: '●',
+  waiting: '◉',
+  idle: '○',
 };
 
 interface PaneContainerProps {
@@ -31,7 +37,11 @@ export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
   return (
     <div className={`pane-container ${isActive ? 'pane-container--active' : ''}`}>
       <div className="pane-titlebar">
-        <span className="pane-kind-icon">{KIND_ICONS[paneInfo.kind] ?? '?'}</span>
+        <span className={`pane-kind-icon ${paneInfo.kind === 'Agent' && paneInfo.agentStatus ? `agent-status--${paneInfo.agentStatus}` : ''}`}>
+          {paneInfo.kind === 'Agent' && paneInfo.agentStatus
+            ? AGENT_STATUS_ICONS[paneInfo.agentStatus]
+            : (KIND_ICONS[paneInfo.kind] ?? '?')}
+        </span>
         <span className="pane-title">
           {paneInfo.title ?? paneInfo.cwd.split('/').pop() ?? 'Terminal'}
         </span>
