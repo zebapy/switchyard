@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppSettings {
+    #[serde(default)]
+    pub scan_root: String,
+    #[serde(default)]
+    pub added_projects: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub name: String,
@@ -142,8 +150,10 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
                 // Try to get the branch for this worktree
                 let wt_branch = git2::Repository::open(wt.path())
                     .ok()
-                    .and_then(|r| r.head().ok())
-                    .and_then(|h| h.shorthand().map(|s| s.to_string()));
+                    .and_then(|r| {
+                        let head = r.head().ok()?;
+                        head.shorthand().map(|s| s.to_string())
+                    });
                 worktrees.push(WorktreeInfo {
                     path: wt_path,
                     branch: wt_branch,
@@ -285,4 +295,60 @@ pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     wt.prune(None).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+fn settings_path() -> PathBuf {
+    config_dir().join("settings.json")
+}
+
+fn load_settings() -> AppSettings {
+    let path = settings_path();
+    if !path.exists() {
+        return AppSettings::default();
+    }
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default()
+}
+
+fn save_settings(settings: &AppSettings) -> Result<(), String> {
+    ensure_config_dir().map_err(|e| e.to_string())?;
+    let data = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    fs::write(settings_path(), data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_app_settings() -> Result<AppSettings, String> {
+    Ok(load_settings())
+}
+
+#[tauri::command]
+pub fn set_scan_root(root: String) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.scan_root = root;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn add_project_path(path: String) -> Result<AppSettings, String> {
+    let p = Path::new(&path);
+    if !p.is_dir() {
+        return Err(format!("'{}' is not a directory", path));
+    }
+    let mut settings = load_settings();
+    if !settings.added_projects.contains(&path) {
+        settings.added_projects.push(path);
+    }
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn remove_project_path(path: String) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.added_projects.retain(|p| p != &path);
+    save_settings(&settings)?;
+    Ok(settings)
 }

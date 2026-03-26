@@ -8,6 +8,7 @@ use pty::PtyState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // PTY commands
@@ -24,6 +25,10 @@ pub fn run() {
             projects::create_project,
             projects::create_worktree,
             projects::delete_worktree,
+            projects::get_app_settings,
+            projects::set_scan_root,
+            projects::add_project_path,
+            projects::remove_project_path,
             // Session commands
             session::save_session,
             session::load_session,

@@ -19,6 +19,9 @@ const KEYBINDINGS = [
     { key: 'd', desc: 'Remove Worktree' },
     { key: '/', desc: 'Filter' },
     { key: '?', desc: 'Help' },
+    { key: 'n', desc: 'New Project' },
+    { key: 'a', desc: 'Add Existing Folder' },
+    { key: 'r', desc: 'Change Scan Root' },
     { key: 'q / Esc', desc: 'Quit / Clear Filter' },
   ]},
   { section: 'Pane', bindings: [

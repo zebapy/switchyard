@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { ProjectItem } from './ProjectItem';
 
@@ -15,7 +16,10 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
   const setFilter = useProjectsStore((s) => s.setFilter);
   const loadProjects = useProjectsStore((s) => s.loadProjects);
   const loadPins = useProjectsStore((s) => s.loadPins);
+  const loadSettings = useProjectsStore((s) => s.loadSettings);
   const scanRoot = useProjectsStore((s) => s.scanRoot);
+  const setScanRoot = useProjectsStore((s) => s.setScanRoot);
+  const addProjectPath = useProjectsStore((s) => s.addProjectPath);
   const togglePin = useProjectsStore((s) => s.togglePin);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const createProject = useProjectsStore((s) => s.createProject);
@@ -31,10 +35,14 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
   const [newProjectError, setNewProjectError] = useState('');
 
   useEffect(() => {
-    const home = '/home';
-    loadProjects(home);
-    loadPins();
-  }, [loadProjects, loadPins]);
+    const init = async () => {
+      await loadSettings();
+      const { scanRoot: root } = useProjectsStore.getState();
+      loadProjects(root || '/home');
+      loadPins();
+    };
+    init();
+  }, [loadSettings, loadProjects, loadPins]);
 
   // Refresh git info periodically
   useEffect(() => {
@@ -130,6 +138,36 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     }
   }, [newProjectName, createProject, scanRoot]);
 
+  const handleAddExisting = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select project folder',
+      });
+      if (selected) {
+        await addProjectPath(selected as string);
+      }
+    } catch (e) {
+      console.error('Failed to add project:', e);
+    }
+  }, [addProjectPath]);
+
+  const handleChangeScanRoot = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select projects root folder',
+      });
+      if (selected) {
+        await setScanRoot(selected as string);
+      }
+    } catch (e) {
+      console.error('Failed to set scan root:', e);
+    }
+  }, [setScanRoot]);
+
   const handleTreeKeyDown = useCallback((e: React.KeyboardEvent) => {
     // If new project input or filter input is focused, only handle Escape
     if (showNewProject) {
@@ -149,7 +187,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     }
 
     const len = navList.length;
-    if (len === 0 && e.key !== '/' && e.key !== '?' && e.key !== 'q' && e.key !== 'Escape') return;
+    if (len === 0 && e.key !== '/' && e.key !== '?' && e.key !== 'q' && e.key !== 'Escape' && e.key !== 'a' && e.key !== 'n' && e.key !== 'r') return;
 
     switch (e.key) {
       case 'j':
@@ -181,9 +219,6 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
 
       case 'd': {
         e.preventDefault();
-        // Delete worktree - handled by ProjectItem via callback
-        // For now just a placeholder; the `d` key on a worktree item
-        // could be extended later when worktrees are separate nav items
         break;
       }
 
@@ -192,6 +227,16 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         setShowNewProject(true);
         setNewProjectName('');
         setNewProjectError('');
+        break;
+
+      case 'a':
+        e.preventDefault();
+        handleAddExisting();
+        break;
+
+      case 'r':
+        e.preventDefault();
+        handleChangeScanRoot();
         break;
 
       case '/':
@@ -219,7 +264,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         }
         break;
     }
-  }, [filterFocused, showNewProject, filter, navList, selectedIndex, toggleExpanded, togglePin, setFilter, onFocusLost, onToggleHelp]);
+  }, [filterFocused, showNewProject, filter, navList, selectedIndex, toggleExpanded, togglePin, setFilter, onFocusLost, onToggleHelp, handleAddExisting, handleChangeScanRoot]);
 
   return (
     <div
@@ -257,7 +302,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         />
       </div>
 
-      <div className="tree-new-project">
+      <div className="tree-actions">
         {showNewProject ? (
           <div className="new-project-input-row">
             <input
@@ -283,7 +328,6 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
                 }
               }}
               onBlur={() => {
-                // Small delay to allow click events to fire first
                 setTimeout(() => {
                   setShowNewProject(false);
                   setNewProjectName('');
@@ -296,16 +340,24 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
             )}
           </div>
         ) : (
-          <button
-            className="new-project-btn"
-            onClick={() => {
-              setShowNewProject(true);
-              setNewProjectName('');
-              setNewProjectError('');
-            }}
-          >
-            + new project
-          </button>
+          <div className="tree-action-buttons">
+            <button
+              className="new-project-btn"
+              onClick={() => {
+                setShowNewProject(true);
+                setNewProjectName('');
+                setNewProjectError('');
+              }}
+            >
+              + new project
+            </button>
+            <button
+              className="new-project-btn"
+              onClick={handleAddExisting}
+            >
+              + add existing
+            </button>
+          </div>
         )}
       </div>
 
@@ -348,6 +400,16 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
             />
           ))}
         </div>
+      </div>
+
+      <div className="tree-footer">
+        <button
+          className="scan-root-btn"
+          onClick={handleChangeScanRoot}
+          title={`Scan root: ${scanRoot || '/home'}`}
+        >
+          {scanRoot ? scanRoot.split('/').pop() : '/home'} (change root)
+        </button>
       </div>
     </div>
   );

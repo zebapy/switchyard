@@ -177,12 +177,17 @@ html, body, #root {
   border-color: var(--accent);
 }
 
-.tree-new-project {
+.tree-actions {
   padding: 0 8px 8px;
 }
 
+.tree-action-buttons {
+  display: flex;
+  gap: 4px;
+}
+
 .new-project-btn {
-  width: 100%;
+  flex: 1;
   padding: 5px 10px;
   font-size: 11px;
   background: var(--surface);
@@ -241,6 +246,32 @@ html, body, #root {
 .tree-scroll::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
+}
+
+.tree-footer {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.scan-root-btn {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.1s;
+}
+
+.scan-root-btn:hover {
+  color: var(--accent);
 }
 
 .tree-section {
