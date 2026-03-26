@@ -21,6 +21,7 @@ pub fn run() {
             projects::get_pr_info,
             projects::get_pinned_projects,
             projects::toggle_pin,
+            projects::create_project,
             projects::create_worktree,
             projects::delete_worktree,
             // Session commands

@@ -177,6 +177,53 @@ html, body, #root {
   border-color: var(--accent);
 }
 
+.tree-new-project {
+  padding: 0 8px 8px;
+}
+
+.new-project-btn {
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.new-project-btn:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.new-project-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.new-project-input {
+  width: 100%;
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  font-family: var(--font-mono);
+}
+
+.new-project-error {
+  font-size: 11px;
+  color: var(--red);
+  padding: 0 2px;
+}
+
 .tree-scroll {
   flex: 1;
   overflow-y: auto;

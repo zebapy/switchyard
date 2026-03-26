@@ -18,12 +18,17 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
   const scanRoot = useProjectsStore((s) => s.scanRoot);
   const togglePin = useProjectsStore((s) => s.togglePin);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
+  const createProject = useProjectsStore((s) => s.createProject);
 
   const filterRef = useRef<HTMLInputElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const newProjectRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filterFocused, setFilterFocused] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectError, setNewProjectError] = useState('');
 
   useEffect(() => {
     const home = '/home';
@@ -83,8 +88,35 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     }
   }, [selectedIndex, isFocused, navList]);
 
+  useEffect(() => {
+    if (showNewProject && newProjectRef.current) {
+      newProjectRef.current.focus();
+    }
+  }, [showNewProject]);
+
+  const handleNewProjectSubmit = useCallback(async () => {
+    const name = newProjectName.trim();
+    if (!name) {
+      setShowNewProject(false);
+      setNewProjectName('');
+      setNewProjectError('');
+      return;
+    }
+    try {
+      setNewProjectError('');
+      await createProject(scanRoot || '/home', name);
+      setShowNewProject(false);
+      setNewProjectName('');
+    } catch (e: unknown) {
+      setNewProjectError(String(e));
+    }
+  }, [newProjectName, createProject, scanRoot]);
+
   const handleTreeKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // If filter input is focused, only handle Escape
+    // If new project input or filter input is focused, only handle Escape
+    if (showNewProject) {
+      return;
+    }
     if (filterFocused) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -137,6 +169,13 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         break;
       }
 
+      case 'n':
+        e.preventDefault();
+        setShowNewProject(true);
+        setNewProjectName('');
+        setNewProjectError('');
+        break;
+
       case '/':
         e.preventDefault();
         setFilterFocused(true);
@@ -162,7 +201,7 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         }
         break;
     }
-  }, [filterFocused, filter, navList, selectedIndex, toggleExpanded, togglePin, setFilter, onFocusLost, onToggleHelp]);
+  }, [filterFocused, showNewProject, filter, navList, selectedIndex, toggleExpanded, togglePin, setFilter, onFocusLost, onToggleHelp]);
 
   return (
     <div
@@ -198,6 +237,58 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
             }
           }}
         />
+      </div>
+
+      <div className="tree-new-project">
+        {showNewProject ? (
+          <div className="new-project-input-row">
+            <input
+              ref={newProjectRef}
+              type="text"
+              placeholder="project name"
+              value={newProjectName}
+              onChange={(e) => {
+                setNewProjectName(e.target.value);
+                setNewProjectError('');
+              }}
+              className="new-project-input"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleNewProjectSubmit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setShowNewProject(false);
+                  setNewProjectName('');
+                  setNewProjectError('');
+                  treeRef.current?.focus();
+                }
+              }}
+              onBlur={() => {
+                // Small delay to allow click events to fire first
+                setTimeout(() => {
+                  setShowNewProject(false);
+                  setNewProjectName('');
+                  setNewProjectError('');
+                }, 150);
+              }}
+            />
+            {newProjectError && (
+              <div className="new-project-error">{newProjectError}</div>
+            )}
+          </div>
+        ) : (
+          <button
+            className="new-project-btn"
+            onClick={() => {
+              setShowNewProject(true);
+              setNewProjectName('');
+              setNewProjectError('');
+            }}
+          >
+            + new project
+          </button>
+        )}
       </div>
 
       <div className="tree-scroll" ref={scrollRef}>

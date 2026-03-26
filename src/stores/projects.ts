@@ -17,6 +17,7 @@ interface ProjectsState {
   togglePin: (projectPath: string) => Promise<void>;
   refreshGitInfo: (projectPath: string) => Promise<void>;
   refreshPrInfo: (projectPath: string) => Promise<void>;
+  createProject: (parentDir: string, name: string) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
 }
@@ -83,6 +84,17 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       });
     } catch {
       // gh not available or other error
+    }
+  },
+
+  createProject: async (parentDir, name) => {
+    try {
+      await invoke<ProjectInfo>('create_project', { parentDir, name });
+      // Reload project list to include the new project
+      await get().loadProjects();
+    } catch (e) {
+      console.error('Failed to create project:', e);
+      throw e;
     }
   },
 

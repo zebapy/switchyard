@@ -218,6 +218,25 @@ pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String,
 }
 
 #[tauri::command]
+pub fn create_project(parent_dir: String, name: String) -> Result<ProjectInfo, String> {
+    let project_path = Path::new(&parent_dir).join(&name);
+    if project_path.exists() {
+        return Err(format!("Directory '{}' already exists", name));
+    }
+
+    fs::create_dir_all(&project_path).map_err(|e| e.to_string())?;
+
+    // git init
+    git2::Repository::init(&project_path).map_err(|e| e.to_string())?;
+
+    Ok(ProjectInfo {
+        name,
+        path: project_path.to_string_lossy().to_string(),
+        is_git: true,
+    })
+}
+
+#[tauri::command]
 pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let wt = repo.find_worktree(&name).map_err(|e| e.to_string())?;

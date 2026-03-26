@@ -11,7 +11,7 @@
 - [ ] Running agents/terminals shown with status indicators
 - [x] Live filter search
 - [x] Pin/unpin projects (persisted)
-- [ ] `+ new project` button (creates dir + git init)
+- [x] `+ new project` button (creates dir + git init)
 
 ## Git worktree support
 
