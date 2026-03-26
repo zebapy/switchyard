@@ -50,7 +50,7 @@
 - [x] Resize panes by dragging dividers
 - [ ] Move panes between splits by dragging title bar
 - [ ] Move panes between tabs by dropping on tab header
-- [ ] Text selection and copy to clipboard
+- [x] Text selection and copy to clipboard
 
 ## Command palette
 

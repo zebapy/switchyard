@@ -192,6 +192,42 @@ export function useTerminal({
       unlisten = fn;
     });
 
+    // Copy to clipboard on text selection (like most terminal emulators)
+    const selectionDisposable = terminal.onSelectionChange(() => {
+      const selection = terminal.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {
+          // Clipboard API may not be available in all contexts
+        });
+      }
+    });
+
+    // Custom key handler: Ctrl+Shift+V to paste, Ctrl+Shift+C to copy
+    terminal.attachCustomKeyEventHandler((event) => {
+      // Ctrl+Shift+V → paste from clipboard
+      if (event.ctrlKey && event.shiftKey && event.key === 'V' && event.type === 'keydown') {
+        navigator.clipboard.readText().then((text) => {
+          if (text) {
+            const encoder = new TextEncoder();
+            invoke('pty_write', {
+              id: paneId,
+              data: Array.from(encoder.encode(text)),
+            }).catch(console.error);
+          }
+        }).catch(() => {});
+        return false; // Prevent default handling
+      }
+      // Ctrl+Shift+C → copy selection (fallback if auto-copy missed it)
+      if (event.ctrlKey && event.shiftKey && event.key === 'C' && event.type === 'keydown') {
+        const selection = terminal.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+        }
+        return false;
+      }
+      return true; // Let all other keys pass through
+    });
+
     // Send keyboard input to PTY
     const dataDisposable = terminal.onData((data) => {
       const encoder = new TextEncoder();
@@ -237,6 +273,7 @@ export function useTerminal({
       clearTimeout(idleTimer);
       observer.disconnect();
       resizeDisposable.dispose();
+      selectionDisposable.dispose();
       dataDisposable.dispose();
       binaryDisposable.dispose();
       unlisten?.();
