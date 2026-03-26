@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { ProjectInfo } from '../../types/project';
@@ -23,10 +23,22 @@ export function ProjectItem({ project, isPinned, isSelected }: ProjectItemProps)
   const addTab = useWorkspaceStore((s) => s.addTab);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const addPane = useWorkspaceStore((s) => s.addPane);
+  const panes = useWorkspaceStore((s) => s.panes);
 
   const isExpanded = expandedProjects.has(project.path);
   const git = gitInfo.get(project.path);
   const pr = prInfo.get(project.path);
+
+  // Count running panes for this project
+  const runningPanes = useMemo(() => {
+    const counts: Partial<Record<PaneKind, number>> = {};
+    for (const pane of panes.values()) {
+      if (pane.cwd === project.path || pane.cwd.startsWith(project.path + '/')) {
+        counts[pane.kind] = (counts[pane.kind] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [panes, project.path]);
 
   useEffect(() => {
     if (isExpanded && project.is_git) {
@@ -61,10 +73,51 @@ export function ProjectItem({ project, isPinned, isSelected }: ProjectItemProps)
         {project.is_git && git?.branch && (
           <span className="project-branch">{git.branch}</span>
         )}
+        {Object.keys(runningPanes).length > 0 && (
+          <span className="project-running-indicators">
+            {runningPanes.Agent && (
+              <span className="running-indicator running-indicator--agent" title={`${runningPanes.Agent} agent${runningPanes.Agent > 1 ? 's' : ''}`}>
+                ● {runningPanes.Agent}
+              </span>
+            )}
+            {runningPanes.Shell && (
+              <span className="running-indicator running-indicator--shell" title={`${runningPanes.Shell} terminal${runningPanes.Shell > 1 ? 's' : ''}`}>
+                $ {runningPanes.Shell}
+              </span>
+            )}
+            {runningPanes.Lazygit && (
+              <span className="running-indicator running-indicator--lazygit" title={`${runningPanes.Lazygit} lazygit`}>
+                G {runningPanes.Lazygit}
+              </span>
+            )}
+            {runningPanes.Custom && (
+              <span className="running-indicator running-indicator--custom" title={`${runningPanes.Custom} custom`}>
+                ⚡ {runningPanes.Custom}
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       {isExpanded && (
         <div className="project-item-details">
+          {Object.keys(runningPanes).length > 0 && (
+            <div className="project-running-list">
+              {Array.from(panes.values())
+                .filter((p) => p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
+                .map((p) => (
+                  <div key={p.id} className="running-pane-row">
+                    <span className={`running-pane-icon running-indicator--${p.kind.toLowerCase()}`}>
+                      {p.kind === 'Agent' ? '●' : p.kind === 'Shell' ? '$' : p.kind === 'Lazygit' ? 'G' : '⚡'}
+                    </span>
+                    <span className="running-pane-label">
+                      {p.title ?? p.kind}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+
           {pr && (
             <div
               className="project-pr-row"

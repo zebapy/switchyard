@@ -8,7 +8,7 @@
 - [x] Git branch, PR number, and CI status shown per project
 - [x] Clickable PR info (opens in browser)
 - [x] `+ agent` / `+ terminal` / `+ lazygit` action buttons per project
-- [ ] Running agents/terminals shown with status indicators
+- [x] Running agents/terminals shown with status indicators
 - [x] Live filter search
 - [x] Pin/unpin projects (persisted)
 - [x] `+ new project` button (creates dir + git init)

@@ -328,6 +328,52 @@ html, body, #root {
   max-width: 100px;
 }
 
+.project-running-indicators {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.running-indicator {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--surface);
+  line-height: 16px;
+}
+
+.running-indicator--agent { color: var(--green); }
+.running-indicator--shell { color: var(--accent); }
+.running-indicator--lazygit { color: var(--magenta); }
+.running-indicator--custom { color: var(--yellow); }
+
+.project-running-list {
+  margin-bottom: 4px;
+}
+
+.running-pane-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.running-pane-icon {
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+}
+
+.running-pane-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-item-details {
   padding: 4px 8px 8px 30px;
 }
