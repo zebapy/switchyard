@@ -70,8 +70,8 @@
 ## Session persistence
 
 - [x] Save workspace layout and pane state on quit
-- [ ] Restore layout and re-spawn panes on next launch
-- [ ] Skip save if all panes are closed
+- [x] Restore layout and re-spawn panes on next launch
+- [x] Skip save if all panes are closed
 
 ## User-defined commands
 

@@ -386,8 +386,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
 
   saveSession: async () => {
     const state = useWorkspaceStore.getState();
-    // Don't save if all panes are closed
-    if (state.tabs.length === 0) return;
+    // Clear session file if all panes are closed so next launch starts fresh
+    if (state.tabs.length === 0) {
+      await invoke('clear_session');
+      return;
+    }
 
     const tabs = state.tabs.map((tab) => ({
       id: tab.id,

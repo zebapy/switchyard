@@ -36,6 +36,15 @@ pub fn save_session(data: SessionData) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn clear_session() -> Result<(), String> {
+    let path = session_path();
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn load_session() -> Result<Option<SessionData>, String> {
     let path = session_path();
     if !path.exists() {
