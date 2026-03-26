@@ -22,6 +22,9 @@ const SPINNER_CHARS = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷';
 
 const IDLE_TIMEOUT_MS = 4000;   // No output for 4s → idle
 
+// Regex to match ANSI SGR sequences with RGB foreground color: ESC[38;2;R;G;Bm
+const ANSI_RGB_FG_RE = /\x1b\[(?:[0-9;]*;)?38;2;(\d{1,3});(\d{1,3});(\d{1,3})(?:;[0-9]*)*m/g;
+
 interface UseTerminalOptions {
   paneId: string;
   kind: PaneKind;
@@ -110,7 +113,9 @@ export function useTerminal({
     let lastOutputTime = 0;
     let recentText = '';
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let detectedAccentColor: string | null = null;
     const setAgentStatus = useWorkspaceStore.getState().setAgentStatus;
+    const setAgentAccentColor = useWorkspaceStore.getState().setAgentAccentColor;
 
     function detectAgentStatus(text: string) {
       if (kind !== 'Agent') return;
@@ -138,6 +143,29 @@ export function useTerminal({
       }
       if (hasSpinner || text.length > 10) {
         setAgentStatus(paneId, 'working');
+      }
+
+      // Detect accent color: extract RGB foreground color near spinner chars
+      // Claude Code renders spinners with its accent color via ANSI RGB sequences
+      if (hasSpinner && !detectedAccentColor) {
+        // Look for the most recent RGB foreground color in this chunk
+        ANSI_RGB_FG_RE.lastIndex = 0;
+        let lastMatch: RegExpExecArray | null = null;
+        let match: RegExpExecArray | null;
+        while ((match = ANSI_RGB_FG_RE.exec(text)) !== null) {
+          lastMatch = match;
+        }
+        if (lastMatch) {
+          const r = parseInt(lastMatch[1], 10);
+          const g = parseInt(lastMatch[2], 10);
+          const b = parseInt(lastMatch[3], 10);
+          // Skip near-white/near-black colors as they're likely not accent
+          if (!(r > 220 && g > 220 && b > 220) && !(r < 30 && g < 30 && b < 30)) {
+            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            detectedAccentColor = hex;
+            setAgentAccentColor(paneId, hex);
+          }
+        }
       }
 
       // Reset idle timer

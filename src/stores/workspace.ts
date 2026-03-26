@@ -100,6 +100,7 @@ interface WorkspaceState {
   // Pane metadata
   setPaneTitle: (paneId: string, title: string) => void;
   setAgentStatus: (paneId: string, status: AgentStatus) => void;
+  setAgentAccentColor: (paneId: string, color: string) => void;
 
   // Layout
   setSidebarWidth: (width: number) => void;
@@ -360,6 +361,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       if (!pane || pane.agentStatus === status) return state;
       const newPanes = new Map(state.panes);
       newPanes.set(paneId, { ...pane, agentStatus: status });
+      return { panes: newPanes };
+    });
+  },
+
+  setAgentAccentColor: (paneId, color) => {
+    set((state) => {
+      const pane = state.panes.get(paneId);
+      if (!pane || pane.accentColor === color) return state;
+      const newPanes = new Map(state.panes);
+      newPanes.set(paneId, { ...pane, accentColor: color });
       return { panes: newPanes };
     });
   },

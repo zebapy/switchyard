@@ -38,7 +38,7 @@
 
 - [x] Detect agent state: Working, Waiting for input, Idle
 - [x] Show status icons in the project tree per agent
-- [ ] Detect accent color from agent output
+- [x] Detect accent color from agent output
 
 ## Terminal title capture
 

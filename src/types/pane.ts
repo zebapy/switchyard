@@ -23,6 +23,7 @@ export interface PaneInfo {
   title?: string;
   command?: string;
   agentStatus?: AgentStatus;
+  accentColor?: string;
 }
 
 export interface Tab {

@@ -54,22 +54,27 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
   }, [panes, project.path]);
 
   // Aggregate agent status: show worst status across all agents for this project
-  const agentAggregateStatus = useMemo((): AgentStatus | null => {
+  const { agentAggregateStatus, agentAccentColor } = useMemo(() => {
     const agentPanes = Array.from(panes.values()).filter(
       (p) => p.kind === 'Agent' && (p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
     );
-    if (agentPanes.length === 0) return null;
+    if (agentPanes.length === 0) return { agentAggregateStatus: null, agentAccentColor: null };
 
     // Priority: waiting > working > idle
     let hasWaiting = false;
     let hasWorking = false;
+    let accentColor: string | null = null;
     for (const p of agentPanes) {
       if (p.agentStatus === 'waiting') hasWaiting = true;
       if (p.agentStatus === 'working') hasWorking = true;
+      if (p.accentColor && !accentColor) accentColor = p.accentColor;
     }
-    if (hasWaiting) return 'waiting';
-    if (hasWorking) return 'working';
-    return 'idle';
+
+    let status: AgentStatus;
+    if (hasWaiting) status = 'waiting';
+    else if (hasWorking) status = 'working';
+    else status = 'idle';
+    return { agentAggregateStatus: status, agentAccentColor: accentColor };
   }, [panes, project.path]);
 
   useEffect(() => {
@@ -111,6 +116,7 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
               <span
                 className={`running-indicator running-indicator--agent ${agentAggregateStatus ? `agent-status--${agentAggregateStatus}` : ''}`}
                 title={`${runningPanes.Agent} agent${runningPanes.Agent > 1 ? 's' : ''}${agentAggregateStatus ? ` (${AGENT_STATUS_LABELS[agentAggregateStatus]})` : ''}`}
+                style={agentAccentColor ? { color: agentAccentColor } : undefined}
               >
                 {agentAggregateStatus ? AGENT_STATUS_ICONS[agentAggregateStatus] : '●'} {runningPanes.Agent}
               </span>
@@ -142,7 +148,10 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
                 .filter((p) => p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
                 .map((p) => (
                   <div key={p.id} className={`running-pane-row ${p.kind === 'Agent' && p.agentStatus ? `agent-status--${p.agentStatus}` : ''}`}>
-                    <span className={`running-pane-icon running-indicator--${p.kind.toLowerCase()}`}>
+                    <span
+                      className={`running-pane-icon running-indicator--${p.kind.toLowerCase()}`}
+                      style={p.kind === 'Agent' && p.accentColor ? { color: p.accentColor } : undefined}
+                    >
                       {p.kind === 'Agent'
                         ? (p.agentStatus ? AGENT_STATUS_ICONS[p.agentStatus] : '●')
                         : p.kind === 'Shell' ? '$' : p.kind === 'Lazygit' ? 'G' : '⚡'}
