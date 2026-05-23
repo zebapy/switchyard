@@ -79,6 +79,7 @@ export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
           kind={paneInfo.kind}
           cwd={paneInfo.cwd}
           command={paneInfo.command}
+          tmuxSession={paneInfo.tmuxSession}
           isActive={isActive}
         />
       </div>

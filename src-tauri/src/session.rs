@@ -4,16 +4,24 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
+    pub windows: Vec<WindowData>,
+    pub active_window_id: Option<String>,
+    pub sidebar_width: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowData {
+    pub project_path: String,
     pub tabs: Vec<TabData>,
     pub active_tab_id: Option<String>,
-    pub sidebar_width: f64,
+    pub active_pane_id: Option<String>,
+    pub last_active_at: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabData {
     pub id: String,
     pub label: String,
-    pub project_path: String,
     pub pane_tree: serde_json::Value,
 }
 

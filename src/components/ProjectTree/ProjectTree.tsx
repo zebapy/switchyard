@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
+import { useWorkspaceStore } from '../../stores/workspace';
 import { ProjectItem } from './ProjectItem';
+import type { TmuxSessionInfo } from '../../types/tmux';
 
 interface ProjectTreeProps {
   isFocused: boolean;
@@ -14,9 +16,11 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
   const pins = useProjectsStore((s) => s.pins);
   const filter = useProjectsStore((s) => s.filter);
   const setFilter = useProjectsStore((s) => s.setFilter);
-  const loadProjects = useProjectsStore((s) => s.loadProjects);
+  const loadAddedProjects = useProjectsStore((s) => s.loadAddedProjects);
   const loadPins = useProjectsStore((s) => s.loadPins);
   const loadSettings = useProjectsStore((s) => s.loadSettings);
+  const loadTmuxSessions = useProjectsStore((s) => s.loadTmuxSessions);
+  const tmuxSessions = useProjectsStore((s) => s.tmuxSessions);
   const scanRoot = useProjectsStore((s) => s.scanRoot);
   const setScanRoot = useProjectsStore((s) => s.setScanRoot);
   const addProjectPath = useProjectsStore((s) => s.addProjectPath);
@@ -37,23 +41,24 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
   useEffect(() => {
     const init = async () => {
       await loadSettings();
-      const { scanRoot: root } = useProjectsStore.getState();
-      loadProjects(root || '/home');
+      loadAddedProjects();
       loadPins();
+      loadTmuxSessions();
     };
     init();
-  }, [loadSettings, loadProjects, loadPins]);
+  }, [loadSettings, loadAddedProjects, loadPins, loadTmuxSessions]);
 
-  // Refresh git info periodically
+  // Refresh git info + tmux sessions periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      const { projects, expandedProjects, refreshGitInfo, refreshPrInfo } = useProjectsStore.getState();
+      const { projects, expandedProjects, refreshGitInfo, refreshPrInfo, loadTmuxSessions } = useProjectsStore.getState();
       for (const project of projects) {
         if (project.is_git && expandedProjects.has(project.path)) {
           refreshGitInfo(project.path);
           refreshPrInfo(project.path);
         }
       }
+      loadTmuxSessions();
     }, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -70,6 +75,27 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     }
     return map;
   }, [projects]);
+
+  // Group tmux sessions by project (longest matching path wins).
+  // Sessions whose path matches no project end up in "Other sessions".
+  const { sessionsByProject, orphanSessions } = useMemo(() => {
+    const sortedPaths = projects.map((p) => p.path).sort((a, b) => b.length - a.length);
+    const map = new Map<string, typeof tmuxSessions>();
+    const orphans: typeof tmuxSessions = [];
+    for (const session of tmuxSessions) {
+      const match = sortedPaths.find(
+        (path) => session.path === path || session.path.startsWith(path + '/'),
+      );
+      if (match) {
+        const list = map.get(match) ?? [];
+        list.push(session);
+        map.set(match, list);
+      } else {
+        orphans.push(session);
+      }
+    }
+    return { sessionsByProject: map, orphanSessions: orphans };
+  }, [projects, tmuxSessions]);
 
   // Build the flat navigable list: pinned first, then unpinned (excluding worktree children)
   const { pinned, unpinned, navList } = useMemo(() => {
@@ -130,7 +156,17 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     }
     try {
       setNewProjectError('');
-      await createProject(scanRoot || '/home', name);
+      let parentDir = scanRoot;
+      if (!parentDir) {
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          title: 'Choose parent folder for new project',
+        });
+        if (!selected) return;
+        parentDir = selected as string;
+      }
+      await createProject(parentDir, name);
       setShowNewProject(false);
       setNewProjectName('');
     } catch (e: unknown) {
@@ -158,13 +194,13 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select projects root folder',
+        title: 'Default folder for new projects',
       });
       if (selected) {
         await setScanRoot(selected as string);
       }
     } catch (e) {
-      console.error('Failed to set scan root:', e);
+      console.error('Failed to set default folder:', e);
     }
   }, [setScanRoot]);
 
@@ -203,12 +239,17 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         break;
 
       case 'Enter':
-      case ' ':
+      case ' ': {
         e.preventDefault();
-        if (navList[selectedIndex]) {
-          toggleExpanded(navList[selectedIndex].path);
+        const project = navList[selectedIndex];
+        if (project) {
+          toggleExpanded(project.path);
+          if (useWorkspaceStore.getState().windows.has(project.path)) {
+            useWorkspaceStore.getState().switchWindow(project.path);
+          }
         }
         break;
+      }
 
       case 'p':
         e.preventDefault();
@@ -275,13 +316,62 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
     >
       <div className="project-tree-header">
         <span className="project-tree-title">Projects</span>
+        <button
+          className="tree-header-action"
+          onClick={() => {
+            setShowNewProject(true);
+            setNewProjectName('');
+            setNewProjectError('');
+          }}
+          title="Create a new project in the default folder"
+        >
+          + new project
+        </button>
       </div>
 
-      <div className="tree-filter">
+      {showNewProject && (
+        <div className="new-project-input-row">
+          <input
+            ref={newProjectRef}
+            type="text"
+            placeholder="project name"
+            value={newProjectName}
+            onChange={(e) => {
+              setNewProjectName(e.target.value);
+              setNewProjectError('');
+            }}
+            className="new-project-input"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleNewProjectSubmit();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setShowNewProject(false);
+                setNewProjectName('');
+                setNewProjectError('');
+                treeRef.current?.focus();
+              }
+            }}
+            onBlur={() => {
+              setTimeout(() => {
+                setShowNewProject(false);
+                setNewProjectName('');
+                setNewProjectError('');
+              }, 150);
+            }}
+          />
+          {newProjectError && (
+            <div className="new-project-error">{newProjectError}</div>
+          )}
+        </div>
+      )}
+
+      <div className={`tree-filter ${filter || filterFocused ? 'tree-filter--active' : ''}`}>
         <input
           ref={filterRef}
           type="text"
-          placeholder="Filter... (press /)"
+          placeholder="Filter (press /)"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="tree-filter-input"
@@ -302,115 +392,102 @@ export function ProjectTree({ isFocused, onFocusLost, onToggleHelp }: ProjectTre
         />
       </div>
 
-      <div className="tree-actions">
-        {showNewProject ? (
-          <div className="new-project-input-row">
-            <input
-              ref={newProjectRef}
-              type="text"
-              placeholder="project name"
-              value={newProjectName}
-              onChange={(e) => {
-                setNewProjectName(e.target.value);
-                setNewProjectError('');
-              }}
-              className="new-project-input"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleNewProjectSubmit();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setShowNewProject(false);
-                  setNewProjectName('');
-                  setNewProjectError('');
-                  treeRef.current?.focus();
-                }
-              }}
-              onBlur={() => {
-                setTimeout(() => {
-                  setShowNewProject(false);
-                  setNewProjectName('');
-                  setNewProjectError('');
-                }, 150);
-              }}
-            />
-            {newProjectError && (
-              <div className="new-project-error">{newProjectError}</div>
-            )}
-          </div>
-        ) : (
-          <div className="tree-action-buttons">
-            <button
-              className="new-project-btn"
-              onClick={() => {
-                setShowNewProject(true);
-                setNewProjectName('');
-                setNewProjectError('');
-              }}
-            >
-              + new project
-            </button>
-            <button
-              className="new-project-btn"
-              onClick={handleAddExisting}
-            >
-              + add existing
-            </button>
-          </div>
-        )}
-      </div>
-
       <div className="tree-scroll" ref={scrollRef}>
-        {pinned.length > 0 && (
-          <div className="tree-section">
-            <div className="tree-section-header">Pinned</div>
-            {pinned.map((project) => (
-              <ProjectItem
-                key={project.path}
-                project={project}
-                isPinned={true}
-                isSelected={isFocused && navList[selectedIndex]?.path === project.path}
-                worktreeChildren={worktreeChildren.get(project.path)}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="tree-section">
-          <div className="tree-section-header">
-            {pinned.length > 0 ? 'All Projects' : 'Projects'}
-          </div>
-          {unpinned.length === 0 && pinned.length === 0 && (
-            <div className="tree-empty">
-              No projects found.
-              <br />
-              <span className="tree-empty-hint">
-                Scanning: {scanRoot || '(none)'}
-              </span>
-            </div>
-          )}
-          {unpinned.map((project) => (
+        {pinned.length > 0 &&
+          pinned.map((project) => (
             <ProjectItem
               key={project.path}
               project={project}
-              isPinned={false}
+              isPinned={true}
               isSelected={isFocused && navList[selectedIndex]?.path === project.path}
               worktreeChildren={worktreeChildren.get(project.path)}
+              tmuxSessions={sessionsByProject.get(project.path)}
             />
           ))}
-        </div>
+
+        {unpinned.length === 0 && pinned.length === 0 && (
+          <div className="tree-empty">
+            No projects yet.
+            <br />
+            <span className="tree-empty-hint">
+              Click "+ add existing" to pick a folder.
+            </span>
+          </div>
+        )}
+        {unpinned.map((project) => (
+          <ProjectItem
+            key={project.path}
+            project={project}
+            isPinned={false}
+            isSelected={isFocused && navList[selectedIndex]?.path === project.path}
+            worktreeChildren={worktreeChildren.get(project.path)}
+            tmuxSessions={sessionsByProject.get(project.path)}
+          />
+        ))}
+
+        {orphanSessions.length > 0 && (
+          <div className="tree-section">
+            <div className="tree-section-header">Other sessions</div>
+            <OrphanSessions sessions={orphanSessions} />
+          </div>
+        )}
       </div>
 
       <div className="tree-footer">
         <button
+          className="tree-footer-btn"
+          onClick={handleAddExisting}
+          title="Pick an existing folder to add as a project"
+        >
+          + add existing
+        </button>
+        <button
           className="scan-root-btn"
           onClick={handleChangeScanRoot}
-          title={`Scan root: ${scanRoot || '/home'}`}
+          title={`Default folder for new projects: ${scanRoot || '(not set)'}`}
         >
-          {scanRoot ? scanRoot.split('/').pop() : '/home'} (change root)
+          {scanRoot ? scanRoot.split('/').pop() : 'set default folder'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function OrphanSessions({ sessions }: { sessions: TmuxSessionInfo[] }) {
+  const addTab = useWorkspaceStore((s) => s.addTab);
+  const killTmuxSession = useProjectsStore((s) => s.killTmuxSession);
+
+  const handleAttach = (session: TmuxSessionInfo) => {
+    const label = session.path.split('/').pop() || session.name;
+    addTab(session.path, label, {
+      kind: 'Shell',
+      tmuxSession: session.name,
+      cwd: session.path,
+    });
+  };
+
+  return (
+    <div className="orphan-sessions">
+      {sessions.map((session) => (
+        <div key={session.name} className="orphan-session-row">
+          <button
+            className="orphan-session-attach"
+            onClick={() => handleAttach(session)}
+            title={`Attach to ${session.name}`}
+          >
+            <span className="orphan-session-icon">⌗</span>
+            <span className="orphan-session-name">{session.path.split('/').pop() || session.name}</span>
+            {session.attached && <span className="orphan-session-badge">attached</span>}
+          </button>
+          <button
+            className="orphan-session-kill"
+            onClick={() => killTmuxSession(session.name)}
+            title={`Kill session ${session.name}`}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,8 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useHomeDir, displayDir } from '../../hooks/useHomeDir';
+import { ProjectSections } from './ProjectSections';
+import { Worktrees } from './Worktrees';
 import type { ProjectInfo } from '../../types/project';
-import type { PaneKind, AgentStatus } from '../../types/pane';
+import type { AgentStatus, PaneInfo } from '../../types/pane';
+import type { TmuxSessionInfo } from '../../types/tmux';
 
 const AGENT_STATUS_ICONS: Record<AgentStatus, string> = {
   working: '●',
@@ -21,9 +25,10 @@ interface ProjectItemProps {
   isPinned: boolean;
   isSelected?: boolean;
   worktreeChildren?: ProjectInfo[];
+  tmuxSessions?: TmuxSessionInfo[];
 }
 
-export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }: ProjectItemProps) {
+export function ProjectItem({ project, isPinned, isSelected, tmuxSessions }: ProjectItemProps) {
   const togglePin = useProjectsStore((s) => s.togglePin);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const expandedProjects = useProjectsStore((s) => s.expandedProjects);
@@ -32,35 +37,48 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
   const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
   const refreshPrInfo = useProjectsStore((s) => s.refreshPrInfo);
 
-  const tabs = useWorkspaceStore((s) => s.tabs);
+  const windows = useWorkspaceStore((s) => s.windows);
+  const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const addTab = useWorkspaceStore((s) => s.addTab);
-  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
-  const addPane = useWorkspaceStore((s) => s.addPane);
   const panes = useWorkspaceStore((s) => s.panes);
+  const killTmuxSession = useProjectsStore((s) => s.killTmuxSession);
 
+  const hasWindow = windows.has(project.path);
+
+  const attachableSessions = useMemo(() => {
+    if (!tmuxSessions || tmuxSessions.length === 0) return [];
+    const openSessionNames = new Set<string>();
+    for (const pane of panes.values()) {
+      if (pane.tmuxSession) openSessionNames.add(pane.tmuxSession);
+    }
+    return tmuxSessions.filter((s) => !openSessionNames.has(s.name));
+  }, [tmuxSessions, panes]);
+
+  const home = useHomeDir();
   const isExpanded = expandedProjects.has(project.path);
   const git = gitInfo.get(project.path);
   const pr = prInfo.get(project.path);
+  const parentDirDisplay = useMemo(() => {
+    const idx = project.path.lastIndexOf('/');
+    if (idx <= 0) return project.path;
+    return displayDir(project.path.slice(0, idx), home);
+  }, [project.path, home]);
 
-  // Count running panes for this project
-  const runningPanes = useMemo(() => {
-    const counts: Partial<Record<PaneKind, number>> = {};
+  // Counts for the collapsed header indicators.
+  const { agentPanes, terminalPanes } = useMemo(() => {
+    const agentList: PaneInfo[] = [];
+    const terminalList: PaneInfo[] = [];
     for (const pane of panes.values()) {
-      if (pane.cwd === project.path || pane.cwd.startsWith(project.path + '/')) {
-        counts[pane.kind] = (counts[pane.kind] ?? 0) + 1;
-      }
+      const inProject = pane.cwd === project.path || pane.cwd.startsWith(project.path + '/');
+      if (!inProject) continue;
+      if (pane.kind === 'Agent') agentList.push(pane);
+      else if (pane.kind === 'Shell' || pane.kind === 'Lazygit') terminalList.push(pane);
     }
-    return counts;
+    return { agentPanes: agentList, terminalPanes: terminalList };
   }, [panes, project.path]);
 
-  // Aggregate agent status: show worst status across all agents for this project
   const { agentAggregateStatus, agentAccentColor } = useMemo(() => {
-    const agentPanes = Array.from(panes.values()).filter(
-      (p) => p.kind === 'Agent' && (p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
-    );
     if (agentPanes.length === 0) return { agentAggregateStatus: null, agentAccentColor: null };
-
-    // Priority: waiting > working > idle
     let hasWaiting = false;
     let hasWorking = false;
     let accentColor: string | null = null;
@@ -69,13 +87,9 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
       if (p.agentStatus === 'working') hasWorking = true;
       if (p.accentColor && !accentColor) accentColor = p.accentColor;
     }
-
-    let status: AgentStatus;
-    if (hasWaiting) status = 'waiting';
-    else if (hasWorking) status = 'working';
-    else status = 'idle';
+    const status: AgentStatus = hasWaiting ? 'waiting' : hasWorking ? 'working' : 'idle';
     return { agentAggregateStatus: status, agentAccentColor: accentColor };
-  }, [panes, project.path]);
+  }, [agentPanes]);
 
   useEffect(() => {
     if (isExpanded && project.is_git) {
@@ -84,152 +98,133 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
     }
   }, [isExpanded, project.path, project.is_git, refreshGitInfo, refreshPrInfo]);
 
-  const handleSpawn = (kind: PaneKind) => {
-    // Find existing tab for this project or create one
-    let tab = tabs.find((t) => t.projectPath === project.path);
-    if (!tab) {
-      const tabId = addTab(project.path, project.name, kind);
-      setActiveTab(tabId);
-    } else {
-      setActiveTab(tab.id);
-      addPane(tab.id, kind, project.path);
+  const handleAttachSession = (session: TmuxSessionInfo) => {
+    addTab(project.path, project.name, {
+      kind: 'Shell',
+      tmuxSession: session.name,
+      cwd: session.path || project.path,
+    });
+  };
+
+  const handleHeaderClick = () => {
+    toggleExpanded(project.path);
+    if (hasWindow) switchWindow(project.path);
+  };
+
+  const handleOpenPr = () => {
+    if (pr?.url) {
+      import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(pr.url));
     }
   };
 
   return (
     <div className="project-item" data-project-path={project.path}>
       <div
-        className={`project-item-header ${isSelected ? 'project-item-header--selected' : ''}`}
-        onClick={() => toggleExpanded(project.path)}
+        className={`project-item-header ${isSelected ? 'project-item-header--selected' : ''} ${hasWindow ? 'project-item-header--live' : ''}`}
+        onClick={handleHeaderClick}
+        title={project.path}
       >
-        <span className="project-expand-icon">
-          {isExpanded ? '▾' : '▸'}
+        <span
+          className={`project-window-indicator ${hasWindow ? 'project-window-indicator--live' : ''}`}
+          aria-label={hasWindow ? 'Window open' : 'No window'}
+        />
+        {isPinned && <span className="project-pin-icon" aria-label="pinned" />}
+        <span className="project-item-body">
+          <span className="project-item-main">
+            <span className="project-name">{project.name}</span>
+          </span>
+          {!isExpanded && (
+            <span className="project-item-meta">
+              <span className="project-dir">{parentDirDisplay}</span>
+              {project.is_git && git?.branch && (
+                <span className="project-branch">{git.branch}</span>
+              )}
+            </span>
+          )}
         </span>
-        {isPinned && <span className="project-pin-icon">📌</span>}
-        <span className="project-name">{project.name}</span>
-        {project.is_git && git?.branch && (
-          <span className="project-branch">{git.branch}</span>
-        )}
-        {Object.keys(runningPanes).length > 0 && (
+        {!isExpanded && (agentPanes.length > 0 || terminalPanes.length > 0) && (
           <span className="project-running-indicators">
-            {runningPanes.Agent && (
+            {agentPanes.length > 0 && (
               <span
                 className={`running-indicator running-indicator--agent ${agentAggregateStatus ? `agent-status--${agentAggregateStatus}` : ''}`}
-                title={`${runningPanes.Agent} agent${runningPanes.Agent > 1 ? 's' : ''}${agentAggregateStatus ? ` (${AGENT_STATUS_LABELS[agentAggregateStatus]})` : ''}`}
+                title={`${agentPanes.length} agent${agentPanes.length > 1 ? 's' : ''}${agentAggregateStatus ? ` (${AGENT_STATUS_LABELS[agentAggregateStatus]})` : ''}`}
                 style={agentAccentColor ? { color: agentAccentColor } : undefined}
               >
-                {agentAggregateStatus ? AGENT_STATUS_ICONS[agentAggregateStatus] : '●'} {runningPanes.Agent}
+                {agentAggregateStatus ? AGENT_STATUS_ICONS[agentAggregateStatus] : '●'} {agentPanes.length}
               </span>
             )}
-            {runningPanes.Shell && (
-              <span className="running-indicator running-indicator--shell" title={`${runningPanes.Shell} terminal${runningPanes.Shell > 1 ? 's' : ''}`}>
-                $ {runningPanes.Shell}
-              </span>
-            )}
-            {runningPanes.Lazygit && (
-              <span className="running-indicator running-indicator--lazygit" title={`${runningPanes.Lazygit} lazygit`}>
-                G {runningPanes.Lazygit}
-              </span>
-            )}
-            {runningPanes.Custom && (
-              <span className="running-indicator running-indicator--custom" title={`${runningPanes.Custom} custom`}>
-                ⚡ {runningPanes.Custom}
+            {terminalPanes.length > 0 && (
+              <span className="running-indicator running-indicator--shell" title={`${terminalPanes.length} terminal${terminalPanes.length > 1 ? 's' : ''}`}>
+                $ {terminalPanes.length}
               </span>
             )}
           </span>
         )}
+        {!isExpanded && attachableSessions.length > 0 && (
+          <span
+            className="running-indicator running-indicator--tmux"
+            title={`${attachableSessions.length} detached tmux session${attachableSessions.length > 1 ? 's' : ''}`}
+          >
+            ⌗ {attachableSessions.length}
+          </span>
+        )}
+        <span className="project-expand-icon project-expand-icon--right">
+          {isExpanded ? '▾' : '▸'}
+        </span>
       </div>
 
       {isExpanded && (
         <div className="project-item-details">
-          {Object.keys(runningPanes).length > 0 && (
-            <div className="project-running-list">
-              {Array.from(panes.values())
-                .filter((p) => p.cwd === project.path || p.cwd.startsWith(project.path + '/'))
-                .map((p) => (
-                  <div key={p.id} className={`running-pane-row ${p.kind === 'Agent' && p.agentStatus ? `agent-status--${p.agentStatus}` : ''}`}>
-                    <span
-                      className={`running-pane-icon running-indicator--${p.kind.toLowerCase()}`}
-                      style={p.kind === 'Agent' && p.accentColor ? { color: p.accentColor } : undefined}
-                    >
-                      {p.kind === 'Agent'
-                        ? (p.agentStatus ? AGENT_STATUS_ICONS[p.agentStatus] : '●')
-                        : p.kind === 'Shell' ? '$' : p.kind === 'Lazygit' ? 'G' : '⚡'}
-                    </span>
-                    <span className="running-pane-label">
-                      {p.title ?? p.kind}
-                      {p.kind === 'Agent' && p.agentStatus && (
-                        <span className="agent-status-label"> ({AGENT_STATUS_LABELS[p.agentStatus]})</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          )}
-
-          {pr && (
-            <div
-              className="project-pr-row"
-              onClick={() => {
-                if (pr.url) {
-                  // Use Tauri opener
-                  import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
-                    openUrl(pr.url);
-                  });
-                }
-              }}
-            >
-              <span className={`pr-state pr-state--${pr.state.toLowerCase()}`}>
-                #{pr.number}
-              </span>
-              <span className="pr-status">{pr.state}</span>
-              {pr.ci_status && (
-                <span className={`ci-status ci-status--${pr.ci_status}`}>
-                  {pr.ci_status === 'passing' ? '✓' : pr.ci_status === 'failing' ? '✗' : '◌'}
+          {(git?.branch || pr) && (
+            <div className="project-git-info">
+              {git?.branch && (
+                <span className="project-git-branch" title="Current branch">
+                  ⎇ {git.branch}
                 </span>
+              )}
+              {pr && (
+                <button className={`project-pr-badge pr-state--${pr.state.toLowerCase()}`} onClick={handleOpenPr} title={pr.url}>
+                  <span className="pr-number">#{pr.number}</span>
+                  <span className="pr-state-text">{pr.state}</span>
+                  {pr.ci_status && (
+                    <span className={`ci-dot ci-status--${pr.ci_status}`}>
+                      {pr.ci_status === 'passing' ? '✓' : pr.ci_status === 'failing' ? '✗' : '◌'}
+                    </span>
+                  )}
+                </button>
               )}
             </div>
           )}
 
-          {worktreeChildren && worktreeChildren.length > 0 && (
-            <div className="project-worktrees">
-              <div className="worktrees-label">Worktrees</div>
-              {worktreeChildren.map((wt) => (
-                <WorktreeChildItem key={wt.path} project={wt} />
-              ))}
-            </div>
-          )}
+          <ProjectSections projectPath={project.path} projectName={project.name} />
 
-          {(!worktreeChildren || worktreeChildren.length === 0) && git && git.worktrees.length > 1 && (
-            <div className="project-worktrees">
-              {git.worktrees.filter((w) => !w.is_main).map((wt) => (
-                <div key={wt.path} className="worktree-row">
-                  <span className="worktree-branch">{wt.branch ?? '(detached)'}</span>
+          {project.is_git && <Worktrees projectPath={project.path} />}
+
+          {attachableSessions.length > 0 && (
+            <div className="project-tmux-sessions">
+              <div className="tmux-sessions-label">Existing sessions</div>
+              {attachableSessions.map((session) => (
+                <div key={session.name} className="tmux-session-row">
+                  <button
+                    className="tmux-session-attach"
+                    onClick={(e) => { e.stopPropagation(); handleAttachSession(session); }}
+                    title={`Attach to ${session.name}\n${session.path}`}
+                  >
+                    <span className="tmux-session-icon">⌗</span>
+                    <span className="tmux-session-name">{session.name.replace(/^wip-/, '')}</span>
+                    {session.attached && <span className="tmux-session-badge">attached</span>}
+                  </button>
+                  <button
+                    className="tmux-session-kill"
+                    onClick={(e) => { e.stopPropagation(); killTmuxSession(session.name); }}
+                    title={`Kill ${session.name}`}
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>
           )}
-
-          <div className="project-actions">
-            <button
-              className="project-action-btn"
-              onClick={(e) => { e.stopPropagation(); handleSpawn('Agent'); }}
-            >
-              + agent
-            </button>
-            <button
-              className="project-action-btn"
-              onClick={(e) => { e.stopPropagation(); handleSpawn('Shell'); }}
-            >
-              + terminal
-            </button>
-            <button
-              className="project-action-btn"
-              onClick={(e) => { e.stopPropagation(); handleSpawn('Lazygit'); }}
-            >
-              + lazygit
-            </button>
-          </div>
 
           <button
             className="project-pin-btn"
@@ -242,60 +237,6 @@ export function ProjectItem({ project, isPinned, isSelected, worktreeChildren }:
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function WorktreeChildItem({ project }: { project: ProjectInfo }) {
-  const gitInfo = useProjectsStore((s) => s.gitInfo);
-  const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
-  const tabs = useWorkspaceStore((s) => s.tabs);
-  const addTab = useWorkspaceStore((s) => s.addTab);
-  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
-  const addPane = useWorkspaceStore((s) => s.addPane);
-
-  const git = gitInfo.get(project.path);
-
-  useEffect(() => {
-    if (project.is_git) {
-      refreshGitInfo(project.path);
-    }
-  }, [project.path, project.is_git, refreshGitInfo]);
-
-  const handleSpawn = (kind: PaneKind) => {
-    let tab = tabs.find((t) => t.projectPath === project.path);
-    if (!tab) {
-      const tabId = addTab(project.path, project.name, kind);
-      setActiveTab(tabId);
-    } else {
-      setActiveTab(tab.id);
-      addPane(tab.id, kind, project.path);
-    }
-  };
-
-  return (
-    <div className="worktree-child">
-      <div className="worktree-child-header">
-        <span className="worktree-child-icon">↳</span>
-        <span className="worktree-child-name">{project.name}</span>
-        {git?.branch && (
-          <span className="worktree-child-branch">{git.branch}</span>
-        )}
-      </div>
-      <div className="worktree-child-actions">
-        <button
-          className="project-action-btn"
-          onClick={(e) => { e.stopPropagation(); handleSpawn('Agent'); }}
-        >
-          + agent
-        </button>
-        <button
-          className="project-action-btn"
-          onClick={(e) => { e.stopPropagation(); handleSpawn('Shell'); }}
-        >
-          + terminal
-        </button>
-      </div>
     </div>
   );
 }

@@ -72,6 +72,8 @@
 - [x] Save workspace layout and pane state on quit
 - [x] Restore layout and re-spawn panes on next launch
 - [x] Skip save if all panes are closed
+- [x] List existing tmux sessions in sidebar, grouped by project; orphans shown separately
+- [x] Click attaches to existing session; kill button removes it
 
 ## User-defined commands
 
@@ -92,3 +94,10 @@
 - [x] Tree: `j`/`k`/arrows navigate, `Enter`/`Space` toggle, `p` pin, `d` remove worktree
 - [x] Tree: `/` filter, `?` help, `q`/`Esc` quit/clear
 - [x] Pane: `Ctrl+N`/`Ctrl+P` cycle, `Ctrl+X` close
+
+## End-to-end tests
+
+- [ ] Choose e2e framework (Playwright, WebdriverIO w/ Tauri driver, etc.)
+- [ ] Configure test runner and npm scripts
+- [ ] Add basic smoke test (app launches, renders main view)
+- [ ] Add CI integration for e2e tests

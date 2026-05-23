@@ -4,7 +4,8 @@
       "WebFetch(domain:v2.tauri.app)",
       "WebSearch",
       "WebFetch(domain:soloterm.com)",
-      "WebFetch(domain:docs.conductor.build)"
+      "WebFetch(domain:docs.conductor.build)",
+      "Bash(grep:*)"
     ]
   }
 }

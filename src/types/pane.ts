@@ -24,11 +24,22 @@ export interface PaneInfo {
   command?: string;
   agentStatus?: AgentStatus;
   accentColor?: string;
+  /** Existing tmux session name to attach to (e.g. "wip-<uuid>"). When set, pane attaches instead of creating a new session. */
+  tmuxSession?: string;
 }
 
 export interface Tab {
   id: string;
   label: string;
-  projectPath: string;
   paneTree: PaneTree;
+}
+
+export interface Window {
+  /** Project working-directory path. Also the stable window id. */
+  projectPath: string;
+  tabs: Tab[];
+  activeTabId: string | null;
+  activePaneId: string | null;
+  /** Unix ms when this window was last focused; drives recency ordering for switchers. */
+  lastActiveAt: number;
 }

@@ -14,6 +14,7 @@ export interface WorktreeInfo {
   path: string;
   branch: string | null;
   is_main: boolean;
+  last_commit_unix: number | null;
 }
 
 export interface PrInfo {

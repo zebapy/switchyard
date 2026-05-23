@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PaneKind } from '../../types/pane';
@@ -30,6 +29,8 @@ interface UseTerminalOptions {
   kind: PaneKind;
   cwd: string;
   command?: string;
+  tmuxSession?: string;
+  isActive: boolean;
   onTitleChange?: (title: string) => void;
 }
 
@@ -43,6 +44,8 @@ export function useTerminal({
   kind,
   cwd,
   command,
+  tmuxSession,
+  isActive,
   onTitleChange,
 }: UseTerminalOptions) {
   const termRef = useRef<HTMLDivElement>(null);
@@ -51,12 +54,22 @@ export function useTerminal({
   const spawnedRef = useRef(false);
 
   const fit = useCallback(() => {
+    const container = termRef.current;
+    if (!container || container.clientWidth === 0 || container.clientHeight === 0) {
+      return;
+    }
     fitAddonRef.current?.fit();
   }, []);
+
+  const focus = useCallback(() => {
+    fit();
+    terminalRef.current?.focus();
+  }, [fit]);
 
   useEffect(() => {
     if (!termRef.current || spawnedRef.current) return;
     spawnedRef.current = true;
+    let disposed = false;
 
     const terminal = new Terminal({
       fontSize: 14,
@@ -92,17 +105,22 @@ export function useTerminal({
 
     terminal.open(termRef.current);
 
-    // Try WebGL renderer
-    try {
-      terminal.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL not available, fall back to canvas
-    }
-
-    fitAddon.fit();
-
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    const initialFitFrame = requestAnimationFrame(() => {
+      fit();
+      if (isActive) {
+        terminal.focus();
+      }
+    });
+
+    const initialFitTimer = window.setTimeout(() => {
+      fit();
+      if (isActive) {
+        terminal.focus();
+      }
+    }, 50);
 
     // Capture title changes
     if (onTitleChange) {
@@ -178,20 +196,6 @@ export function useTerminal({
       }, IDLE_TIMEOUT_MS);
     }
 
-    // Listen for PTY output
-    let unlisten: (() => void) | undefined;
-    listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
-      const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
-      terminal.write(bytes);
-      // Decode for agent status detection
-      if (kind === 'Agent') {
-        const decoder = new TextDecoder('utf-8', { fatal: false });
-        detectAgentStatus(decoder.decode(bytes));
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
-
     // Copy to clipboard on text selection (like most terminal emulators)
     const selectionDisposable = terminal.onSelectionChange(() => {
       const selection = terminal.getSelection();
@@ -243,19 +247,43 @@ export function useTerminal({
       invoke('pty_write', { id: paneId, data: bytes }).catch(console.error);
     });
 
-    // Spawn PTY
-    const rows = terminal.rows;
-    const cols = terminal.cols;
-    invoke('pty_spawn', {
-      id: paneId,
-      kind,
-      cwd,
-      command: command ?? null,
-    }).then(() => {
-      // Resize to actual terminal size
-      invoke('pty_resize', { id: paneId, rows, cols }).catch(console.error);
+    // Listen for PTY output BEFORE spawning to avoid losing early output
+    let unlisten: (() => void) | undefined;
+    console.log(`[terminal] setting up listener for pty-output-${paneId}`);
+    listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
+      console.log(`[terminal] got output for ${paneId}: ${event.payload.data.length} bytes`);
+      const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
+      terminal.write(bytes);
+      // Decode for agent status detection
+      if (kind === 'Agent') {
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        detectAgentStatus(decoder.decode(bytes));
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+        return;
+      }
+
+      unlisten = fn;
+      console.log(`[terminal] listener registered for ${paneId}, spawning PTY`);
+
+      // Spawn PTY only after listener is registered
+      const rows = terminal.rows;
+      const cols = terminal.cols;
+      invoke('pty_spawn', {
+        id: paneId,
+        kind,
+        cwd,
+        command: command ?? null,
+        tmuxSession: tmuxSession ?? null,
+      }).then(() => {
+        invoke('pty_resize', { id: paneId, rows, cols }).catch(console.error);
+      }).catch((err) => {
+        terminal.writeln(`\r\nFailed to spawn: ${err}`);
+      });
     }).catch((err) => {
-      terminal.writeln(`\r\nFailed to spawn: ${err}`);
+      terminal.writeln(`\r\nFailed to register output listener: ${err}`);
     });
 
     // Handle resize
@@ -265,11 +293,15 @@ export function useTerminal({
 
     // ResizeObserver for container
     const observer = new ResizeObserver(() => {
-      fitAddon.fit();
+      fit();
     });
     observer.observe(termRef.current);
 
     return () => {
+      disposed = true;
+      spawnedRef.current = false;
+      cancelAnimationFrame(initialFitFrame);
+      window.clearTimeout(initialFitTimer);
       clearTimeout(idleTimer);
       observer.disconnect();
       resizeDisposable.dispose();
@@ -280,7 +312,19 @@ export function useTerminal({
       terminal.dispose();
       invoke('pty_kill', { id: paneId }).catch(console.error);
     };
-  }, [paneId, kind, cwd, command, onTitleChange]);
+  }, [paneId, kind, cwd, command, tmuxSession, onTitleChange, fit]);
 
-  return { termRef, fit };
+  useEffect(() => {
+    if (!isActive || !terminalRef.current) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      focus();
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [isActive, focus]);
+
+  return { termRef, fit, focus };
 }

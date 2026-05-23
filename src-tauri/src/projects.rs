@@ -1,13 +1,57 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_schema_version() -> u32 {
+    SETTINGS_SCHEMA_VERSION
+}
+
+fn default_schema_ref() -> String {
+    "./settings.schema.json".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[schemars(title = "AppSettings", description = "User settings for the cc-tui app.")]
 pub struct AppSettings {
+    /// Path to the JSON Schema describing this file. Lets editors validate it.
+    #[serde(rename = "$schema", default = "default_schema_ref")]
+    pub schema_ref: String,
+    /// Schema version. Bumped when fields change in a backwards-incompatible way.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    /// Default parent folder shown when creating a new project.
     #[serde(default)]
     pub scan_root: String,
+    /// Absolute paths of folders pinned in the project tree.
     #[serde(default)]
     pub added_projects: Vec<String>,
+    /// Whether to wrap PTY sessions in tmux for persistence across restarts.
+    #[serde(default = "default_true")]
+    pub use_tmux: bool,
+    /// Per-project list of package.json absolute paths to show in the Scripts section.
+    #[serde(default)]
+    pub project_scripts: HashMap<String, Vec<String>>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            schema_ref: default_schema_ref(),
+            schema_version: SETTINGS_SCHEMA_VERSION,
+            scan_root: String::new(),
+            added_projects: Vec::new(),
+            use_tmux: true,
+            project_scripts: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +74,14 @@ pub struct WorktreeInfo {
     pub path: String,
     pub branch: Option<String>,
     pub is_main: bool,
+    /// Unix timestamp (seconds) of the HEAD commit, or None if unavailable.
+    pub last_commit_unix: Option<i64>,
+}
+
+fn head_commit_time(repo: &git2::Repository) -> Option<i64> {
+    let head = repo.head().ok()?;
+    let commit = head.peel_to_commit().ok()?;
+    Some(commit.time().seconds())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,10 +188,12 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         .workdir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
+    let main_last_commit = head_commit_time(&repo);
     worktrees.push(WorktreeInfo {
         path: main_path,
         branch: branch.clone(),
         is_main: true,
+        last_commit_unix: main_last_commit,
     });
 
     // Additional worktrees
@@ -147,17 +201,22 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         for name in wt_names.iter().flatten() {
             if let Ok(wt) = repo.find_worktree(name) {
                 let wt_path = wt.path().to_string_lossy().to_string();
-                // Try to get the branch for this worktree
-                let wt_branch = git2::Repository::open(wt.path())
+                let (wt_branch, wt_last_commit) = git2::Repository::open(wt.path())
                     .ok()
-                    .and_then(|r| {
-                        let head = r.head().ok()?;
-                        head.shorthand().map(|s| s.to_string())
-                    });
+                    .map(|r| {
+                        let branch = r
+                            .head()
+                            .ok()
+                            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+                        let last = head_commit_time(&r);
+                        (branch, last)
+                    })
+                    .unwrap_or((None, None));
                 worktrees.push(WorktreeInfo {
                     path: wt_path,
                     branch: wt_branch,
                     is_main: false,
+                    last_commit_unix: wt_last_commit,
                 });
             }
         }
@@ -245,17 +304,12 @@ pub fn toggle_pin(project_path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String, String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let worktree_path = Path::new(&repo_path)
-        .parent()
-        .unwrap_or(Path::new(&repo_path))
-        .join(&branch_name);
+    let worktrees_dir = Path::new(&repo_path).join(".claude").join("worktrees");
+    fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
+    let worktree_path = worktrees_dir.join(&branch_name);
 
-    repo.worktree(
-        &branch_name,
-        &worktree_path,
-        None,
-    )
-    .map_err(|e| e.to_string())?;
+    repo.worktree(&branch_name, &worktree_path, None)
+        .map_err(|e| e.to_string())?;
 
     Ok(worktree_path.to_string_lossy().to_string())
 }
@@ -301,15 +355,23 @@ fn settings_path() -> PathBuf {
     config_dir().join("settings.json")
 }
 
-fn load_settings() -> AppSettings {
+fn schema_path() -> PathBuf {
+    config_dir().join("settings.schema.json")
+}
+
+pub fn load_settings() -> AppSettings {
     let path = settings_path();
     if !path.exists() {
         return AppSettings::default();
     }
-    fs::read_to_string(&path)
+    let mut loaded: AppSettings = fs::read_to_string(&path)
         .ok()
         .and_then(|data| serde_json::from_str(&data).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Refresh schema pointer + version in case the file predates them.
+    loaded.schema_ref = default_schema_ref();
+    loaded.schema_version = SETTINGS_SCHEMA_VERSION;
+    loaded
 }
 
 fn save_settings(settings: &AppSettings) -> Result<(), String> {
@@ -318,9 +380,24 @@ fn save_settings(settings: &AppSettings) -> Result<(), String> {
     fs::write(settings_path(), data).map_err(|e| e.to_string())
 }
 
+/// Write the JSON Schema describing AppSettings next to settings.json.
+/// Called at startup so editors can validate the file via the `$schema` ref.
+pub fn write_settings_schema() -> Result<(), String> {
+    ensure_config_dir().map_err(|e| e.to_string())?;
+    let schema = schemars::schema_for!(AppSettings);
+    let data = serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())?;
+    fs::write(schema_path(), data).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_app_settings() -> Result<AppSettings, String> {
     Ok(load_settings())
+}
+
+#[tauri::command]
+pub fn get_settings_schema() -> Result<serde_json::Value, String> {
+    let schema = schemars::schema_for!(AppSettings);
+    serde_json::to_value(&schema).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -349,6 +426,91 @@ pub fn add_project_path(path: String) -> Result<AppSettings, String> {
 pub fn remove_project_path(path: String) -> Result<AppSettings, String> {
     let mut settings = load_settings();
     settings.added_projects.retain(|p| p != &path);
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_use_tmux(value: bool) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.use_tmux = value;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+/// Walk a project directory and return absolute paths to every package.json,
+/// skipping noisy directories (node_modules, build output, hidden dirs).
+#[tauri::command]
+pub fn find_package_jsons(project_path: String) -> Result<Vec<String>, String> {
+    let root = Path::new(&project_path);
+    if !root.is_dir() {
+        return Err(format!("{} is not a directory", project_path));
+    }
+    let mut results = Vec::new();
+    collect_package_jsons(root, &mut results, 0);
+    results.sort();
+    Ok(results)
+}
+
+fn collect_package_jsons(dir: &Path, results: &mut Vec<String>, depth: u32) {
+    if depth > 6 {
+        return;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if name.starts_with('.')
+            || name == "node_modules"
+            || name == "target"
+            || name == "dist"
+            || name == "build"
+            || name == "out"
+        {
+            continue;
+        }
+        if path.is_dir() {
+            collect_package_jsons(&path, results, depth + 1);
+        } else if name == "package.json" {
+            results.push(path.to_string_lossy().to_string());
+        }
+    }
+}
+
+/// Read the `scripts` object from a package.json. Missing scripts yields an empty map.
+#[tauri::command]
+pub fn read_package_json_scripts(path: String) -> Result<HashMap<String, String>, String> {
+    let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    let scripts = json
+        .get("scripts")
+        .and_then(|s| s.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(scripts)
+}
+
+#[tauri::command]
+pub fn set_project_scripts(
+    project_path: String,
+    paths: Vec<String>,
+) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    if paths.is_empty() {
+        settings.project_scripts.remove(&project_path);
+    } else {
+        settings.project_scripts.insert(project_path, paths);
+    }
     save_settings(&settings)?;
     Ok(settings)
 }

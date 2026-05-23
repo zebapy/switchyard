@@ -24,10 +24,16 @@ const KEYBINDINGS = [
     { key: 'r', desc: 'Change Scan Root' },
     { key: 'q / Esc', desc: 'Quit / Clear Filter' },
   ]},
+  { section: 'Tabs', bindings: [
+    { key: 'Ctrl+Tab', desc: 'Next Tab' },
+    { key: 'Ctrl+Shift+Tab', desc: 'Previous Tab' },
+    { key: 'Cmd+1…8', desc: 'Switch to Tab by Number' },
+    { key: 'Cmd+9', desc: 'Switch to Last Tab' },
+  ]},
   { section: 'Pane', bindings: [
     { key: 'Ctrl+N', desc: 'Next Pane' },
     { key: 'Ctrl+P', desc: 'Previous Pane' },
-    { key: 'Ctrl+X', desc: 'Close Pane' },
+    { key: 'Ctrl+X / Cmd+W', desc: 'Close Pane' },
   ]},
 ];
 

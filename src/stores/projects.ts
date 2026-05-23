@@ -1,10 +1,15 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { ProjectInfo, GitInfo, PrInfo } from '../types/project';
+import type { TmuxSessionInfo } from '../types/tmux';
 
 interface AppSettings {
+  $schema: string;
+  schema_version: number;
   scan_root: string;
   added_projects: string[];
+  use_tmux: boolean;
+  project_scripts: Record<string, string[]>;
 }
 
 interface ProjectsState {
@@ -14,12 +19,18 @@ interface ProjectsState {
   prInfo: Map<string, PrInfo | null>;
   scanRoot: string;
   addedProjects: string[];
+  useTmux: boolean;
   filter: string;
   expandedProjects: Set<string>;
+  tmuxSessions: TmuxSessionInfo[];
+  /** Per-project: list of package.json absolute paths pinned for the Scripts section. */
+  projectScripts: Map<string, string[]>;
+  /** Cache: package.json absolute path → { scriptName: command }. */
+  scriptData: Map<string, Record<string, string>>;
 
   // Actions
   loadSettings: () => Promise<void>;
-  loadProjects: (rootDir?: string) => Promise<void>;
+  loadAddedProjects: () => void;
   loadPins: () => Promise<void>;
   togglePin: (projectPath: string) => Promise<void>;
   refreshGitInfo: (projectPath: string) => Promise<void>;
@@ -28,8 +39,19 @@ interface ProjectsState {
   setScanRoot: (root: string) => Promise<void>;
   addProjectPath: (path: string) => Promise<void>;
   removeProjectPath: (path: string) => Promise<void>;
+  setUseTmux: (value: boolean) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
+  loadTmuxSessions: () => Promise<void>;
+  killTmuxSession: (name: string) => Promise<void>;
+  // Scripts
+  addProjectScript: (projectPath: string, packageJsonPath: string) => Promise<void>;
+  removeProjectScript: (projectPath: string, packageJsonPath: string) => Promise<void>;
+  loadScriptData: (packageJsonPath: string) => Promise<void>;
+  findPackageJsons: (projectPath: string) => Promise<string[]>;
+  // Worktrees
+  createWorktree: (repoPath: string, branchName: string) => Promise<string>;
+  deleteWorktree: (repoPath: string, name: string) => Promise<void>;
 }
 
 export const useProjectsStore = create<ProjectsState>((set, get) => ({
@@ -39,15 +61,24 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   prInfo: new Map(),
   scanRoot: '',
   addedProjects: [],
+  useTmux: true,
   filter: '',
   expandedProjects: new Set(),
+  tmuxSessions: [],
+  projectScripts: new Map(),
+  scriptData: new Map(),
 
   loadSettings: async () => {
     try {
       const settings = await invoke<AppSettings>('get_app_settings');
+      const projectScripts = new Map<string, string[]>(
+        Object.entries(settings.project_scripts ?? {}),
+      );
       set({
         scanRoot: settings.scan_root,
         addedProjects: settings.added_projects,
+        useTmux: settings.use_tmux,
+        projectScripts,
       });
       return;
     } catch (e) {
@@ -55,34 +86,15 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
-  loadProjects: async (rootDir) => {
-    const root = rootDir ?? get().scanRoot;
-    if (!root) return;
-
-    try {
-      const scanned = await invoke<ProjectInfo[]>('scan_projects', { rootDir: root });
-
-      // Merge in manually added projects
-      const addedProjects = get().addedProjects;
-      const scannedPaths = new Set(scanned.map((p) => p.path));
-      const addedInfos: ProjectInfo[] = [];
-
-      for (const addedPath of addedProjects) {
-        if (!scannedPaths.has(addedPath)) {
-          const name = addedPath.split('/').pop() || addedPath;
-          addedInfos.push({
-            name,
-            path: addedPath,
-            is_git: true, // assume git for manually added
-            worktree_parent: null,
-          });
-        }
-      }
-
-      set({ projects: [...scanned, ...addedInfos], scanRoot: root });
-    } catch (e) {
-      console.error('Failed to scan projects:', e);
-    }
+  loadAddedProjects: () => {
+    const { addedProjects } = get();
+    const projects: ProjectInfo[] = addedProjects.map((path) => ({
+      name: path.split('/').pop() || path,
+      path,
+      is_git: true,
+      worktree_parent: null,
+    }));
+    set({ projects });
   },
 
   loadPins: async () => {
@@ -131,8 +143,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
 
   createProject: async (parentDir, name) => {
     try {
-      await invoke<ProjectInfo>('create_project', { parentDir, name });
-      await get().loadProjects();
+      const project = await invoke<ProjectInfo>('create_project', { parentDir, name });
+      await get().addProjectPath(project.path);
     } catch (e) {
       console.error('Failed to create project:', e);
       throw e;
@@ -143,7 +155,6 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     try {
       const settings = await invoke<AppSettings>('set_scan_root', { root });
       set({ scanRoot: settings.scan_root });
-      await get().loadProjects(settings.scan_root);
     } catch (e) {
       console.error('Failed to set scan root:', e);
       throw e;
@@ -154,7 +165,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     try {
       const settings = await invoke<AppSettings>('add_project_path', { path });
       set({ addedProjects: settings.added_projects });
-      await get().loadProjects();
+      get().loadAddedProjects();
     } catch (e) {
       console.error('Failed to add project:', e);
       throw e;
@@ -165,9 +176,19 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     try {
       const settings = await invoke<AppSettings>('remove_project_path', { path });
       set({ addedProjects: settings.added_projects });
-      await get().loadProjects();
+      get().loadAddedProjects();
     } catch (e) {
       console.error('Failed to remove project:', e);
+      throw e;
+    }
+  },
+
+  setUseTmux: async (value) => {
+    try {
+      const settings = await invoke<AppSettings>('set_use_tmux', { value });
+      set({ useTmux: settings.use_tmux });
+    } catch (e) {
+      console.error('Failed to set use_tmux:', e);
       throw e;
     }
   },
@@ -184,5 +205,77 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       }
       return { expandedProjects: newSet };
     });
+  },
+
+  loadTmuxSessions: async () => {
+    try {
+      const sessions = await invoke<TmuxSessionInfo[]>('list_tmux_sessions');
+      set({ tmuxSessions: sessions });
+    } catch (e) {
+      console.error('Failed to list tmux sessions:', e);
+    }
+  },
+
+  killTmuxSession: async (name) => {
+    try {
+      await invoke('kill_tmux_session', { name });
+      await get().loadTmuxSessions();
+    } catch (e) {
+      console.error('Failed to kill tmux session:', e);
+    }
+  },
+
+  addProjectScript: async (projectPath, packageJsonPath) => {
+    const current = get().projectScripts.get(projectPath) ?? [];
+    if (current.includes(packageJsonPath)) return;
+    const next = [...current, packageJsonPath];
+    const settings = await invoke<AppSettings>('set_project_scripts', {
+      projectPath,
+      paths: next,
+    });
+    const projectScripts = new Map<string, string[]>(
+      Object.entries(settings.project_scripts ?? {}),
+    );
+    set({ projectScripts });
+    await get().loadScriptData(packageJsonPath);
+  },
+
+  removeProjectScript: async (projectPath, packageJsonPath) => {
+    const current = get().projectScripts.get(projectPath) ?? [];
+    const next = current.filter((p) => p !== packageJsonPath);
+    const settings = await invoke<AppSettings>('set_project_scripts', {
+      projectPath,
+      paths: next,
+    });
+    const projectScripts = new Map<string, string[]>(
+      Object.entries(settings.project_scripts ?? {}),
+    );
+    set({ projectScripts });
+  },
+
+  loadScriptData: async (packageJsonPath) => {
+    const scripts = await invoke<Record<string, string>>('read_package_json_scripts', {
+      path: packageJsonPath,
+    });
+    set((state) => {
+      const newMap = new Map(state.scriptData);
+      newMap.set(packageJsonPath, scripts);
+      return { scriptData: newMap };
+    });
+  },
+
+  findPackageJsons: async (projectPath) => {
+    return await invoke<string[]>('find_package_jsons', { projectPath });
+  },
+
+  createWorktree: async (repoPath, branchName) => {
+    const path = await invoke<string>('create_worktree', { repoPath, branchName });
+    await get().refreshGitInfo(repoPath);
+    return path;
+  },
+
+  deleteWorktree: async (repoPath, name) => {
+    await invoke('delete_worktree', { repoPath, name });
+    await get().refreshGitInfo(repoPath);
   },
 }));

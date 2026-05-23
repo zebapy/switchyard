@@ -5425,6 +5425,7 @@ dependencies = [
  "dirs",
  "git2",
  "portable-pty",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "tauri",

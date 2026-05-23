@@ -11,7 +11,9 @@ interface SplitPaneProps {
 
 export function SplitPane({ tree, tabId, path }: SplitPaneProps) {
   const panes = useWorkspaceStore((s) => s.panes);
-  const activePaneId = useWorkspaceStore((s) => s.activePaneId);
+  const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
+  const windows = useWorkspaceStore((s) => s.windows);
+  const activePaneId = activeWindowId ? windows.get(activeWindowId)?.activePaneId ?? null : null;
   const setRatio = useWorkspaceStore((s) => s.setRatio);
   const dividerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
