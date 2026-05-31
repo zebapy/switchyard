@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
@@ -38,12 +38,23 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const mainView = useUiStore((s) => s.mainView);
   const showPane = useUiStore((s) => s.showPane);
   const deleteWorktree = useProjectsStore((s) => s.deleteWorktree);
+  const expandProject = useProjectsStore((s) => s.expandProject);
   const defaultAgent = useProjectsStore((s) => s.agents[0]?.command);
 
   const tabs = win?.tabs ?? [];
   const [open, setOpen] = useState(isMain || tabs.length > 0);
 
   const isWindowActive = activeWindowId === path && mainView === 'pane';
+
+  // When this branch's window becomes the active workspace (Cmd+1-9, window
+  // cycling, focusing a pane, session restore), reveal it in the sidebar: open
+  // the session list and expand the parent project. Deps only on the active
+  // window, so a manual collapse sticks until the next activation.
+  useEffect(() => {
+    if (activeWindowId !== path) return;
+    setOpen(true);
+    expandProject(projectPath);
+  }, [activeWindowId, path, projectPath, expandProject]);
   const branchName = worktree.branch ?? basename(path);
   const hasDiff = worktree.added > 0 || worktree.deleted > 0;
 
