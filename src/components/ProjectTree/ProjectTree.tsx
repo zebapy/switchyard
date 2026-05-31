@@ -4,27 +4,27 @@ import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
 import { ProjectItem } from './ProjectItem';
 import { Footer } from '../Sidebar/Footer';
-import { SearchIcon, PlusIcon } from '../icons';
+import { DashboardIcon, PlusIcon } from '../icons';
 
 export function ProjectTree() {
   const projects = useProjectsStore((s) => s.projects);
-  const filter = useProjectsStore((s) => s.filter);
-  const setFilter = useProjectsStore((s) => s.setFilter);
   const loadAddedProjects = useProjectsStore((s) => s.loadAddedProjects);
   const loadSettings = useProjectsStore((s) => s.loadSettings);
   const loadTmuxSessions = useProjectsStore((s) => s.loadTmuxSessions);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const addProjectPath = useProjectsStore((s) => s.addProjectPath);
 
+  const mainView = useUiStore((s) => s.mainView);
+  const showDashboard = useUiStore((s) => s.showDashboard);
   const treeFocused = useUiStore((s) => s.treeFocused);
   const setTreeFocused = useUiStore((s) => s.setTreeFocused);
   const toggleHelp = useUiStore((s) => s.toggleHelp);
 
-  const filterRef = useRef<HTMLInputElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [filterFocused, setFilterFocused] = useState(false);
+
+  const isDashboard = mainView === 'dashboard';
 
   useEffect(() => {
     const init = async () => {
@@ -57,20 +57,15 @@ export function ProjectTree() {
     if (typeof dir === 'string') await addProjectPath(dir);
   }, [addProjectPath]);
 
-  const navList = useMemo(() => {
-    const top = projects.filter((p) => !p.worktree_parent);
-    if (!filter) return top;
-    const q = filter.toLowerCase();
-    return top.filter((p) => p.name.toLowerCase().includes(q));
-  }, [projects, filter]);
+  const navList = useMemo(() => projects.filter((p) => !p.worktree_parent), [projects]);
 
   useEffect(() => {
     setSelectedIndex((prev) => (navList.length === 0 ? 0 : Math.min(prev, navList.length - 1)));
   }, [navList.length]);
 
   useEffect(() => {
-    if (treeFocused && !filterFocused) treeRef.current?.focus();
-  }, [treeFocused, filterFocused]);
+    if (treeFocused) treeRef.current?.focus();
+  }, [treeFocused]);
 
   useEffect(() => {
     if (!treeFocused || navList.length === 0) return;
@@ -80,14 +75,6 @@ export function ProjectTree() {
   }, [selectedIndex, treeFocused, navList]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (filterFocused) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (filter) setFilter('');
-        else { setFilterFocused(false); treeRef.current?.focus(); }
-      }
-      return;
-    }
     const len = navList.length;
     switch (e.key) {
       case 'j':
@@ -107,11 +94,6 @@ export function ProjectTree() {
         if (project) toggleExpanded(project.path);
         break;
       }
-      case '/':
-        e.preventDefault();
-        setFilterFocused(true);
-        filterRef.current?.focus();
-        break;
       case '?':
         e.preventDefault();
         toggleHelp();
@@ -119,11 +101,10 @@ export function ProjectTree() {
       case 'q':
       case 'Escape':
         e.preventDefault();
-        if (filter) setFilter('');
-        else setTreeFocused(false);
+        setTreeFocused(false);
         break;
     }
-  }, [filterFocused, filter, navList, selectedIndex, setFilter, toggleExpanded, toggleHelp, setTreeFocused]);
+  }, [navList, selectedIndex, toggleExpanded, toggleHelp, setTreeFocused]);
 
   return (
     <div
@@ -133,20 +114,19 @@ export function ProjectTree() {
       className="flex h-full flex-col overflow-hidden outline-none"
     >
       <div className="border-b border-line-soft px-3 pb-3 pt-3">
-        <label className="flex items-center gap-2 rounded-lg border border-line bg-app px-2.5 py-[7px] transition focus-within:border-ember-edge focus-within:shadow-[0_0_0_3px_var(--color-ember-tint)]">
-          <SearchIcon size={14} className="shrink-0 text-ink-faint" />
-          <input
-            ref={filterRef}
-            type="text"
-            value={filter}
-            placeholder="Filter projects…"
-            onChange={(e) => setFilter(e.target.value)}
-            onFocus={() => setFilterFocused(true)}
-            onBlur={() => setFilterFocused(false)}
-            className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-ghost"
-          />
-          <kbd className="rounded border border-line bg-side px-1.5 font-mono text-xs text-ink-faint">⌘K</kbd>
-        </label>
+        <button
+          type="button"
+          onClick={showDashboard}
+          className={
+            'flex w-full items-center gap-2 rounded-lg px-3 py-[7px] text-[13px] font-semibold transition-colors ' +
+            (isDashboard ? 'bg-ember-tint text-ink' : 'text-ink-dim hover:bg-hover hover:text-ink')
+          }
+        >
+          <span className={`grid place-items-center ${isDashboard ? 'text-ember' : 'text-ink-faint'}`}>
+            <DashboardIcon size={15} />
+          </span>
+          Dashboard
+        </button>
       </div>
 
       <div ref={scrollRef} className="scroll-thin flex-1 overflow-y-auto px-2 pb-3 pt-2">
