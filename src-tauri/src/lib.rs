@@ -1,3 +1,4 @@
+mod github;
 mod linear;
 mod projects;
 mod pty;
@@ -76,10 +77,6 @@ pub fn run() {
             // Project commands
             projects::scan_projects,
             projects::get_git_info,
-            projects::get_pr_info,
-            projects::gh_list_prs,
-            projects::gh_list_issues,
-            projects::gh_list_branches,
             projects::get_pinned_projects,
             projects::toggle_pin,
             projects::create_project,
@@ -105,6 +102,15 @@ pub fn run() {
             linear::linear_query,
             linear::linear_logout,
             linear::linear_is_connected,
+            // GitHub commands (OAuth device flow + API, replacing the `gh` CLI)
+            github::github_login,
+            github::github_logout,
+            github::github_is_connected,
+            github::github_account,
+            github::get_pr_info,
+            github::gh_list_prs,
+            github::gh_list_issues,
+            github::gh_list_branches,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
