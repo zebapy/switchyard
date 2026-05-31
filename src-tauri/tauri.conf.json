@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "wip",
+  "productName": "Switchyard",
   "version": "0.1.0",
   "identifier": "com.zebpykosz.wip",
   "build": {
@@ -12,7 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "wip",
+        "title": "Switchyard",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "width": 1400,
         "height": 900
       }

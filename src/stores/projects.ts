@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { ProjectInfo, GitInfo, PrInfo } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
+import type { AgentConfig } from '../types/agent';
+import { DEFAULT_AGENT } from '../types/agent';
 
 interface AppSettings {
   $schema: string;
@@ -9,7 +11,9 @@ interface AppSettings {
   scan_root: string;
   added_projects: string[];
   use_tmux: boolean;
+  desktop_notifications: boolean;
   project_scripts: Record<string, string[]>;
+  agents: AgentConfig[];
 }
 
 interface ProjectsState {
@@ -20,6 +24,9 @@ interface ProjectsState {
   scanRoot: string;
   addedProjects: string[];
   useTmux: boolean;
+  desktopNotifications: boolean;
+  /** Configured AI agents, ordered by preference. First entry is the default. */
+  agents: AgentConfig[];
   filter: string;
   expandedProjects: Set<string>;
   tmuxSessions: TmuxSessionInfo[];
@@ -40,6 +47,8 @@ interface ProjectsState {
   addProjectPath: (path: string) => Promise<void>;
   removeProjectPath: (path: string) => Promise<void>;
   setUseTmux: (value: boolean) => Promise<void>;
+  setDesktopNotifications: (value: boolean) => Promise<void>;
+  setAgents: (agents: AgentConfig[]) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
   loadTmuxSessions: () => Promise<void>;
@@ -62,6 +71,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   scanRoot: '',
   addedProjects: [],
   useTmux: true,
+  desktopNotifications: true,
+  agents: [DEFAULT_AGENT],
   filter: '',
   expandedProjects: new Set(),
   tmuxSessions: [],
@@ -74,10 +85,13 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       const projectScripts = new Map<string, string[]>(
         Object.entries(settings.project_scripts ?? {}),
       );
+      const agents = settings.agents?.length ? settings.agents : [DEFAULT_AGENT];
       set({
         scanRoot: settings.scan_root,
         addedProjects: settings.added_projects,
         useTmux: settings.use_tmux,
+        desktopNotifications: settings.desktop_notifications,
+        agents,
         projectScripts,
       });
       return;
@@ -191,6 +205,21 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       console.error('Failed to set use_tmux:', e);
       throw e;
     }
+  },
+
+  setDesktopNotifications: async (value) => {
+    try {
+      const settings = await invoke<AppSettings>('set_desktop_notifications', { value });
+      set({ desktopNotifications: settings.desktop_notifications });
+    } catch (e) {
+      console.error('Failed to set desktop_notifications:', e);
+      throw e;
+    }
+  },
+
+  setAgents: async (agents) => {
+    const settings = await invoke<AppSettings>('set_agents', { agents });
+    set({ agents: settings.agents?.length ? settings.agents : [DEFAULT_AGENT] });
   },
 
   setFilter: (filter) => set({ filter }),

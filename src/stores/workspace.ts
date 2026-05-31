@@ -10,6 +10,7 @@ import type {
   AgentStatus,
   Window,
 } from '../types/pane';
+import { maybeNotifyTransition } from '../notifications';
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -80,6 +81,8 @@ interface AddTabOptions {
   command?: string;
   cwd?: string;
   label?: string;
+  /** For Agent panes: command of the chosen agent (e.g. "claude"). Empty = default. */
+  agent?: string;
 }
 
 interface WorkspaceState {
@@ -89,6 +92,7 @@ interface WorkspaceState {
   /** Global pane lookup. Each pane belongs to exactly one Window's tab tree. */
   panes: Map<string, PaneInfo>;
   sidebarWidth: number;
+  sidebarCollapsed: boolean;
 
   // Window actions
   openWindow: (projectPath: string) => void;
@@ -111,6 +115,7 @@ interface WorkspaceState {
     cwd: string,
     command?: string,
     tmuxSession?: string,
+    agent?: string,
   ) => string;
   splitPane: (
     paneId: string,
@@ -119,10 +124,13 @@ interface WorkspaceState {
     cwd: string,
     command?: string,
     tmuxSession?: string,
+    agent?: string,
   ) => string;
   closePane: (paneId: string) => Promise<void>;
   detachPane: (paneId: string) => Promise<void>;
   setActivePane: (paneId: string) => void;
+  /** Like setActivePane but also activates the pane's window and tab, so the pane becomes visible. */
+  focusPane: (paneId: string) => void;
   setRatio: (tabId: string, splitPath: number[], ratio: number) => void;
 
   cyclePaneForward: () => void;
@@ -130,11 +138,14 @@ interface WorkspaceState {
 
   // Pane metadata
   setPaneTitle: (paneId: string, title: string) => void;
+  setPaneName: (paneId: string, name: string) => void;
   setAgentStatus: (paneId: string, status: AgentStatus) => void;
   setAgentAccentColor: (paneId: string, color: string) => void;
+  setAgentExited: (paneId: string) => void;
 
   // Layout
   setSidebarWidth: (width: number) => void;
+  toggleSidebar: () => void;
 
   // Session persistence
   saveSession: () => Promise<void>;
@@ -185,6 +196,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeWindowId: null,
   panes: new Map(),
   sidebarWidth: 260,
+  sidebarCollapsed: false,
 
   getActiveWindow: () => {
     const { windows, activeWindowId } = get();
@@ -273,6 +285,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       cwd: opts?.cwd ?? projectPath,
       command: opts?.command,
       tmuxSession: opts?.tmuxSession,
+      agent: opts?.agent,
     };
     const tab: Tab = {
       id: tabId,
@@ -419,11 +432,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  addPane: (tabId, kind, cwd, command, tmuxSession) => {
+  addPane: (tabId, kind, cwd, command, tmuxSession, agent) => {
     const win = findWindowForTabId(get().windows, tabId);
     if (!win) return '';
     const paneId = generateId();
-    const paneInfo: PaneInfo = { id: paneId, kind, cwd, command, tmuxSession };
+    const paneInfo: PaneInfo = { id: paneId, kind, cwd, command, tmuxSession, agent };
 
     set((state) => {
       const tab = win.tabs.find((t) => t.id === tabId);
@@ -455,11 +468,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return paneId;
   },
 
-  splitPane: (paneId, direction, kind, cwd, command, tmuxSession) => {
+  splitPane: (paneId, direction, kind, cwd, command, tmuxSession, agent) => {
     const win = findWindowForPaneId(get().windows, paneId);
     if (!win) return '';
     const newPaneId = generateId();
-    const paneInfo: PaneInfo = { id: newPaneId, kind, cwd, command, tmuxSession };
+    const paneInfo: PaneInfo = { id: newPaneId, kind, cwd, command, tmuxSession, agent };
 
     set((state) => {
       const nextPanes = new Map(state.panes);
@@ -506,6 +519,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const nextWindows = withWindow(state.windows, win.projectPath, (w) => ({
         ...w,
+        activePaneId: paneId,
+        lastActiveAt: Date.now(),
+      }));
+      return { windows: nextWindows, activeWindowId: win.projectPath };
+    });
+  },
+
+  focusPane: (paneId) => {
+    const win = findWindowForPaneId(get().windows, paneId);
+    if (!win) return;
+    const tab = win.tabs.find((t) => findAllLeaves(t.paneTree).includes(paneId));
+    set((state) => {
+      const nextWindows = withWindow(state.windows, win.projectPath, (w) => ({
+        ...w,
+        activeTabId: tab ? tab.id : w.activeTabId,
         activePaneId: paneId,
         lastActiveAt: Date.now(),
       }));
@@ -573,7 +601,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
+  setPaneName: (paneId, name) => {
+    set((state) => {
+      const pane = state.panes.get(paneId);
+      if (!pane) return state;
+      // Empty string clears the custom name, falling back to the terminal title.
+      const customName = name.trim() || undefined;
+      if (pane.customName === customName) return state;
+      const next = new Map(state.panes);
+      next.set(paneId, { ...pane, customName });
+      return { panes: next };
+    });
+  },
+
   setAgentStatus: (paneId, status) => {
+    const prev = get().panes.get(paneId)?.agentStatus;
     set((state) => {
       const pane = state.panes.get(paneId);
       if (!pane || pane.agentStatus === status) return state;
@@ -581,6 +623,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       next.set(paneId, { ...pane, agentStatus: status });
       return { panes: next };
     });
+    // Only notify on a real transition (the reducer above no-ops otherwise).
+    if (prev !== status) maybeNotifyTransition(paneId, prev, status);
   },
 
   setAgentAccentColor: (paneId, color) => {
@@ -593,8 +637,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
+  setAgentExited: (paneId) => {
+    set((state) => {
+      const pane = state.panes.get(paneId);
+      if (!pane || pane.agentExited) return state;
+      const next = new Map(state.panes);
+      // Drop the agent status so it stops counting as a live agent and the
+      // sidebar shows it as a plain terminal.
+      next.set(paneId, { ...pane, agentExited: true, agentStatus: undefined });
+      return { panes: next };
+    });
+  },
+
   setSidebarWidth: (width) => {
     set({ sidebarWidth: Math.max(180, Math.min(600, width)) });
+  },
+
+  toggleSidebar: () => {
+    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }));
   },
 
   saveSession: async () => {
@@ -728,7 +788,9 @@ type SerializedPaneTree =
       kind: PaneKind;
       cwd: string;
       command?: string;
+      custom_name?: string;
       tmux_session?: string;
+      agent?: string;
     }
   | {
       type: 'split';
@@ -746,7 +808,9 @@ function serializePaneTree(tree: PaneTree, panes: Map<string, PaneInfo>): Serial
       kind: pane?.kind ?? 'Shell',
       cwd: pane?.cwd ?? '/home',
       command: pane?.command,
+      custom_name: pane?.customName,
       tmux_session: pane?.tmuxSession,
+      agent: pane?.agent,
     };
   }
   return {
@@ -771,7 +835,9 @@ function deserializePaneTree(
       kind: data.kind,
       cwd: data.cwd,
       command: data.command,
+      customName: data.custom_name,
       tmuxSession: data.tmux_session,
+      agent: data.agent,
     });
     return { type: 'leaf', paneId };
   }

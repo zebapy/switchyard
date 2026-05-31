@@ -1,3 +1,4 @@
+mod linear;
 mod projects;
 mod pty;
 mod session;
@@ -11,6 +12,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(PtyState::new())
         .setup(|app| {
             if let Err(e) = projects::write_settings_schema() {
@@ -26,7 +28,7 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+,"),
             )?;
-            let app_menu = SubmenuBuilder::new(handle, "wip")
+            let app_menu = SubmenuBuilder::new(handle, "Switchyard")
                 .item(&PredefinedMenuItem::about(handle, None, None)?)
                 .separator()
                 .item(&settings_item)
@@ -75,6 +77,9 @@ pub fn run() {
             projects::scan_projects,
             projects::get_git_info,
             projects::get_pr_info,
+            projects::gh_list_prs,
+            projects::gh_list_issues,
+            projects::gh_list_branches,
             projects::get_pinned_projects,
             projects::toggle_pin,
             projects::create_project,
@@ -86,6 +91,8 @@ pub fn run() {
             projects::add_project_path,
             projects::remove_project_path,
             projects::set_use_tmux,
+            projects::set_desktop_notifications,
+            projects::set_agents,
             projects::find_package_jsons,
             projects::read_package_json_scripts,
             projects::set_project_scripts,
@@ -93,6 +100,11 @@ pub fn run() {
             session::save_session,
             session::load_session,
             session::clear_session,
+            // Linear commands
+            linear::linear_login,
+            linear::linear_query,
+            linear::linear_logout,
+            linear::linear_is_connected,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

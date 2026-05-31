@@ -21,9 +21,15 @@ export interface PaneInfo {
   kind: PaneKind;
   cwd: string;
   title?: string;
+  /** User-given pane name. Takes priority over the terminal title in the sidebar. */
+  customName?: string;
   command?: string;
+  /** For Agent panes: the command of the chosen agent (e.g. "claude", "codex"). Empty = default agent. */
+  agent?: string;
   agentStatus?: AgentStatus;
   accentColor?: string;
+  /** True once an Agent pane's command (e.g. claude) has exited and dropped to a plain shell. */
+  agentExited?: boolean;
   /** Existing tmux session name to attach to (e.g. "wip-<uuid>"). When set, pane attaches instead of creating a new session. */
   tmuxSession?: string;
 }

@@ -82,7 +82,11 @@ export function SplitPane({ tree, tabId, path }: SplitPaneProps) {
       </div>
       <div
         ref={dividerRef}
-        className={`split-divider split-divider--${isHorizontal ? 'horizontal' : 'vertical'}`}
+        className={
+          isHorizontal
+            ? 'w-px shrink-0 cursor-col-resize bg-line transition-colors hover:bg-ember-edge'
+            : 'h-px shrink-0 cursor-row-resize bg-line transition-colors hover:bg-ember-edge'
+        }
         onMouseDown={handleDividerMouseDown}
       />
       <div style={{ flexBasis: secondSize, flexShrink: 0, flexGrow: 0, overflow: 'hidden', minWidth: 0, minHeight: 0 }}>

@@ -36,6 +36,7 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   const closeWindow = useWorkspaceStore((s) => s.closeWindow);
   const useTmux = useProjectsStore((s) => s.useTmux);
   const setUseTmux = useProjectsStore((s) => s.setUseTmux);
+  const agents = useProjectsStore((s) => s.agents);
 
   const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
   const activePaneId = activeWindow?.activePaneId ?? null;
@@ -72,14 +73,15 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
           if (activePaneId) splitPane(activePaneId, 'vertical', 'Shell', activeCwd);
         },
       },
-      {
-        id: 'new-agent',
-        label: 'New Agent',
+      ...agents.map((agent) => ({
+        id: `new-agent-${agent.id}`,
+        label: `New ${agent.name}`,
         category: 'Pane',
         action: () => {
-          if (activePaneId) splitPane(activePaneId, 'horizontal', 'Agent', activeCwd);
+          if (activePaneId)
+            splitPane(activePaneId, 'horizontal', 'Agent', activeCwd, undefined, undefined, agent.command);
         },
-      },
+      })),
       {
         id: 'new-terminal',
         label: 'New Terminal',
@@ -173,7 +175,7 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   }, [
     activePaneId, panes, closePane, detachPane, splitPane,
     cyclePaneForward, cyclePaneBackward, nextTab, prevTab, onFocusTree,
-    onOpenSettings, useTmux, setUseTmux, windows, activeWindowId, activeWindow,
+    onOpenSettings, useTmux, setUseTmux, agents, windows, activeWindowId, activeWindow,
     switchWindow, closeWindow,
   ]);
 
@@ -225,34 +227,37 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   };
 
   return (
-    <div className="command-palette-overlay" onClick={onClose}>
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center bg-[rgba(6,7,9,0.6)] pt-[12vh] backdrop-blur-[3px]"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[60vh] w-[540px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           ref={inputRef}
           type="text"
-          className="command-palette-input"
-          placeholder="Type a command..."
+          className="w-full border-b border-line bg-transparent px-[18px] py-3.5 text-[15px] text-ink outline-none placeholder:text-ink-ghost"
+          placeholder="Type a command…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
         />
-        <div className="command-palette-list">
+        <div className="scroll-thin overflow-y-auto p-1.5">
           {filtered.map((cmd, idx) => (
             <div
               key={cmd.id}
-              className={`command-palette-item ${idx === selectedIdx ? 'command-palette-item--selected' : ''}`}
-              onClick={() => {
-                cmd.action();
-                onClose();
-              }}
+              className={`flex cursor-pointer items-center gap-3 rounded-[9px] px-3 py-[9px] ${idx === selectedIdx ? 'bg-ember-tint' : ''}`}
+              onClick={() => { cmd.action(); onClose(); }}
               onMouseEnter={() => setSelectedIdx(idx)}
             >
-              <span className="command-category">{cmd.category}</span>
-              <span className="command-label">{cmd.label}</span>
+              <span className="w-[72px] flex-none text-[11px] uppercase tracking-[0.06em] text-ink-ghost">{cmd.category}</span>
+              <span className="text-[13px] text-ink">{cmd.label}</span>
             </div>
           ))}
           {filtered.length === 0 && (
-            <div className="command-palette-empty">No matching commands</div>
+            <div className="p-[18px] text-center text-[13px] text-ink-ghost">No matching commands</div>
           )}
         </div>
       </div>

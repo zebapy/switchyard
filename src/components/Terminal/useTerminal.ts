@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PaneKind } from '../../types/pane';
@@ -21,8 +22,32 @@ const SPINNER_CHARS = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷';
 
 const IDLE_TIMEOUT_MS = 4000;   // No output for 4s → idle
 
+// Custom OSC code the backend emits when an agent command exits and the pane
+// drops to a plain shell. Must match AGENT_EXIT_OSC in src-tauri/src/pty.rs.
+const AGENT_EXIT_OSC = 8765;
+
 // Regex to match ANSI SGR sequences with RGB foreground color: ESC[38;2;R;G;Bm
 const ANSI_RGB_FG_RE = /\x1b\[(?:[0-9;]*;)?38;2;(\d{1,3});(\d{1,3});(\d{1,3})(?:;[0-9]*)*m/g;
+
+// Decode a base64 string to bytes in a single tight loop. Faster than
+// Uint8Array.from(atob(s), cb) under heavy PTY output (no per-byte callback).
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const length = binary.length;
+  const bytes = new Uint8Array(length);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// WebGL2 is required by the GPU renderer. Probe before loading the addon so we
+// fall back to the (slower) DOM renderer instead of throwing on machines/webviews
+// without it.
+function webgl2Available(): boolean {
+  const canvas = document.createElement('canvas');
+  return !!canvas.getContext('webgl2');
+}
 
 interface UseTerminalOptions {
   paneId: string;
@@ -30,6 +55,7 @@ interface UseTerminalOptions {
   cwd: string;
   command?: string;
   tmuxSession?: string;
+  agent?: string;
   isActive: boolean;
   onTitleChange?: (title: string) => void;
 }
@@ -45,6 +71,7 @@ export function useTerminal({
   cwd,
   command,
   tmuxSession,
+  agent,
   isActive,
   onTitleChange,
 }: UseTerminalOptions) {
@@ -72,29 +99,29 @@ export function useTerminal({
     let disposed = false;
 
     const terminal = new Terminal({
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
+      fontSize: 13,
+      fontFamily: "'IBM Plex Mono', 'JetBrains Mono', Menlo, Monaco, monospace",
       theme: {
-        background: '#1e1e2e',
-        foreground: '#cdd6f4',
-        cursor: '#f5e0dc',
-        selectionBackground: '#45475a',
-        black: '#45475a',
-        red: '#f38ba8',
-        green: '#a6e3a1',
+        background: '#101216',
+        foreground: '#cfd3da',
+        cursor: '#ffae5c',
+        selectionBackground: '#2a2f38',
+        black: '#24272e',
+        red: '#f0758a',
+        green: '#6fd08c',
         yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#f5c2e7',
-        cyan: '#94e2d5',
-        white: '#bac2de',
-        brightBlack: '#585b70',
-        brightRed: '#f38ba8',
-        brightGreen: '#a6e3a1',
+        blue: '#7cc7ff',
+        magenta: '#c79bff',
+        cyan: '#7fd9c7',
+        white: '#c7ccd4',
+        brightBlack: '#646b76',
+        brightRed: '#f0758a',
+        brightGreen: '#6fd08c',
         brightYellow: '#f9e2af',
-        brightBlue: '#89b4fa',
-        brightMagenta: '#f5c2e7',
-        brightCyan: '#94e2d5',
-        brightWhite: '#a6adc8',
+        brightBlue: '#7cc7ff',
+        brightMagenta: '#c79bff',
+        brightCyan: '#7fd9c7',
+        brightWhite: '#e6e8ec',
       },
       cursorBlink: true,
       allowProposedApi: true,
@@ -104,6 +131,19 @@ export function useTerminal({
     terminal.loadAddon(fitAddon);
 
     terminal.open(termRef.current);
+
+    // GPU renderer: offloads high-throughput terminal painting (agent streaming)
+    // off the main thread. Falls back to the DOM renderer when WebGL2 is missing
+    // or its context is lost.
+    let webglAddon: WebglAddon | undefined;
+    if (webgl2Available()) {
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon?.dispose();
+        webglAddon = undefined;
+      });
+      terminal.loadAddon(webglAddon);
+    }
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -132,11 +172,24 @@ export function useTerminal({
     let recentText = '';
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let detectedAccentColor: string | null = null;
+    let agentExited = false;
     const setAgentStatus = useWorkspaceStore.getState().setAgentStatus;
     const setAgentAccentColor = useWorkspaceStore.getState().setAgentAccentColor;
+    const setAgentExited = useWorkspaceStore.getState().setAgentExited;
+
+    // Backend emits this OSC marker once the agent command exits and the pane
+    // drops to a plain shell. Swallow it (return true) and re-label the pane.
+    const oscDisposable = terminal.parser.registerOscHandler(AGENT_EXIT_OSC, () => {
+      if (kind === 'Agent') {
+        agentExited = true;
+        clearTimeout(idleTimer);
+        setAgentExited(paneId);
+      }
+      return true;
+    });
 
     function detectAgentStatus(text: string) {
-      if (kind !== 'Agent') return;
+      if (kind !== 'Agent' || agentExited) return;
 
       lastOutputTime = Date.now();
       // Keep a sliding window of recent text for pattern matching
@@ -249,10 +302,8 @@ export function useTerminal({
 
     // Listen for PTY output BEFORE spawning to avoid losing early output
     let unlisten: (() => void) | undefined;
-    console.log(`[terminal] setting up listener for pty-output-${paneId}`);
     listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
-      console.log(`[terminal] got output for ${paneId}: ${event.payload.data.length} bytes`);
-      const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
+      const bytes = base64ToBytes(event.payload.data);
       terminal.write(bytes);
       // Decode for agent status detection
       if (kind === 'Agent') {
@@ -266,7 +317,6 @@ export function useTerminal({
       }
 
       unlisten = fn;
-      console.log(`[terminal] listener registered for ${paneId}, spawning PTY`);
 
       // Spawn PTY only after listener is registered
       const rows = terminal.rows;
@@ -277,6 +327,7 @@ export function useTerminal({
         cwd,
         command: command ?? null,
         tmuxSession: tmuxSession ?? null,
+        agent: agent ?? null,
       }).then(() => {
         invoke('pty_resize', { id: paneId, rows, cols }).catch(console.error);
       }).catch((err) => {
@@ -305,14 +356,16 @@ export function useTerminal({
       clearTimeout(idleTimer);
       observer.disconnect();
       resizeDisposable.dispose();
+      oscDisposable.dispose();
       selectionDisposable.dispose();
       dataDisposable.dispose();
       binaryDisposable.dispose();
       unlisten?.();
+      webglAddon?.dispose();
       terminal.dispose();
       invoke('pty_kill', { id: paneId }).catch(console.error);
     };
-  }, [paneId, kind, cwd, command, tmuxSession, onTitleChange, fit]);
+  }, [paneId, kind, cwd, command, tmuxSession, agent, onTitleChange, fit]);
 
   useEffect(() => {
     if (!isActive || !terminalRef.current) {

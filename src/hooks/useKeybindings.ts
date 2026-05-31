@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../stores/workspace';
+import { useUiStore } from '../stores/ui';
+import { useProjectsStore } from '../stores/projects';
 
 interface UseKeybindingsOptions {
   onTogglePalette: () => void;
@@ -9,11 +11,46 @@ interface UseKeybindingsOptions {
   onQuit: () => void;
 }
 
+/** New tab in the active window (does not split the current pane). Agents launch
+ *  with the default (first configured) agent. */
 function spawnInActiveWindow(kind: 'Agent' | 'Shell') {
   const state = useWorkspaceStore.getState();
   const win = state.activeWindowId ? state.windows.get(state.activeWindowId) : null;
   if (!win) return;
-  state.addTab(win.projectPath, win.projectPath.split('/').pop() ?? win.projectPath, { kind });
+  const agent = kind === 'Agent' ? useProjectsStore.getState().agents[0]?.command : undefined;
+  state.addTab(win.projectPath, win.projectPath.split('/').pop() ?? win.projectPath, { kind, agent });
+  useUiStore.getState().showPane();
+}
+
+function activePane() {
+  const state = useWorkspaceStore.getState();
+  const win = state.activeWindowId ? state.windows.get(state.activeWindowId) : null;
+  const paneId = win?.activePaneId ?? null;
+  return { state, win, paneId };
+}
+
+/** Split the active pane, spawning a shell in the new half. */
+function splitActivePane(direction: 'horizontal' | 'vertical') {
+  const { state, paneId } = activePane();
+  if (!paneId) return;
+  const cwd = state.panes.get(paneId)?.cwd ?? '.';
+  state.splitPane(paneId, direction, 'Shell', cwd);
+  useUiStore.getState().showPane();
+}
+
+function closeActivePane() {
+  const { state, paneId } = activePane();
+  if (paneId) state.closePane(paneId);
+}
+
+function detachActivePane() {
+  const { state, paneId } = activePane();
+  if (paneId) state.detachPane(paneId);
+}
+
+function closeActiveTab() {
+  const { state, win } = activePane();
+  if (win?.activeTabId) state.removeTab(win.activeTabId);
 }
 
 export function useKeybindings({
@@ -25,112 +62,154 @@ export function useKeybindings({
 }: UseKeybindingsOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl+Space or Cmd/Ctrl+K: Command Palette
+      // ---- Global ----
+
+      // Ctrl+Space or ⌘K: command palette
       if (e.ctrlKey && e.code === 'Space') {
         e.preventDefault();
         onTogglePalette();
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if (e.metaKey && e.key === 'k') {
         e.preventDefault();
         onTogglePalette();
         return;
       }
 
-      // Ctrl+E: Focus tree
-      if (e.ctrlKey && e.key === 'e') {
+      // ⌘/ or F1: help overlay
+      if ((e.metaKey && e.key === '/') || e.key === 'F1') {
+        e.preventDefault();
+        onToggleHelp();
+        return;
+      }
+
+      // ⌘,: settings
+      if (e.metaKey && e.key === ',') {
+        e.preventDefault();
+        onToggleSettings();
+        return;
+      }
+
+      // ⌘⇧E: focus project tree
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         onFocusTree();
         return;
       }
 
-      // Ctrl+Q: Quit
+      // ⌘B: toggle sidebar
+      if (e.metaKey && !e.shiftKey && e.key === 'b') {
+        e.preventDefault();
+        useWorkspaceStore.getState().toggleSidebar();
+        return;
+      }
+
+      // Ctrl+Q: quit
       if (e.ctrlKey && e.key === 'q') {
         e.preventDefault();
         onQuit();
         return;
       }
 
-      // Cmd/Ctrl+,: Settings
-      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
-        e.preventDefault();
-        onToggleSettings();
-        return;
-      }
+      // ---- Windows ----
 
-      // Ctrl+Shift+`: previous Window
+      // Ctrl+Shift+`: previous window
       if (e.ctrlKey && e.shiftKey && (e.key === '`' || e.key === '~')) {
         e.preventDefault();
         useWorkspaceStore.getState().cycleWindowByRecency(-1);
         return;
       }
-
-      // Ctrl+`: next Window
+      // Ctrl+`: next window
       if (e.ctrlKey && !e.shiftKey && e.key === '`') {
         e.preventDefault();
         useWorkspaceStore.getState().cycleWindowByRecency(1);
         return;
       }
 
-      // Ctrl+Tab / Ctrl+Shift+Tab: cycle tab in active Window
+      // ---- Tabs (sessions) ----
+
+      // Ctrl+Tab / Ctrl+Shift+Tab: cycle tab in active window
       if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault();
         const state = useWorkspaceStore.getState();
         if (e.shiftKey) state.prevTab();
         else state.nextTab();
+        useUiStore.getState().showPane();
         return;
       }
 
-      // Cmd+1..8: switch to tab by index; Cmd+9: last tab (iTerm/browser convention)
-      if (e.metaKey && !e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+      // ⌘1..8: switch to tab by index; ⌘9: last tab (iTerm/browser convention)
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
         const state = useWorkspaceStore.getState();
         const win = state.activeWindowId ? state.windows.get(state.activeWindowId) : null;
         if (!win || win.tabs.length === 0) return;
         e.preventDefault();
         const n = Number(e.key);
         const tab = n === 9 ? win.tabs[win.tabs.length - 1] : win.tabs[n - 1];
-        if (tab) state.setActiveTab(tab.id);
+        if (tab) { state.setActiveTab(tab.id); useUiStore.getState().showPane(); }
         return;
       }
 
-      // Ctrl+A: New agent (in active Window)
-      if (e.ctrlKey && e.key === 'a') {
-        e.preventDefault();
-        spawnInActiveWindow('Agent');
-        return;
-      }
-
-      // Ctrl+T: New terminal (in active Window)
-      if (e.ctrlKey && e.key === 't') {
+      // ⌘T: new terminal tab
+      if (e.metaKey && !e.shiftKey && e.key === 't') {
         e.preventDefault();
         spawnInActiveWindow('Shell');
         return;
       }
 
-      // Ctrl+N: Next pane
-      if (e.ctrlKey && e.key === 'n') {
+      // ⌘↵: new agent tab
+      if (e.metaKey && !e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        spawnInActiveWindow('Agent');
+        return;
+      }
+
+      // ⌘⇧W: close tab
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        closeActiveTab();
+        return;
+      }
+
+      // ---- Panes ----
+
+      // ⌘D: split right
+      if (e.metaKey && !e.shiftKey && e.key === 'd') {
+        e.preventDefault();
+        splitActivePane('horizontal');
+        return;
+      }
+      // ⌘⇧D: split down
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        splitActivePane('vertical');
+        return;
+      }
+
+      // ⌘]: next pane
+      if (e.metaKey && e.key === ']') {
         e.preventDefault();
         useWorkspaceStore.getState().cyclePaneForward();
         return;
       }
-
-      // Ctrl+P: Previous pane
-      if (e.ctrlKey && e.key === 'p') {
+      // ⌘[: previous pane
+      if (e.metaKey && e.key === '[') {
         e.preventDefault();
         useWorkspaceStore.getState().cyclePaneBackward();
         return;
       }
 
-      // Ctrl+X or Cmd/Ctrl+W: Close active pane (kills tmux per ADR-0002)
-      const isClosePane =
-        (e.ctrlKey && e.key === 'x') ||
-        ((e.metaKey || e.ctrlKey) && e.key === 'w');
-      if (isClosePane) {
+      // ⌘⇧X: detach pane (keeps tmux session alive)
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'x') {
         e.preventDefault();
-        const state = useWorkspaceStore.getState();
-        const win = state.activeWindowId ? state.windows.get(state.activeWindowId) : null;
-        const activePaneId = win?.activePaneId;
-        if (activePaneId) state.closePane(activePaneId);
+        detachActivePane();
+        return;
+      }
+
+      // ⌘W: close active pane (kills tmux per ADR-0002)
+      if (e.metaKey && !e.shiftKey && e.key === 'w') {
+        e.preventDefault();
+        closeActivePane();
         return;
       }
     };

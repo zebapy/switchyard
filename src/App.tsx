@@ -1,26 +1,25 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from './stores/workspace';
+import { useUiStore } from './stores/ui';
+import { Header } from './components/Header';
 import { ProjectTree } from './components/ProjectTree/ProjectTree';
-import { TabBar } from './components/Workspace/TabBar';
 import { SplitPane } from './components/Workspace/SplitPane';
-import { BlankWorkspace } from './components/Workspace/BlankWorkspace';
+import { TabBar } from './components/Workspace/TabBar';
+import { Dashboard } from './components/Dashboard/Dashboard';
+import { NewWorktreeModal } from './components/Worktree/NewWorktreeModal';
 import { CommandPalette } from './components/CommandPalette/CommandPalette';
 import { HelpOverlay } from './components/HelpOverlay';
-import { SettingsOverlay } from './components/SettingsOverlay';
+import { SettingsPage } from './components/SettingsPage';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
-import { TopBar } from './components/TopBar';
 import { useKeybindings } from './hooks/useKeybindings';
+import { initNotifications, consumePendingFocus } from './notifications';
 import type { TmuxSessionInfo } from './types/tmux';
 import './styles.css';
 
 export default function App() {
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [treeFocused, setTreeFocused] = useState(false);
   const [closePrompt, setClosePrompt] = useState<{ open: boolean; sessions: TmuxSessionInfo[] }>({
     open: false,
     sessions: [],
@@ -29,39 +28,75 @@ export default function App() {
   const windows = useWorkspaceStore((s) => s.windows);
   const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
   const sidebarWidth = useWorkspaceStore((s) => s.sidebarWidth);
+  const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed);
   const setSidebarWidth = useWorkspaceStore((s) => s.setSidebarWidth);
   const saveSession = useWorkspaceStore((s) => s.saveSession);
   const loadSession = useWorkspaceStore((s) => s.loadSession);
+
+  const mainView = useUiStore((s) => s.mainView);
+  const showPane = useUiStore((s) => s.showPane);
+  const paletteOpen = useUiStore((s) => s.paletteOpen);
+  const helpOpen = useUiStore((s) => s.helpOpen);
+  const setPaletteOpen = useUiStore((s) => s.setPaletteOpen);
+  const togglePalette = useUiStore((s) => s.togglePalette);
+  const setHelpOpen = useUiStore((s) => s.setHelpOpen);
+  const toggleHelp = useUiStore((s) => s.toggleHelp);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const toggleSettings = useUiStore((s) => s.toggleSettings);
+  const setTreeFocused = useUiStore((s) => s.setTreeFocused);
+
   const sessionLoaded = useRef(false);
   const dragStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
-  const activeTab = activeWindow
-    ? activeWindow.tabs.find((t) => t.id === activeWindow.activeTabId) ?? null
-    : null;
+  const activeTab = activeWindow ? activeWindow.tabs.find((t) => t.id === activeWindow.activeTabId) ?? null : null;
 
   useEffect(() => {
     if (sessionLoaded.current) return;
     sessionLoaded.current = true;
-    loadSession().catch(() => null);
-  }, [loadSession]);
+    loadSession()
+      .then((loaded) => { if (loaded) showPane(); })
+      .catch(() => null);
+  }, [loadSession, showPane]);
 
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
       const sessions = await invoke<TmuxSessionInfo[]>('list_tmux_sessions').catch(() => []);
-      if (sessions.length === 0) {
-        await saveSession();
-        return;
-      }
+      if (sessions.length === 0) { await saveSession(); return; }
       event.preventDefault();
       setClosePrompt({ open: true, sessions });
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [saveSession]);
 
-  const cancelClose = useCallback(() => {
-    setClosePrompt({ open: false, sessions: [] });
+  useEffect(() => {
+    const handler = () => { saveSession(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [saveSession]);
+
+  useEffect(() => {
+    const unlisten = listen('menu:settings', () => setSettingsOpen(true));
+    return () => { unlisten.then((fn) => fn()); };
+  }, [setSettingsOpen]);
+
+  useEffect(() => {
+    initNotifications().catch(() => null);
   }, []);
+
+  // Desktop notifications can't report which one was clicked, so when the app
+  // regains focus (e.g. from a notification click) route to the pane that last
+  // notified.
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (!focused) return;
+      const paneId = consumePendingFocus();
+      if (paneId) useWorkspaceStore.getState().focusPane(paneId);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  const cancelClose = useCallback(() => setClosePrompt({ open: false, sessions: [] }), []);
 
   const detachAndClose = useCallback(async () => {
     setClosePrompt({ open: false, sessions: [] });
@@ -72,30 +107,10 @@ export default function App() {
   const killAllAndClose = useCallback(async () => {
     const { sessions } = closePrompt;
     setClosePrompt({ open: false, sessions: [] });
-    await Promise.all(
-      sessions.map((s) => invoke('kill_tmux_session', { name: s.name }).catch(() => null)),
-    );
+    await Promise.all(sessions.map((s) => invoke('kill_tmux_session', { name: s.name }).catch(() => null)));
     await saveSession();
     await getCurrentWindow().destroy();
   }, [closePrompt, saveSession]);
-
-  useEffect(() => {
-    const handler = () => { saveSession(); };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [saveSession]);
-
-  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), []);
-  const focusTree = useCallback(() => setTreeFocused(true), []);
-  const toggleHelp = useCallback(() => setHelpOpen((v) => !v), []);
-  const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
-
-  useEffect(() => {
-    const unlisten = listen('menu:settings', () => {
-      setSettingsOpen(true);
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, []);
 
   const handleQuit = useCallback(async () => {
     await saveSession();
@@ -107,12 +122,10 @@ export default function App() {
     dragStartRef.current = { startX: e.clientX, startWidth: sidebarWidth };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-
     const onMove = (ev: MouseEvent) => {
       const start = dragStartRef.current;
       if (!start) return;
-      const next = start.startWidth + (ev.clientX - start.startX);
-      setSidebarWidth(next);
+      setSidebarWidth(start.startWidth + (ev.clientX - start.startX));
     };
     const onUp = () => {
       dragStartRef.current = null;
@@ -127,72 +140,67 @@ export default function App() {
   }, [sidebarWidth, setSidebarWidth, saveSession]);
 
   const handleResizerDoubleClick = useCallback(() => {
-    setSidebarWidth(260);
+    setSidebarWidth(300);
     saveSession();
   }, [setSidebarWidth, saveSession]);
 
   useKeybindings({
     onTogglePalette: togglePalette,
-    onFocusTree: focusTree,
+    onFocusTree: () => setTreeFocused(true),
     onToggleHelp: toggleHelp,
     onToggleSettings: toggleSettings,
     onQuit: handleQuit,
   });
 
   return (
-    <div className="app">
-      <TopBar onOpenPalette={togglePalette} />
-      <div className="app-body">
-        <div className="app-sidebar" style={{ width: sidebarWidth }}>
-          <ProjectTree
-            isFocused={treeFocused}
-            onFocusLost={() => setTreeFocused(false)}
-            onToggleHelp={toggleHelp}
-          />
-        </div>
+    <div className="flex h-full w-full flex-col">
+      <Header />
+      <div className="flex min-h-0 flex-1">
+        {!sidebarCollapsed && (
+          <>
+            <aside
+              style={{ width: sidebarWidth }}
+              className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
+            >
+              <ProjectTree />
+            </aside>
 
-        <div
-          className="app-sidebar-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          onMouseDown={handleResizerMouseDown}
-          onDoubleClick={handleResizerDoubleClick}
-        />
+            <div
+              className="relative z-[5] -mx-0.5 w-1 shrink-0 cursor-col-resize transition-colors hover:bg-ember/40"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              onMouseDown={handleResizerMouseDown}
+              onDoubleClick={handleResizerDoubleClick}
+            />
+          </>
+        )}
 
-        <div className="app-main">
-          {activeWindow ? <TabBar /> : null}
-          <div className="app-workspace">
-            {activeWindow && activeTab && (
-              <SplitPane
-                key={activeTab.id}
-                tree={activeTab.paneTree}
-                tabId={activeTab.id}
-                path={[]}
-              />
-            )}
-            {!activeWindow && <BlankWorkspace />}
-          </div>
-        </div>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
+          {mainView === 'settings' ? (
+            <SettingsPage onClose={() => setSettingsOpen(false)} />
+          ) : mainView === 'pane' && activeWindow && activeTab ? (
+            <>
+              <TabBar />
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <SplitPane key={activeTab.id} tree={activeTab.paneTree} tabId={activeTab.id} path={[]} />
+              </div>
+            </>
+          ) : (
+            <Dashboard />
+          )}
+        </main>
       </div>
+
+      <NewWorktreeModal />
 
       <CommandPalette
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        onFocusTree={focusTree}
+        onFocusTree={() => setTreeFocused(true)}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-
-      <HelpOverlay
-        isOpen={helpOpen}
-        onClose={() => setHelpOpen(false)}
-      />
-
-      <SettingsOverlay
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
-
+      <HelpOverlay isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       <CloseConfirmDialog
         isOpen={closePrompt.open}
         sessions={closePrompt.sessions}

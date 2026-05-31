@@ -1,0 +1,270 @@
+interface IconProps {
+  size?: number;
+  className?: string;
+  strokeWidth?: number;
+}
+
+interface SvgProps extends IconProps {
+  children: React.ReactNode;
+  fill?: boolean;
+  viewBox?: string;
+}
+
+function Svg({ size = 14, className, strokeWidth = 1.5, children, fill = false, viewBox = '0 0 16 16' }: SvgProps) {
+  if (fill) {
+    return (
+      <svg width={size} height={size} viewBox={viewBox} fill="currentColor" className={className}>
+        {children}
+      </svg>
+    );
+  }
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={viewBox}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {children}
+    </svg>
+  );
+}
+
+export function ChevronIcon({ size = 11, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={1.8}><path d="M6 4l4 4-4 4" /></Svg>;
+}
+
+export function RepoIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M4 2.5h7a1 1 0 011 1v10l-3-2-3 2v-10a1 1 0 00-1-1H4z" />
+      <path d="M4 2.5a1 1 0 00-1 1v9" />
+    </Svg>
+  );
+}
+
+export function BaseBranchIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="8" cy="8" r="2.4" />
+      <path d="M8 2v3.2M8 10.4V14" />
+    </Svg>
+  );
+}
+
+export function WorktreeIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="5" cy="4" r="1.6" />
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="11" cy="7" r="1.6" />
+      <path d="M5 5.6v4.8M5 8.4h3.2a3 3 0 003-3v-.4" />
+    </Svg>
+  );
+}
+
+export function TermIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.6" />
+      <path d="M5 7l1.8 1.4L5 9.8M8.6 9.8h3" />
+    </Svg>
+  );
+}
+
+export function AiIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill>
+      <path d="M8 1.6l1.15 4 .1.25.25.1 4 1.15-4 1.15-.25.1-.1.25-1.15 4-1.15-4-.1-.25-.25-.1-4-1.15 4-1.15.25-.1.1-.25z" />
+    </Svg>
+  );
+}
+
+// ── agent brand glyphs (original line/fill marks, not official logos) ────────
+export function ClaudeIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill>
+      <path d="M8 1.4l1.1 4.1 3.4-2.4-2 3.6 4 .9-4 .9 2 3.6-3.4-2.4L8 17.4l-1.1-4.7-3.4 2.4 2-3.6-4-.9 4-.9-2-3.6 3.4 2.4z" />
+    </Svg>
+  );
+}
+
+export function OpenAiIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.3}>
+      <path d="M8 2.2a2.3 2.3 0 00-2 1.15 2.3 2.3 0 00-1.55 3.4 2.3 2.3 0 000 3.3A2.3 2.3 0 006 13.45a2.3 2.3 0 004 0 2.3 2.3 0 001.55-3.4 2.3 2.3 0 000-3.3A2.3 2.3 0 0010 3.35 2.3 2.3 0 008 2.2z" />
+      <path d="M8 5.4v5.2M5.6 6.7l4.8 2.6M10.4 6.7L5.6 9.3" />
+    </Svg>
+  );
+}
+
+export function GeminiIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill>
+      <path d="M8 1.5c.3 3.4 3.1 6.2 6.5 6.5-3.4.3-6.2 3.1-6.5 6.5-.3-3.4-3.1-6.2-6.5-6.5C4.9 7.7 7.7 4.9 8 1.5z" />
+    </Svg>
+  );
+}
+
+export function CursorIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M3.2 2.6l9.4 4.7-4 1.2-1.2 4z" />
+    </Svg>
+  );
+}
+
+export function CopilotIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M2.5 9.5c0-2 1.4-3 2.6-3 .9 0 1.4.4 2.9.4s2-.4 2.9-.4c1.2 0 2.6 1 2.6 3v1.2c0 1.5-2.3 2.6-5.5 2.6S2.5 12.2 2.5 10.7z" />
+      <path d="M5.5 6.5C5.8 4.4 6.6 3.5 8 3.5s2.2.9 2.5 3" />
+      <circle cx="6.2" cy="9.6" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="9.6" r="0.7" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+interface AgentGlyphProps extends IconProps {
+  name?: string;
+  command?: string;
+}
+
+/** Pick a brand glyph for a configured agent by matching its name/command;
+ *  falls back to the generic AI spark for unknown agents. */
+export function AgentGlyph({ name = '', command = '', size, className }: AgentGlyphProps) {
+  const key = `${name} ${command}`.toLowerCase();
+  if (key.includes('claude')) return <ClaudeIcon size={size} className={className} />;
+  if (key.includes('codex') || key.includes('openai') || key.includes('gpt') || key.includes('chatgpt'))
+    return <OpenAiIcon size={size} className={className} />;
+  if (key.includes('gemini')) return <GeminiIcon size={size} className={className} />;
+  if (key.includes('cursor')) return <CursorIcon size={size} className={className} />;
+  if (key.includes('copilot')) return <CopilotIcon size={size} className={className} />;
+  return <AiIcon size={size} className={className} />;
+}
+
+export function SplitIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.6" />
+      <path d="M8 3.6v9.4" />
+    </Svg>
+  );
+}
+
+export function SplitBadgeIcon({ size = 10, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.6}>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.2" />
+      <path d="M8 3v10" />
+    </Svg>
+  );
+}
+
+export function PlusIcon({ size = 13, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={1.7}><path d="M8 3v10M3 8h10" /></Svg>;
+}
+
+export function SearchIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.6}>
+      <circle cx="7" cy="7" r="4.2" />
+      <path d="M10.2 10.2L14 14" />
+    </Svg>
+  );
+}
+
+export function DashboardIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
+      <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
+      <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
+      <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
+    </Svg>
+  );
+}
+
+export function DotsIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="8" cy="3.5" r="1.1" />
+      <circle cx="8" cy="8" r="1.1" />
+      <circle cx="8" cy="12.5" r="1.1" />
+    </Svg>
+  );
+}
+
+export function CloseIcon({ size = 16, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={1.6}><path d="M4 4l8 8M12 4l-8 8" /></Svg>;
+}
+
+export function BrandMark({ size = 16, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.6}>
+      <circle cx="4" cy="4" r="1.7" />
+      <circle cx="4" cy="12" r="1.7" />
+      <circle cx="12" cy="7.5" r="1.7" />
+      <path d="M4 5.7v4.6M4 8h3.6a3 3 0 003-3" />
+    </Svg>
+  );
+}
+
+export function SplitSquareIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M8 2.5v11" />
+    </Svg>
+  );
+}
+
+export function ClearIcon({ size = 14, className }: IconProps) {
+  return <Svg size={size} className={className}><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5L11 4" /></Svg>;
+}
+
+export function CheckIcon({ size = 13, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={2}><path d="M3.3 8.6l3 3 6.4-7.2" /></Svg>;
+}
+
+// ── new-worktree modal source icons ─────────────────────────────────────
+export function LinearIcon({ size = 13, className }: IconProps) {
+  return <Svg size={size} className={className} fill><path d="M8 1.7L14.3 8 8 14.3 1.7 8z" /></Svg>;
+}
+
+export function IssueIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <circle cx="8" cy="8" r="5.4" />
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function GitBranchIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <circle cx="5" cy="4" r="1.5" />
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="11" cy="6" r="1.5" />
+      <path d="M5 5.5v5M5 8.5h3.2a2.8 2.8 0 002.8-1.2" />
+    </Svg>
+  );
+}
+
+export function PrIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <circle cx="4.5" cy="4" r="1.5" />
+      <circle cx="4.5" cy="12" r="1.5" />
+      <circle cx="11.5" cy="12" r="1.5" />
+      <path d="M4.5 5.5v5M11.5 10.5V8a2.5 2.5 0 00-2.5-2.5H7.2" />
+      <path d="M8.6 4L7 5.5 8.6 7" />
+    </Svg>
+  );
+}

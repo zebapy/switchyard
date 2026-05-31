@@ -10,15 +10,20 @@ interface TerminalPaneProps {
   cwd: string;
   command?: string;
   tmuxSession?: string;
+  agent?: string;
   isActive: boolean;
 }
 
-export function TerminalPane({ paneId, kind, cwd, command, tmuxSession, isActive }: TerminalPaneProps) {
+export function TerminalPane({ paneId, kind, cwd, command, tmuxSession, agent, isActive }: TerminalPaneProps) {
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const setPaneTitle = useWorkspaceStore((s) => s.setPaneTitle);
 
   const handleTitleChange = useCallback((title: string) => {
-    setPaneTitle(paneId, title);
+    // tmux emits an empty title until a program sets one (see TMUX_LAUNCH_SCRIPT);
+    // ignore blanks so the pane keeps its existing label until a real rename.
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setPaneTitle(paneId, trimmed);
   }, [paneId, setPaneTitle]);
 
   const { termRef, focus } = useTerminal({
@@ -27,13 +32,14 @@ export function TerminalPane({ paneId, kind, cwd, command, tmuxSession, isActive
     cwd,
     command,
     tmuxSession,
+    agent,
     isActive,
     onTitleChange: handleTitleChange,
   });
 
   return (
     <div
-      className={`terminal-pane ${isActive ? 'terminal-pane--active' : ''}`}
+      className="terminal-pane absolute inset-0 overflow-hidden px-1.5 py-1"
       onClick={() => {
         setActivePane(paneId);
         focus();

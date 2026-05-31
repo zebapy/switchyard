@@ -18,6 +18,37 @@ fn default_schema_ref() -> String {
     "./settings.schema.json".to_string()
 }
 
+/// One configured AI coding agent. The agent list is ordered by preference;
+/// the first entry is the default used wherever a new agent session is started
+/// without an explicit choice.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentConfig {
+    /// Stable identifier (e.g. "claude"). Used as a React key and for de-duping.
+    pub id: String,
+    /// Display name shown in menus (e.g. "Claude").
+    pub name: String,
+    /// Command run in the pane to launch the agent (e.g. "claude").
+    pub command: String,
+}
+
+fn default_agents() -> Vec<AgentConfig> {
+    vec![AgentConfig {
+        id: "claude".to_string(),
+        name: "Claude".to_string(),
+        command: "claude".to_string(),
+    }]
+}
+
+/// Command for the default (first) configured agent, falling back to "claude"
+/// when the list is empty.
+pub fn default_agent_command(settings: &AppSettings) -> String {
+    settings
+        .agents
+        .first()
+        .map(|a| a.command.clone())
+        .unwrap_or_else(|| "claude".to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[schemars(title = "AppSettings", description = "User settings for the cc-tui app.")]
 pub struct AppSettings {
@@ -36,9 +67,15 @@ pub struct AppSettings {
     /// Whether to wrap PTY sessions in tmux for persistence across restarts.
     #[serde(default = "default_true")]
     pub use_tmux: bool,
+    /// Whether to show desktop notifications when an agent needs input or finishes a turn.
+    #[serde(default = "default_true")]
+    pub desktop_notifications: bool,
     /// Per-project list of package.json absolute paths to show in the Scripts section.
     #[serde(default)]
     pub project_scripts: HashMap<String, Vec<String>>,
+    /// Configured AI agents, ordered by preference. First entry is the default.
+    #[serde(default = "default_agents")]
+    pub agents: Vec<AgentConfig>,
 }
 
 impl Default for AppSettings {
@@ -49,7 +86,9 @@ impl Default for AppSettings {
             scan_root: String::new(),
             added_projects: Vec::new(),
             use_tmux: true,
+            desktop_notifications: true,
             project_scripts: HashMap::new(),
+            agents: default_agents(),
         }
     }
 }
@@ -76,12 +115,30 @@ pub struct WorktreeInfo {
     pub is_main: bool,
     /// Unix timestamp (seconds) of the HEAD commit, or None if unavailable.
     pub last_commit_unix: Option<i64>,
+    /// Uncommitted added lines (HEAD tree → workdir, staged + unstaged).
+    pub added: i64,
+    /// Uncommitted deleted lines (HEAD tree → workdir, staged + unstaged).
+    pub deleted: i64,
 }
 
 fn head_commit_time(repo: &git2::Repository) -> Option<i64> {
     let head = repo.head().ok()?;
     let commit = head.peel_to_commit().ok()?;
     Some(commit.time().seconds())
+}
+
+/// Count uncommitted added/deleted lines from the HEAD tree to the workdir
+/// (including staged and unstaged changes). Returns (0, 0) on failure.
+fn diff_stats(repo: &git2::Repository) -> (i64, i64) {
+    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+    let mut opts = git2::DiffOptions::new();
+    let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts));
+    if let Ok(d) = diff {
+        if let Ok(stats) = d.stats() {
+            return (stats.insertions() as i64, stats.deletions() as i64);
+        }
+    }
+    (0, 0)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +183,7 @@ fn detect_worktree_parent(git_file: &Path) -> Option<String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scan_projects(root_dir: String) -> Result<Vec<ProjectInfo>, String> {
     let root = Path::new(&root_dir);
     if !root.is_dir() {
@@ -172,7 +229,7 @@ pub fn scan_projects(root_dir: String) -> Result<Vec<ProjectInfo>, String> {
     Ok(projects)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_git_info(path: String) -> Result<GitInfo, String> {
     let repo = git2::Repository::discover(&path).map_err(|e| e.to_string())?;
 
@@ -189,11 +246,14 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
     let main_last_commit = head_commit_time(&repo);
+    let (main_added, main_deleted) = diff_stats(&repo);
     worktrees.push(WorktreeInfo {
         path: main_path,
         branch: branch.clone(),
         is_main: true,
         last_commit_unix: main_last_commit,
+        added: main_added,
+        deleted: main_deleted,
     });
 
     // Additional worktrees
@@ -201,22 +261,26 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         for name in wt_names.iter().flatten() {
             if let Ok(wt) = repo.find_worktree(name) {
                 let wt_path = wt.path().to_string_lossy().to_string();
-                let (wt_branch, wt_last_commit) = git2::Repository::open(wt.path())
-                    .ok()
-                    .map(|r| {
-                        let branch = r
-                            .head()
-                            .ok()
-                            .and_then(|h| h.shorthand().map(|s| s.to_string()));
-                        let last = head_commit_time(&r);
-                        (branch, last)
-                    })
-                    .unwrap_or((None, None));
+                let (wt_branch, wt_last_commit, wt_added, wt_deleted) =
+                    git2::Repository::open(wt.path())
+                        .ok()
+                        .map(|r| {
+                            let branch = r
+                                .head()
+                                .ok()
+                                .and_then(|h| h.shorthand().map(|s| s.to_string()));
+                            let last = head_commit_time(&r);
+                            let (added, deleted) = diff_stats(&r);
+                            (branch, last, added, deleted)
+                        })
+                        .unwrap_or((None, None, 0, 0));
                 worktrees.push(WorktreeInfo {
                     path: wt_path,
                     branch: wt_branch,
                     is_main: false,
                     last_commit_unix: wt_last_commit,
+                    added: wt_added,
+                    deleted: wt_deleted,
                 });
             }
         }
@@ -225,7 +289,7 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
     Ok(GitInfo { branch, worktrees })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
     // Use `gh` CLI to get PR info
     let output = std::process::Command::new("gh")
@@ -267,6 +331,152 @@ pub fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
     }))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GhItem {
+    pub id: String,
+    pub title: String,
+    pub sub: String,
+    pub branch: String,
+}
+
+/// Turn arbitrary text into a git-branch-friendly slug: lowercase, runs of
+/// non-alphanumeric chars collapse to a single '-', leading/trailing '-'
+/// trimmed, then truncated to 40 chars (trailing '-' trimmed again).
+fn slug(input: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in input.to_lowercase().chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    let mut result: String = trimmed.chars().take(40).collect();
+    while result.ends_with('-') {
+        result.pop();
+    }
+    result
+}
+
+/// Run a `gh` subcommand in `path` and parse its stdout as a JSON array.
+/// Returns an empty vec if `gh` is missing or the command exits non-zero.
+fn gh_json_array(path: &str, args: &[&str]) -> Vec<serde_json::Value> {
+    let output = std::process::Command::new("gh")
+        .args(args)
+        .current_dir(path)
+        .output();
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    json.as_array().cloned().unwrap_or_default()
+}
+
+#[tauri::command(async)]
+pub fn gh_list_prs(path: String) -> Result<Vec<GhItem>, String> {
+    let items = gh_json_array(
+        &path,
+        &[
+            "pr",
+            "list",
+            "--json",
+            "number,title,headRefName,state",
+            "--limit",
+            "30",
+        ],
+    )
+    .into_iter()
+    .map(|el| {
+        let number = el.get("number").and_then(|v| v.as_u64()).unwrap_or(0);
+        let title = el
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let branch = el
+            .get("headRefName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let state = el
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        GhItem {
+            id: format!("#{}", number),
+            title,
+            sub: format!("{} · {}", branch, state),
+            branch,
+        }
+    })
+    .collect();
+    Ok(items)
+}
+
+#[tauri::command(async)]
+pub fn gh_list_issues(path: String) -> Result<Vec<GhItem>, String> {
+    let items = gh_json_array(
+        &path,
+        &["issue", "list", "--json", "number,title,labels", "--limit", "30"],
+    )
+    .into_iter()
+    .map(|el| {
+        let number = el.get("number").and_then(|v| v.as_u64()).unwrap_or(0);
+        let title = el
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let sub = el
+            .get("labels")
+            .and_then(|v| v.as_array())
+            .and_then(|labels| labels.first())
+            .and_then(|label| label.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("issue")
+            .to_string();
+        let branch = format!("{}-{}", number, slug(&title));
+        GhItem {
+            id: format!("#{}", number),
+            title,
+            sub,
+            branch,
+        }
+    })
+    .collect();
+    Ok(items)
+}
+
+#[tauri::command(async)]
+pub fn gh_list_branches(path: String) -> Result<Vec<GhItem>, String> {
+    let items = gh_json_array(&path, &["api", "repos/{owner}/{repo}/branches"])
+        .into_iter()
+        .take(30)
+        .filter_map(|el| {
+            let name = el.get("name").and_then(|v| v.as_str())?.to_string();
+            Some(GhItem {
+                id: name.clone(),
+                title: name.clone(),
+                sub: String::new(),
+                branch: name,
+            })
+        })
+        .collect();
+    Ok(items)
+}
+
 #[tauri::command]
 pub fn get_pinned_projects() -> Result<Vec<String>, String> {
     let path = config_dir().join("pins.json");
@@ -301,7 +511,7 @@ pub fn toggle_pin(project_path: String) -> Result<Vec<String>, String> {
     Ok(pins)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String, String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let worktrees_dir = Path::new(&repo_path).join(".claude").join("worktrees");
@@ -334,7 +544,7 @@ pub fn create_project(parent_dir: String, name: String) -> Result<ProjectInfo, S
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let wt = repo.find_worktree(&name).map_err(|e| e.to_string())?;
@@ -438,9 +648,25 @@ pub fn set_use_tmux(value: bool) -> Result<AppSettings, String> {
     Ok(settings)
 }
 
+#[tauri::command]
+pub fn set_desktop_notifications(value: bool) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.desktop_notifications = value;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_agents(agents: Vec<AgentConfig>) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.agents = agents;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
 /// Walk a project directory and return absolute paths to every package.json,
 /// skipping noisy directories (node_modules, build output, hidden dirs).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn find_package_jsons(project_path: String) -> Result<Vec<String>, String> {
     let root = Path::new(&project_path);
     if !root.is_dir() {
