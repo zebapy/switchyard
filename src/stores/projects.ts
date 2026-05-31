@@ -43,6 +43,7 @@ interface ProjectsState {
   refreshGitInfo: (projectPath: string) => Promise<void>;
   refreshPrInfo: (projectPath: string) => Promise<void>;
   createProject: (parentDir: string, name: string) => Promise<void>;
+  cloneRepo: (url: string, parentDir: string) => Promise<string>;
   setScanRoot: (root: string) => Promise<void>;
   addProjectPath: (path: string) => Promise<void>;
   removeProjectPath: (path: string) => Promise<void>;
@@ -165,6 +166,12 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       console.error('Failed to create project:', e);
       throw e;
     }
+  },
+
+  cloneRepo: async (url, parentDir) => {
+    const project = await invoke<ProjectInfo>('clone_repo', { url, parentDir });
+    await get().addProjectPath(project.path);
+    return project.path;
   },
 
   setScanRoot: async (root) => {

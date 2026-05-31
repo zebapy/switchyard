@@ -348,6 +348,55 @@ pub fn create_project(parent_dir: String, name: String) -> Result<ProjectInfo, S
     })
 }
 
+/// Derive a folder name from a git remote URL by taking the last path segment
+/// and stripping a trailing `.git`. Handles both SSH (`git@host:owner/repo.git`)
+/// and HTTPS (`https://host/owner/repo.git`) forms.
+fn repo_name_from_url(url: &str) -> Option<String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let last = trimmed.rsplit(['/', ':']).next()?;
+    let name = last.strip_suffix(".git").unwrap_or(last);
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// Clone a git repository into `parent_dir` using the system `git` binary so
+/// the user's existing credentials, SSH keys, and credential helpers apply.
+/// Returns the cloned project so the frontend can pin and open it.
+#[tauri::command(async)]
+pub fn clone_repo(url: String, parent_dir: String) -> Result<ProjectInfo, String> {
+    let parent = Path::new(&parent_dir);
+    if !parent.is_dir() {
+        return Err(format!("'{}' is not a directory", parent_dir));
+    }
+    let name = repo_name_from_url(&url)
+        .ok_or_else(|| format!("Could not derive a folder name from '{}'", url))?;
+    let dest = parent.join(&name);
+    if dest.exists() {
+        return Err(format!(
+            "'{}' already exists in {} — choose another destination",
+            name, parent_dir
+        ));
+    }
+    let dest_str = dest.to_string_lossy().to_string();
+    let output = std::process::Command::new("git")
+        .args(["clone", url.trim(), &dest_str])
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {}", stderr.trim()));
+    }
+    Ok(ProjectInfo {
+        name,
+        path: dest_str,
+        is_git: true,
+        worktree_parent: None,
+    })
+}
+
 #[tauri::command(async)]
 pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;

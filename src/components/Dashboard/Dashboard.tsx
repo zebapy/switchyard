@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Menu } from '@base-ui-components/react/menu';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -7,7 +8,16 @@ import type { ProjectInfo, WorktreeInfo } from '../../types/project';
 import type { PaneInfo, PaneTree, Tab } from '../../types/pane';
 import {
   RepoIcon, BaseBranchIcon, WorktreeIcon, AiIcon, TermIcon, SplitIcon, PlusIcon,
+  FolderPlusIcon, GitBranchIcon, ChevronIcon,
 } from '../icons';
+
+const menuPopupClass =
+  'z-[300] min-w-[200px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
+  'text-[13px] text-ink shadow-[0_16px_48px_rgba(0,0,0,0.5)] outline-none';
+const menuItemClass =
+  'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
+  'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink';
+const menuIconClass = 'grid w-4 place-items-center text-ink-faint';
 
 function leafIds(tree: PaneTree): string[] {
   if (tree.type === 'leaf') return [tree.paneId];
@@ -34,6 +44,7 @@ export function Dashboard() {
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const showPane = useUiStore((s) => s.showPane);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
+  const openCloneModal = useUiStore((s) => s.openCloneModal);
 
   const topProjects = useMemo(() => projects.filter((p) => !p.worktree_parent), [projects]);
 
@@ -52,7 +63,7 @@ export function Dashboard() {
     showPane();
   };
 
-  const handleNewProject = async () => {
+  const handleAddLocalFolder = async () => {
     const sel = await open({ directory: true, multiple: false, title: 'Select project folder' });
     if (typeof sel === 'string') await addProjectPath(sel);
   };
@@ -69,12 +80,28 @@ export function Dashboard() {
             {topProjects.length} projects · {branchCount} branches · <b className="font-semibold text-green">{runningCount} running</b>
           </div>
         </div>
-        <button
-          onClick={handleNewProject}
-          className="flex flex-none items-center gap-2 rounded-[9px] border border-line bg-side px-[13px] py-[9px] text-[13px] font-medium text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember"
-        >
-          <PlusIcon size={11} /> New project
-        </button>
+        <Menu.Root>
+          <Menu.Trigger
+            title="New project"
+            aria-label="New project"
+            className="flex flex-none items-center gap-1.5 rounded-[9px] border border-line bg-side px-[12px] py-[9px] text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember data-[popup-open]:border-ember-edge data-[popup-open]:bg-ember-tint data-[popup-open]:text-ember"
+          >
+            <FolderPlusIcon size={16} />
+            <ChevronIcon size={10} className="rotate-90 text-ink-faint" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner className="z-[300]" sideOffset={6} align="end">
+              <Menu.Popup className={menuPopupClass}>
+                <Menu.Item className={menuItemClass} onClick={openCloneModal}>
+                  <span className={menuIconClass}><GitBranchIcon size={14} /></span> Clone repo
+                </Menu.Item>
+                <Menu.Item className={menuItemClass} onClick={handleAddLocalFolder}>
+                  <span className={menuIconClass}><FolderPlusIcon size={14} /></span> Add local folder
+                </Menu.Item>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
       </div>
 
       <div className="scroll-thin flex-1 overflow-y-auto px-[26px] pb-[34px] pt-5">

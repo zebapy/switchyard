@@ -10,6 +10,7 @@ import { SplitPane } from './components/Workspace/SplitPane';
 import { TabBar } from './components/Workspace/TabBar';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { NewWorktreeModal } from './components/Worktree/NewWorktreeModal';
+import { CloneRepoModal } from './components/Project/CloneRepoModal';
 import { CommandPalette } from './components/CommandPalette/CommandPalette';
 import { HelpOverlay } from './components/HelpOverlay';
 import { SettingsPage } from './components/SettingsPage';
@@ -193,6 +194,7 @@ export default function App() {
       </div>
 
       <NewWorktreeModal />
+      <CloneRepoModal />
 
       <CommandPalette
         isOpen={paletteOpen}

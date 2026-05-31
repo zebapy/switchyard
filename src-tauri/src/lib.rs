@@ -80,6 +80,7 @@ pub fn run() {
             projects::get_pinned_projects,
             projects::toggle_pin,
             projects::create_project,
+            projects::clone_repo,
             projects::create_worktree,
             projects::delete_worktree,
             projects::get_app_settings,
