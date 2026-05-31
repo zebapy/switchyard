@@ -18,6 +18,10 @@ interface UiState {
   openWorktreeModal: (projectPath: string, baseBranch: string | null) => void;
   closeWorktreeModal: () => void;
 
+  cloneModalOpen: boolean;
+  openCloneModal: () => void;
+  closeCloneModal: () => void;
+
   // Overlays
   paletteOpen: boolean;
   helpOpen: boolean;
@@ -41,6 +45,10 @@ export const useUiStore = create<UiState>((set) => ({
     set({ worktreeModal: { open: true, projectPath, baseBranch } }),
   closeWorktreeModal: () =>
     set({ worktreeModal: { open: false, projectPath: null, baseBranch: null } }),
+
+  cloneModalOpen: false,
+  openCloneModal: () => set({ cloneModalOpen: true }),
+  closeCloneModal: () => set({ cloneModalOpen: false }),
 
   paletteOpen: false,
   helpOpen: false,

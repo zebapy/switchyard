@@ -170,6 +170,15 @@ export function PlusIcon({ size = 13, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.7}><path d="M8 3v10M3 8h10" /></Svg>;
 }
 
+export function FolderPlusIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M2 5.2v6.4a1 1 0 001 1h10a1 1 0 001-1V6.2a1 1 0 00-1-1H7.8L6.4 3.6H3a1 1 0 00-1 1z" />
+      <path d="M8 7.6v3.2M6.4 9.2h3.2" />
+    </Svg>
+  );
+}
+
 export function SearchIcon({ size = 14, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.6}>
