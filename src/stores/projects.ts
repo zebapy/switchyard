@@ -51,6 +51,8 @@ interface ProjectsState {
   setAgents: (agents: AgentConfig[]) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
+  /** Expand a project (idempotent — never collapses). */
+  expandProject: (projectPath: string) => void;
   loadTmuxSessions: () => Promise<void>;
   killTmuxSession: (name: string) => Promise<void>;
   // Scripts
@@ -232,6 +234,15 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       } else {
         newSet.add(projectPath);
       }
+      return { expandedProjects: newSet };
+    });
+  },
+
+  expandProject: (projectPath) => {
+    set((state) => {
+      if (state.expandedProjects.has(projectPath)) return state;
+      const newSet = new Set(state.expandedProjects);
+      newSet.add(projectPath);
       return { expandedProjects: newSet };
     });
   },
