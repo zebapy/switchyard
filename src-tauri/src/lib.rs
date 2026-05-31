@@ -29,17 +29,17 @@ pub fn run() {
                 Some("CmdOrCtrl+,"),
             )?;
             let app_menu = SubmenuBuilder::new(handle, "Switchyard")
-                .item(&PredefinedMenuItem::about(handle, None, None)?)
+                .item(&PredefinedMenuItem::about(handle, Some("About Switchyard"), None)?)
                 .separator()
                 .item(&settings_item)
                 .separator()
                 .item(&PredefinedMenuItem::services(handle, None)?)
                 .separator()
-                .item(&PredefinedMenuItem::hide(handle, None)?)
+                .item(&PredefinedMenuItem::hide(handle, Some("Hide Switchyard"))?)
                 .item(&PredefinedMenuItem::hide_others(handle, None)?)
                 .item(&PredefinedMenuItem::show_all(handle, None)?)
                 .separator()
-                .item(&PredefinedMenuItem::quit(handle, None)?)
+                .item(&PredefinedMenuItem::quit(handle, Some("Quit Switchyard"))?)
                 .build()?;
             let edit_menu = SubmenuBuilder::new(handle, "Edit")
                 .item(&PredefinedMenuItem::undo(handle, None)?)
