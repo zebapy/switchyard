@@ -1,4 +1,4 @@
-export type PaneKind = 'Agent' | 'Shell' | 'Lazygit' | 'Custom';
+export type PaneKind = 'Agent' | 'Shell' | 'Lazygit' | 'Custom' | 'Diff' | 'File';
 
 export type AgentStatus = 'working' | 'waiting' | 'idle';
 
@@ -32,6 +32,12 @@ export interface PaneInfo {
   agentExited?: boolean;
   /** Existing tmux session name to attach to (e.g. "wip-<uuid>"). When set, pane attaches instead of creating a new session. */
   tmuxSession?: string;
+  /** For Diff panes: the file (repo-relative) whose diff is shown. The repo is `cwd`. */
+  diffFile?: string;
+  /** For Diff panes: which diff to show (unstaged | staged | base). */
+  diffSource?: string;
+  /** For File panes: the repo-relative file shown in the viewer. The repo is `cwd`. */
+  filePath?: string;
 }
 
 export interface Tab {

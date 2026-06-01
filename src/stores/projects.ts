@@ -5,6 +5,9 @@ import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
 import { DEFAULT_AGENT } from '../types/agent';
 
+/** Where new git worktrees are created. */
+export type WorktreeLocation = 'project' | 'global';
+
 interface AppSettings {
   $schema: string;
   schema_version: number;
@@ -14,6 +17,7 @@ interface AppSettings {
   desktop_notifications: boolean;
   project_scripts: Record<string, string[]>;
   agents: AgentConfig[];
+  worktree_location: WorktreeLocation;
 }
 
 interface ProjectsState {
@@ -27,6 +31,8 @@ interface ProjectsState {
   desktopNotifications: boolean;
   /** Configured AI agents, ordered by preference. First entry is the default. */
   agents: AgentConfig[];
+  /** Where new git worktrees are created. */
+  worktreeLocation: WorktreeLocation;
   filter: string;
   expandedProjects: Set<string>;
   tmuxSessions: TmuxSessionInfo[];
@@ -47,9 +53,12 @@ interface ProjectsState {
   setScanRoot: (root: string) => Promise<void>;
   addProjectPath: (path: string) => Promise<void>;
   removeProjectPath: (path: string) => Promise<void>;
+  /** Persist a new top-level project order. `orderedPaths` is the full list of added project paths in their desired order. */
+  reorderProjects: (orderedPaths: string[]) => Promise<void>;
   setUseTmux: (value: boolean) => Promise<void>;
   setDesktopNotifications: (value: boolean) => Promise<void>;
   setAgents: (agents: AgentConfig[]) => Promise<void>;
+  setWorktreeLocation: (location: WorktreeLocation) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
   /** Expand a project (idempotent — never collapses). */
@@ -76,6 +85,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   useTmux: true,
   desktopNotifications: true,
   agents: [DEFAULT_AGENT],
+  worktreeLocation: 'project',
   filter: '',
   expandedProjects: new Set(),
   tmuxSessions: [],
@@ -95,6 +105,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         useTmux: settings.use_tmux,
         desktopNotifications: settings.desktop_notifications,
         agents,
+        worktreeLocation: settings.worktree_location ?? 'project',
         projectScripts,
       });
       return;
@@ -206,6 +217,22 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
+  reorderProjects: async (orderedPaths) => {
+    // Optimistic: reflect the new order immediately, then persist.
+    const previous = get().addedProjects;
+    set({ addedProjects: orderedPaths });
+    get().loadAddedProjects();
+    try {
+      const settings = await invoke<AppSettings>('reorder_projects', { paths: orderedPaths });
+      set({ addedProjects: settings.added_projects });
+      get().loadAddedProjects();
+    } catch (e) {
+      console.error('Failed to reorder projects:', e);
+      set({ addedProjects: previous });
+      get().loadAddedProjects();
+    }
+  },
+
   setUseTmux: async (value) => {
     try {
       const settings = await invoke<AppSettings>('set_use_tmux', { value });
@@ -229,6 +256,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   setAgents: async (agents) => {
     const settings = await invoke<AppSettings>('set_agents', { agents });
     set({ agents: settings.agents?.length ? settings.agents : [DEFAULT_AGENT] });
+  },
+
+  setWorktreeLocation: async (location) => {
+    try {
+      const settings = await invoke<AppSettings>('set_worktree_location', { location });
+      set({ worktreeLocation: settings.worktree_location });
+    } catch (e) {
+      console.error('Failed to set worktree_location:', e);
+      throw e;
+    }
   },
 
   setFilter: (filter) => set({ filter }),

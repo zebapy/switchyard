@@ -4,8 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from './stores/workspace';
 import { useUiStore } from './stores/ui';
-import { Header } from './components/Header';
+import { SidebarSearch } from './components/Sidebar/SidebarSearch';
 import { ProjectTree } from './components/ProjectTree/ProjectTree';
+import { SettingsNav } from './components/Sidebar/SettingsNav';
 import { SplitPane } from './components/Workspace/SplitPane';
 import { TabBar } from './components/Workspace/TabBar';
 import { Dashboard } from './components/Dashboard/Dashboard';
@@ -15,6 +16,7 @@ import { CommandPalette } from './components/CommandPalette/CommandPalette';
 import { HelpOverlay } from './components/HelpOverlay';
 import { SettingsPage } from './components/SettingsPage';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
+import { GitPanel } from './components/GitPanel/GitPanel';
 import { useKeybindings } from './hooks/useKeybindings';
 import { initNotifications, consumePendingFocus } from './notifications';
 import type { TmuxSessionInfo } from './types/tmux';
@@ -154,44 +156,44 @@ export default function App() {
   });
 
   return (
-    <div className="flex h-full w-full flex-col">
-      <Header />
-      <div className="flex min-h-0 flex-1">
-        {!sidebarCollapsed && (
+    <div className="flex h-full w-full">
+      {!sidebarCollapsed && (
+        <>
+          <aside
+            style={{ width: sidebarWidth }}
+            className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
+          >
+            <SidebarSearch />
+            {mainView === 'settings' ? <SettingsNav /> : <ProjectTree />}
+          </aside>
+
+          <div
+            className="relative z-[5] -mx-0.5 w-1 shrink-0 cursor-col-resize transition-colors hover:bg-ember/40"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={handleResizerMouseDown}
+            onDoubleClick={handleResizerDoubleClick}
+          />
+        </>
+      )}
+
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
+        {mainView === 'settings' ? (
+          <SettingsPage onClose={() => setSettingsOpen(false)} />
+        ) : mainView === 'pane' && activeWindow && activeTab ? (
           <>
-            <aside
-              style={{ width: sidebarWidth }}
-              className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
-            >
-              <ProjectTree />
-            </aside>
-
-            <div
-              className="relative z-[5] -mx-0.5 w-1 shrink-0 cursor-col-resize transition-colors hover:bg-ember/40"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize sidebar"
-              onMouseDown={handleResizerMouseDown}
-              onDoubleClick={handleResizerDoubleClick}
-            />
+            <TabBar />
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <SplitPane key={activeTab.id} tree={activeTab.paneTree} tabId={activeTab.id} path={[]} />
+            </div>
           </>
+        ) : (
+          <Dashboard />
         )}
+      </main>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
-          {mainView === 'settings' ? (
-            <SettingsPage onClose={() => setSettingsOpen(false)} />
-          ) : mainView === 'pane' && activeWindow && activeTab ? (
-            <>
-              <TabBar />
-              <div className="relative min-h-0 flex-1 overflow-hidden">
-                <SplitPane key={activeTab.id} tree={activeTab.paneTree} tabId={activeTab.id} path={[]} />
-              </div>
-            </>
-          ) : (
-            <Dashboard />
-          )}
-        </main>
-      </div>
+      <GitPanel />
 
       <NewWorktreeModal />
       <CloneRepoModal />

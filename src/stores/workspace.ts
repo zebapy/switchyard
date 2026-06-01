@@ -83,6 +83,12 @@ interface AddTabOptions {
   label?: string;
   /** For Agent panes: command of the chosen agent (e.g. "claude"). Empty = default. */
   agent?: string;
+  /** For Diff panes: repo-relative file whose diff is shown. */
+  diffFile?: string;
+  /** For Diff panes: which diff to show (unstaged | staged | base). */
+  diffSource?: string;
+  /** For File panes: repo-relative file shown in the viewer. */
+  filePath?: string;
 }
 
 interface WorkspaceState {
@@ -286,6 +292,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       command: opts?.command,
       tmuxSession: opts?.tmuxSession,
       agent: opts?.agent,
+      diffFile: opts?.diffFile,
+      diffSource: opts?.diffSource,
+      filePath: opts?.filePath,
     };
     const tab: Tab = {
       id: tabId,
@@ -791,6 +800,9 @@ type SerializedPaneTree =
       custom_name?: string;
       tmux_session?: string;
       agent?: string;
+      diff_file?: string;
+      diff_source?: string;
+      file_path?: string;
     }
   | {
       type: 'split';
@@ -811,6 +823,9 @@ function serializePaneTree(tree: PaneTree, panes: Map<string, PaneInfo>): Serial
       custom_name: pane?.customName,
       tmux_session: pane?.tmuxSession,
       agent: pane?.agent,
+      diff_file: pane?.diffFile,
+      diff_source: pane?.diffSource,
+      file_path: pane?.filePath,
     };
   }
   return {
@@ -838,6 +853,9 @@ function deserializePaneTree(
       customName: data.custom_name,
       tmuxSession: data.tmux_session,
       agent: data.agent,
+      diffFile: data.diff_file,
+      diffSource: data.diff_source,
+      filePath: data.file_path,
     });
     return { type: 'leaf', paneId };
   }

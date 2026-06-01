@@ -3,7 +3,7 @@ import { useProjectsStore } from '../stores/projects';
 import type { AgentConfig } from '../types/agent';
 import { AgentGlyph, PlusIcon, CloseIcon, ChevronIcon } from './icons';
 
-const h3Class = 'mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-ink-ghost';
+const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const rowClass = 'flex items-center gap-2.5 rounded-[9px] border border-line bg-app px-2.5 py-2';
 const iconBtn =

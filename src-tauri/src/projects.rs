@@ -49,8 +49,22 @@ pub fn default_agent_command(settings: &AppSettings) -> String {
         .unwrap_or_else(|| "claude".to_string())
 }
 
+/// Where new git worktrees are created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum WorktreeLocation {
+    /// Under the project itself, at `<project>/.claude/worktrees/<branch>`.
+    Project,
+    /// In a shared global directory, at `~/.switchyard/<project>/<branch>`.
+    Global,
+}
+
+fn default_worktree_location() -> WorktreeLocation {
+    WorktreeLocation::Project
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(title = "AppSettings", description = "User settings for the cc-tui app.")]
+#[schemars(title = "AppSettings", description = "User settings for the Switchyard app.")]
 pub struct AppSettings {
     /// Path to the JSON Schema describing this file. Lets editors validate it.
     #[serde(rename = "$schema", default = "default_schema_ref")]
@@ -76,6 +90,10 @@ pub struct AppSettings {
     /// Configured AI agents, ordered by preference. First entry is the default.
     #[serde(default = "default_agents")]
     pub agents: Vec<AgentConfig>,
+    /// Where new git worktrees are created: under the project's
+    /// `.claude/worktrees`, or in a shared global `~/.switchyard` directory.
+    #[serde(default = "default_worktree_location")]
+    pub worktree_location: WorktreeLocation,
 }
 
 impl Default for AppSettings {
@@ -89,6 +107,7 @@ impl Default for AppSettings {
             desktop_notifications: true,
             project_scripts: HashMap::new(),
             agents: default_agents(),
+            worktree_location: default_worktree_location(),
         }
     }
 }
@@ -141,10 +160,26 @@ fn diff_stats(repo: &git2::Repository) -> (i64, i64) {
     (0, 0)
 }
 
-fn config_dir() -> PathBuf {
+/// Per-user config directory for Switchyard: `~/.config/switchyard`.
+/// (Formerly `cc-tui`; see `migrate_legacy_config_dir`.)
+pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("cc-tui")
+        .join("switchyard")
+}
+
+/// One-time rename of the legacy `cc-tui` config dir to `switchyard`, so the
+/// rename doesn't orphan a user's existing settings, pins, session, and tokens.
+/// Safe to call on every startup: a no-op once the new directory exists.
+pub fn migrate_legacy_config_dir() {
+    let Some(base) = dirs::config_dir() else {
+        return;
+    };
+    let legacy = base.join("cc-tui");
+    let current = base.join("switchyard");
+    if legacy.is_dir() && !current.exists() {
+        let _ = fs::rename(&legacy, &current);
+    }
 }
 
 fn ensure_config_dir() -> std::io::Result<PathBuf> {
@@ -315,10 +350,35 @@ pub fn toggle_pin(project_path: String) -> Result<Vec<String>, String> {
     Ok(pins)
 }
 
+/// Root global directory for worktrees: `~/.switchyard`.
+fn global_worktree_root() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".switchyard")
+}
+
+/// Directory under which a new worktree for `repo_path` is created, per the
+/// configured location. Project: `<repo>/.claude/worktrees`. Global:
+/// `~/.switchyard/<project-name>`, namespaced by project so branch names don't
+/// collide across repos.
+fn worktree_base_dir(repo_path: &str, location: WorktreeLocation) -> PathBuf {
+    match location {
+        WorktreeLocation::Project => Path::new(repo_path).join(".claude").join("worktrees"),
+        WorktreeLocation::Global => {
+            let project_name = Path::new(repo_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "project".to_string());
+            global_worktree_root().join(project_name)
+        }
+    }
+}
+
 #[tauri::command(async)]
 pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String, String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let worktrees_dir = Path::new(&repo_path).join(".claude").join("worktrees");
+    let location = load_settings().worktree_location;
+    let worktrees_dir = worktree_base_dir(&repo_path, location);
     fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
     let worktree_path = worktrees_dir.join(&branch_name);
 
@@ -463,6 +523,17 @@ pub fn get_settings_schema() -> Result<serde_json::Value, String> {
     serde_json::to_value(&schema).map_err(|e| e.to_string())
 }
 
+/// Absolute path to the user-editable settings file. Ensures the file and its
+/// JSON Schema both exist on disk first, so an external editor always has
+/// something to open and can validate edits against `settings.schema.json`.
+#[tauri::command]
+pub fn settings_file_path() -> Result<String, String> {
+    let settings = load_settings();
+    save_settings(&settings)?;
+    write_settings_schema()?;
+    Ok(settings_path().to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub fn set_scan_root(root: String) -> Result<AppSettings, String> {
     let mut settings = load_settings();
@@ -493,6 +564,27 @@ pub fn remove_project_path(path: String) -> Result<AppSettings, String> {
     Ok(settings)
 }
 
+/// Reorder the user's added projects. `paths` must be a permutation of the
+/// existing `added_projects` — any project missing from `paths` is appended in
+/// its prior order, and unknown paths are ignored, so the saved set is stable.
+#[tauri::command]
+pub fn reorder_projects(paths: Vec<String>) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    let existing = settings.added_projects.clone();
+    let mut reordered: Vec<String> = paths
+        .into_iter()
+        .filter(|p| existing.contains(p))
+        .collect();
+    for p in &existing {
+        if !reordered.contains(p) {
+            reordered.push(p.clone());
+        }
+    }
+    settings.added_projects = reordered;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
 #[tauri::command]
 pub fn set_use_tmux(value: bool) -> Result<AppSettings, String> {
     let mut settings = load_settings();
@@ -513,6 +605,14 @@ pub fn set_desktop_notifications(value: bool) -> Result<AppSettings, String> {
 pub fn set_agents(agents: Vec<AgentConfig>) -> Result<AppSettings, String> {
     let mut settings = load_settings();
     settings.agents = agents;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_worktree_location(location: WorktreeLocation) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.worktree_location = location;
     save_settings(&settings)?;
     Ok(settings)
 }

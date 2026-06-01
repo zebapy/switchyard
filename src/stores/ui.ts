@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { SETTINGS_SECTIONS } from '../components/settingsSections';
 
 export const APP_NAME = 'Switchyard';
 
@@ -33,6 +34,10 @@ interface UiState {
   setSettingsOpen: (v: boolean) => void;
   toggleSettings: () => void;
   setTreeFocused: (v: boolean) => void;
+
+  /** Active settings section, shared between the sidebar nav and the settings page. */
+  settingsSection: string;
+  setSettingsSection: (id: string) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -57,7 +62,15 @@ export const useUiStore = create<UiState>((set) => ({
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setHelpOpen: (v) => set({ helpOpen: v }),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
-  setSettingsOpen: (v) => set({ mainView: v ? 'settings' : 'pane' }),
-  toggleSettings: () => set((s) => ({ mainView: s.mainView === 'settings' ? 'pane' : 'settings' })),
+  setSettingsOpen: (v) =>
+    set({ mainView: v ? 'settings' : 'pane', settingsSection: SETTINGS_SECTIONS[0].id }),
+  toggleSettings: () =>
+    set((s) => ({
+      mainView: s.mainView === 'settings' ? 'pane' : 'settings',
+      settingsSection: SETTINGS_SECTIONS[0].id,
+    })),
   setTreeFocused: (v) => set({ treeFocused: v }),
+
+  settingsSection: SETTINGS_SECTIONS[0].id,
+  setSettingsSection: (id) => set({ settingsSection: id }),
 }));

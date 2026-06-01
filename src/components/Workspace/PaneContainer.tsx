@@ -1,7 +1,8 @@
 import { useWorkspaceStore } from '../../stores/workspace';
-import { useProjectsStore } from '../../stores/projects';
 import { TerminalPane } from '../Terminal/TerminalPane';
-import { AiIcon, TermIcon, BaseBranchIcon, WorktreeIcon, SplitSquareIcon, CloseIcon } from '../icons';
+import { DiffPane } from './DiffPane';
+import { FilePane } from './FilePane';
+import { AiIcon, TermIcon, SplitSquareIcon, CloseIcon, CodeIcon } from '../icons';
 import type { PaneInfo } from '../../types/pane';
 
 interface PaneContainerProps {
@@ -16,21 +17,15 @@ function basename(path: string): string {
 export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
   const closePane = useWorkspaceStore((s) => s.closePane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
-  const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
-  const gitInfo = useProjectsStore((s) => s.gitInfo);
-
-  // The visible pane belongs to the active window; derive its branch context.
-  const windowPath = activeWindowId ?? paneInfo.cwd;
-  let branch: string | null = null;
-  let isMainWt = true;
-  for (const info of gitInfo.values()) {
-    const wt = info.worktrees.find((w) => w.path === windowPath);
-    if (wt) { branch = wt.branch; isMainWt = wt.is_main; break; }
-  }
-  if (!branch) branch = gitInfo.get(windowPath)?.branch ?? null;
 
   const isAi = paneInfo.kind === 'Agent' && !paneInfo.agentExited;
-  const title = paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
+  const isDiff = paneInfo.kind === 'Diff';
+  const isFile = paneInfo.kind === 'File';
+  const title = isDiff
+    ? basename(paneInfo.diffFile ?? paneInfo.cwd)
+    : isFile
+      ? basename(paneInfo.filePath ?? paneInfo.cwd)
+      : paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
 
   const actBtn = 'grid size-[26px] place-items-center rounded-md text-ink-faint hover:bg-hover hover:text-ink';
 
@@ -38,19 +33,8 @@ export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
     <div className={`flex h-full w-full flex-col overflow-hidden ${isActive ? 'z-[1] shadow-[inset_0_0_0_1.5px_var(--color-ember-edge)]' : ''}`}>
       <div className="flex flex-none items-center gap-2 border-b border-line bg-side px-3.5 py-[11px]">
         <div className="flex min-w-0 items-center gap-[7px] text-[13px] text-ink-dim">
-          <span className="truncate text-ink-dim">{basename(windowPath)}</span>
-          {branch && (
-            <>
-              <span className="text-ink-ghost">/</span>
-              <span className={`inline-flex ${isMainWt ? 'text-ember' : 'text-ink-faint'}`}>
-                {isMainWt ? <BaseBranchIcon size={13} /> : <WorktreeIcon size={13} />}
-              </span>
-              <span className="truncate font-mono text-[13px] text-ink-dim">{branch}</span>
-            </>
-          )}
-          <span className="text-ink-ghost">·</span>
           <span className={`inline-flex ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
-            {isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
+            {isDiff || isFile ? <CodeIcon size={13} /> : isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
           </span>
           <span className="truncate font-semibold text-ink">{title}</span>
         </div>
@@ -67,15 +51,21 @@ export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
         </div>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-canvas">
-        <TerminalPane
-          paneId={paneInfo.id}
-          kind={paneInfo.kind}
-          cwd={paneInfo.cwd}
-          command={paneInfo.command}
-          tmuxSession={paneInfo.tmuxSession}
-          agent={paneInfo.agent}
-          isActive={isActive}
-        />
+        {isDiff ? (
+          <DiffPane paneInfo={paneInfo} />
+        ) : isFile ? (
+          <FilePane paneInfo={paneInfo} />
+        ) : (
+          <TerminalPane
+            paneId={paneInfo.id}
+            kind={paneInfo.kind}
+            cwd={paneInfo.cwd}
+            command={paneInfo.command}
+            tmuxSession={paneInfo.tmuxSession}
+            agent={paneInfo.agent}
+            isActive={isActive}
+          />
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useUiStore } from '../stores/ui';
 import { useProjectsStore } from '../stores/projects';
+import { useGitPanelStore } from '../stores/gitPanel';
 
 interface UseKeybindingsOptions {
   onTogglePalette: () => void;
@@ -104,6 +105,13 @@ export function useKeybindings({
         return;
       }
 
+      // ⌘⇧G: toggle the Git panel
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        useGitPanelStore.getState().toggle();
+        return;
+      }
+
       // Ctrl+Q: quit
       if (e.ctrlKey && e.key === 'q') {
         e.preventDefault();
@@ -154,6 +162,13 @@ export function useKeybindings({
       if (e.metaKey && !e.shiftKey && e.key === 't') {
         e.preventDefault();
         spawnInActiveWindow('Shell');
+        return;
+      }
+
+      // ⌘⇧T: new chat (agent) tab
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        spawnInActiveWindow('Agent');
         return;
       }
 

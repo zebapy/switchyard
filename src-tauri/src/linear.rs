@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 
@@ -10,6 +11,34 @@ const PORT: u16 = 8123;
 const SCOPES: &str = "read,write";
 const KEYCHAIN_SERVICE: &str = "Switchyard";
 const KEYCHAIN_ACCOUNT: &str = "linear_access_token";
+
+// ── Token storage (OS keychain, cached in memory) ────────────────────────────
+
+/// See github.rs: cache the token so the OS keychain is read once per launch
+/// rather than on every `linear_query`, avoiding repeated keychain prompts when
+/// the dev build's code signature doesn't match the item ACL.
+static TOKEN_CACHE: Mutex<Option<String>> = Mutex::new(None);
+
+fn read_token() -> Result<String, String> {
+    if let Some(token) = TOKEN_CACHE.lock().unwrap().clone() {
+        return Ok(token);
+    }
+    let token = crate::token_store::get(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|_| "not connected to Linear".to_string())?;
+    *TOKEN_CACHE.lock().unwrap() = Some(token.clone());
+    Ok(token)
+}
+
+fn store_token(token: &str) -> Result<(), String> {
+    crate::token_store::set(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)?;
+    *TOKEN_CACHE.lock().unwrap() = Some(token.to_string());
+    Ok(())
+}
+
+fn clear_token() -> Result<(), String> {
+    *TOKEN_CACHE.lock().unwrap() = None;
+    crate::token_store::delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+}
 
 // Returns (verifier, challenge) for the PKCE flow.
 fn pkce() -> (String, String) {
@@ -92,21 +121,17 @@ pub async fn linear_login(app: AppHandle) -> Result<(), String> {
         eprintln!("[linear] token exchange returned no access_token: {res}");
         format!("token exchange failed: {res}")
     })?;
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .and_then(|entry| entry.set_password(token))
-        .map_err(|e| {
-            eprintln!("[linear] keychain write failed: {e}");
-            e.to_string()
-        })?;
+    store_token(token).map_err(|e| {
+        eprintln!("[linear] keychain write failed: {e}");
+        e
+    })?;
     eprintln!("[linear] token stored in keychain");
     Ok(())
 }
 
 #[tauri::command]
 pub async fn linear_query(query: String) -> Result<serde_json::Value, String> {
-    let token = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .and_then(|entry| entry.get_password())
-        .map_err(|_| "not connected to Linear".to_string())?;
+    let token = read_token()?;
     reqwest::Client::new()
         .post("https://api.linear.app/graphql")
         .header("Authorization", token) // Linear expects the raw token, no "Bearer" prefix.
@@ -121,14 +146,10 @@ pub async fn linear_query(query: String) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn linear_logout() -> Result<(), String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .and_then(|entry| entry.delete_credential())
-        .map_err(|e| e.to_string())
+    clear_token()
 }
 
 #[tauri::command]
 pub fn linear_is_connected() -> bool {
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .and_then(|entry| entry.get_password())
-        .is_ok()
+    read_token().is_ok()
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useUiStore } from '../../stores/ui';
 import type { PaneInfo, PaneTree, Tab } from '../../types/pane';
-import { AiIcon, TermIcon, SplitIcon, SplitBadgeIcon, ChevronIcon } from '../icons';
+import { AiIcon, TermIcon, SplitIcon, SplitBadgeIcon, ChevronIcon, CloseIcon } from '../icons';
 import { RenameField } from './RenameField';
 
 function leafIds(tree: PaneTree): string[] {
@@ -28,6 +28,20 @@ function sessionTip(pane: PaneInfo | undefined): string | undefined {
 
 const connector = "before:absolute before:top-1/2 before:h-px before:bg-guide before:content-['']";
 
+function CloseTabButton({ onClose }: { onClose: () => void }) {
+  return (
+    <span
+      role="button"
+      tabIndex={-1}
+      aria-label="Close session"
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
+      className="grid size-4 shrink-0 place-items-center rounded text-ink-faint opacity-0 transition hover:bg-ember-tint hover:text-del group-hover:opacity-100"
+    >
+      <CloseIcon size={11} />
+    </span>
+  );
+}
+
 interface SessionRowProps {
   windowPath: string;
   tab: Tab;
@@ -42,6 +56,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const setPaneName = useWorkspaceStore((s) => s.setPaneName);
+  const removeTab = useWorkspaceStore((s) => s.removeTab);
   const showPane = useUiStore((s) => s.showPane);
   const [open, setOpen] = useState(true);
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
@@ -65,7 +80,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
     const isAi = pane?.kind === 'Agent' && !pane.agentExited;
     const label = paneLabel(pane, tab.label);
     const rowClass =
-      `relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-left text-[13px] transition-colors ${connector} before:-left-[11px] before:w-[11px] ` +
+      `group relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-left text-[13px] transition-colors ${connector} before:-left-[11px] before:w-[11px] ` +
       (isActiveTab
         ? 'bg-active text-ink shadow-[inset_0_0_0_1px_var(--color-line)]'
         : 'text-ink-dim hover:bg-hover hover:text-ink');
@@ -97,7 +112,8 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
       >
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {isRunning(pane) && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-green animate-pulse-dot" title="running" />}
+        {isRunning(pane) && <span className="size-1.5 shrink-0 rounded-full bg-green animate-pulse-dot" title="running" />}
+        <CloseTabButton onClose={() => removeTab(tab.id)} />
       </button>
     );
   }
@@ -108,7 +124,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-left text-[13px] text-ink-dim transition-colors hover:bg-hover hover:text-ink ${connector} before:-left-[11px] before:w-[11px]`}
+        className={`group relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-left text-[13px] text-ink-dim transition-colors hover:bg-hover hover:text-ink ${connector} before:-left-[11px] before:w-[11px]`}
       >
         <span className={`grid place-items-center text-ink-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>
           <ChevronIcon size={11} />
@@ -118,6 +134,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
         <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-[7px] font-mono text-xs leading-[17px] text-ink-faint">
           <SplitBadgeIcon size={10} /> {leaves.length}
         </span>
+        <CloseTabButton onClose={() => removeTab(tab.id)} />
       </button>
       {open && (
         <div className={`relative pl-[17px] before:absolute before:left-[7px] before:-top-0.5 before:bottom-1.5 before:w-px before:bg-guide before:content-['']`}>

@@ -26,10 +26,7 @@ pub struct TabData {
 }
 
 fn session_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("cc-tui")
-        .join("session.json")
+    crate::projects::config_dir().join("session.json")
 }
 
 #[tauri::command]

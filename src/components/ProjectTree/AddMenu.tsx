@@ -26,6 +26,8 @@ const itemClass =
 const iconClass = 'grid w-4 place-items-center text-ink-faint';
 const sepClass = 'my-[5px] mx-1 h-px bg-line';
 const labelClass = 'px-[9px] pt-[6px] pb-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-ghost';
+const kbdClass =
+  'ml-auto rounded-[5px] border border-line bg-app px-1.5 py-px font-mono text-[11px] leading-none text-ink-faint';
 
 function packageDir(pkgPath: string): string {
   return pkgPath.replace(/\/package\.json$/, '');
@@ -100,8 +102,8 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
     <Menu.Root>
       {compact ? (
         <Menu.Trigger
-          title="New terminal or chat"
-          aria-label="New terminal or chat"
+          title="New tab"
+          aria-label="New tab"
           className="grid size-[26px] flex-none place-items-center rounded-md text-ink-faint transition-colors hover:bg-hover hover:text-ink"
           onClick={(e) => e.stopPropagation()}
         >
@@ -115,22 +117,24 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
           <span className="grid size-4 place-items-center rounded-[5px] border border-dashed border-line group-hover:border-ember-edge">
             <PlusIcon size={9} />
           </span>
-          New terminal or chat
+          New tab
         </Menu.Trigger>
       )}
       <Menu.Portal>
         <Menu.Positioner className="z-[300]" sideOffset={4} align="start">
           <Menu.Popup className={popupClass}>
-            {agents.map((agent) => (
+            {agents.map((agent, i) => (
               <Menu.Item key={agent.id} className={itemClass} onClick={() => spawnAgent(agent.command)}>
                 <span className={`${iconClass} text-ai`}>
                   <AgentGlyph name={agent.name} command={agent.command} size={14} />
                 </span>
                 New {agent.name}
+                {i === 0 && <kbd className={kbdClass}>⌘⇧T</kbd>}
               </Menu.Item>
             ))}
             <Menu.Item className={itemClass} onClick={spawnShell}>
               <span className={iconClass}><TermIcon size={14} /></span> New terminal
+              <kbd className={kbdClass}>⌘T</kbd>
             </Menu.Item>
 
             {scriptsProjectPath && (

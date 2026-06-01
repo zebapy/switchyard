@@ -28,6 +28,7 @@ const KEYBINDINGS = [
   ]},
   { section: 'Sessions', bindings: [
     { key: '⌘T', desc: 'New terminal' },
+    { key: '⌘⇧T', desc: 'New chat' },
     { key: '⌘↵', desc: 'New agent' },
     { key: 'Ctrl+Tab', desc: 'Next session' },
     { key: 'Ctrl+Shift+Tab', desc: 'Previous session' },

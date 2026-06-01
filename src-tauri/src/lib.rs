@@ -1,8 +1,10 @@
+mod git_ext;
 mod github;
 mod linear;
 mod projects;
 mod pty;
 mod session;
+mod token_store;
 
 use pty::PtyState;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder};
@@ -16,6 +18,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(PtyState::new())
         .setup(|app| {
+            // Rename the legacy `cc-tui` config dir to `switchyard` before any
+            // config file is read or written, so existing settings/tokens carry over.
+            projects::migrate_legacy_config_dir();
             if let Err(e) = projects::write_settings_schema() {
                 eprintln!("failed to write settings schema: {e}");
             }
@@ -85,12 +90,15 @@ pub fn run() {
             projects::delete_worktree,
             projects::get_app_settings,
             projects::get_settings_schema,
+            projects::settings_file_path,
             projects::set_scan_root,
             projects::add_project_path,
             projects::remove_project_path,
+            projects::reorder_projects,
             projects::set_use_tmux,
             projects::set_desktop_notifications,
             projects::set_agents,
+            projects::set_worktree_location,
             projects::find_package_jsons,
             projects::read_package_json_scripts,
             projects::set_project_scripts,
@@ -112,6 +120,14 @@ pub fn run() {
             github::gh_list_prs,
             github::gh_list_issues,
             github::gh_list_branches,
+            github::github_pr_checks,
+            github::github_check_log,
+            // Git diff/status panel commands
+            git_ext::git_changed_files,
+            git_ext::git_file_diff,
+            git_ext::git_default_branch,
+            git_ext::git_list_tree,
+            git_ext::read_file_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

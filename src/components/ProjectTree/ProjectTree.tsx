@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Menu } from '@base-ui-components/react/menu';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
 import { ProjectItem } from './ProjectItem';
 import { Footer } from '../Sidebar/Footer';
-import { DashboardIcon, PlusIcon } from '../icons';
+import { DashboardIcon, FolderPlusIcon, GitBranchIcon } from '../icons';
+
+const menuPopupClass =
+  'z-[300] min-w-[200px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
+  'text-[13px] text-ink shadow-[0_16px_48px_rgba(0,0,0,0.5)] outline-none';
+const menuItemClass =
+  'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
+  'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink';
+const menuIconClass = 'grid w-4 place-items-center text-ink-faint';
 
 export function ProjectTree() {
   const projects = useProjectsStore((s) => s.projects);
@@ -19,6 +28,7 @@ export function ProjectTree() {
   const treeFocused = useUiStore((s) => s.treeFocused);
   const setTreeFocused = useUiStore((s) => s.setTreeFocused);
   const toggleHelp = useUiStore((s) => s.toggleHelp);
+  const openCloneModal = useUiStore((s) => s.openCloneModal);
 
   const treeRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,7 +121,7 @@ export function ProjectTree() {
       ref={treeRef}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
-      className="flex h-full flex-col overflow-hidden outline-none"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"
     >
       <div className="border-b border-line-soft px-3 pb-3 pt-3">
         <button
@@ -129,23 +139,34 @@ export function ProjectTree() {
         </button>
       </div>
 
-      <div ref={scrollRef} className="scroll-thin flex-1 overflow-y-auto px-2 pb-3 pt-2">
-        <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
-          <span className="text-sm font-semibold text-white">Projects</span>
-          <div className="flex items-center gap-1.5">
-            <b className="text-xs font-semibold text-ink-faint">{navList.length}</b>
-            <button
-              type="button"
-              onClick={handleAddProject}
+      <div className="flex items-center justify-between px-[18px] pb-1 pt-3">
+        <span className="text-sm font-semibold text-white">Projects</span>
+        <div className="flex items-center gap-1.5">
+          <Menu.Root>
+            <Menu.Trigger
               aria-label="Add project"
               title="Add project"
-              className="grid size-5 place-items-center rounded-md text-ink-dim transition-colors hover:bg-hover hover:text-ink"
+              className="grid size-5 place-items-center rounded-md text-ink-dim transition-colors hover:bg-hover hover:text-ink data-[popup-open]:bg-hover data-[popup-open]:text-ink"
             >
-              <PlusIcon size={15} />
-            </button>
-          </div>
+              <FolderPlusIcon size={15} />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Positioner className="z-[300]" sideOffset={6} align="end">
+                <Menu.Popup className={menuPopupClass}>
+                  <Menu.Item className={menuItemClass} onClick={openCloneModal}>
+                    <span className={menuIconClass}><GitBranchIcon size={14} /></span> Clone repo
+                  </Menu.Item>
+                  <Menu.Item className={menuItemClass} onClick={handleAddProject}>
+                    <span className={menuIconClass}><FolderPlusIcon size={14} /></span> Add local folder
+                  </Menu.Item>
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
         </div>
+      </div>
 
+      <div ref={scrollRef} className="scroll-thin flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {navList.length === 0 && (
           <div className="px-2.5 py-6 text-center text-xs leading-relaxed text-ink-faint">
             No projects yet.

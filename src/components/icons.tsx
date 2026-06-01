@@ -39,6 +39,15 @@ export function ChevronIcon({ size = 11, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.8}><path d="M6 4l4 4-4 4" /></Svg>;
 }
 
+export function GearIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} viewBox="0 0 24 24" strokeWidth={2}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </Svg>
+  );
+}
+
 export function RepoIcon({ size = 15, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.4}>
@@ -170,6 +179,32 @@ export function PlusIcon({ size = 13, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.7}><path d="M8 3v10M3 8h10" /></Svg>;
 }
 
+export function ExternalLinkIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M9 3.3h3.7V7" />
+      <path d="M12.7 3.3L7 9" />
+      <path d="M11.2 9.4v2.3a1 1 0 01-1 1H4.3a1 1 0 01-1-1V5.8a1 1 0 011-1h2.3" />
+    </Svg>
+  );
+}
+
+export function FolderIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M2 5.2v6.4a1 1 0 001 1h10a1 1 0 001-1V6.2a1 1 0 00-1-1H7.8L6.4 3.6H3a1 1 0 00-1 1z" />
+    </Svg>
+  );
+}
+
+export function CodeIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.5}>
+      <path d="M5.5 5.5L2.5 8l3 2.5M10.5 5.5L13.5 8l-3 2.5M9.2 4l-2.4 8" />
+    </Svg>
+  );
+}
+
 export function FolderPlusIcon({ size = 14, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.4}>
@@ -220,6 +255,34 @@ export function BrandMark({ size = 16, className }: IconProps) {
       <circle cx="4" cy="12" r="1.7" />
       <circle cx="12" cy="7.5" r="1.7" />
       <path d="M4 5.7v4.6M4 8h3.6a3 3 0 003-3" />
+    </Svg>
+  );
+}
+
+/** Generic right-panel toggle: a framed rectangle with a docked right column. */
+export function PanelRightIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.6" />
+      <path d="M10 3.6v8.8" />
+    </Svg>
+  );
+}
+
+export function ListIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.5}>
+      <path d="M5.5 4.5h8M5.5 8h8M5.5 11.5h8" />
+      <path d="M2.7 4.5h.01M2.7 8h.01M2.7 11.5h.01" strokeWidth={2} />
+    </Svg>
+  );
+}
+
+export function TreeIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.5}>
+      <path d="M3 3.5v9M3 6h3.5M3 9.5h3.5" />
+      <path d="M7 4.5h6.5M7 6h4M7 9h6.5M7 10.5h4" strokeWidth={1.3} />
     </Svg>
   );
 }

@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PaneKind } from '../../types/pane';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { pendingPaneInput } from './pendingInput';
 
 // Patterns that indicate the agent is waiting for user input
 const WAITING_PATTERNS = [
@@ -28,6 +29,13 @@ const AGENT_EXIT_OSC = 8765;
 
 // Regex to match ANSI SGR sequences with RGB foreground color: ESC[38;2;R;G;Bm
 const ANSI_RGB_FG_RE = /\x1b\[(?:[0-9;]*;)?38;2;(\d{1,3});(\d{1,3});(\d{1,3})(?:;[0-9]*)*m/g;
+
+// Bracketed-paste wrappers: the agent TUI treats the wrapped text as a single
+// paste (multi-line safe, not submitted), and the trailing CR submits it.
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+const INITIAL_INPUT_IDLE_MS = 800; // Quiet period after first output → ready.
+const INITIAL_INPUT_CAP_MS = 4000; // Hard cap from first output.
 
 // Decode a base64 string to bytes in a single tight loop. Faster than
 // Uint8Array.from(atob(s), cb) under heavy PTY output (no per-byte callback).
@@ -97,6 +105,10 @@ export function useTerminal({
     if (!termRef.current || spawnedRef.current) return;
     spawnedRef.current = true;
     let disposed = false;
+
+    // Prompt to "type" into this pane once the agent has booted (e.g. from the
+    // diff-comment composer). Consumed once, then dropped from the registry.
+    const initial = pendingPaneInput.get(paneId);
 
     const terminal = new Terminal({
       fontSize: 13,
@@ -176,6 +188,38 @@ export function useTerminal({
     const setAgentStatus = useWorkspaceStore.getState().setAgentStatus;
     const setAgentAccentColor = useWorkspaceStore.getState().setAgentAccentColor;
     const setAgentExited = useWorkspaceStore.getState().setAgentExited;
+
+    // Initial-input injection: once the agent stops producing output for a beat
+    // (or a hard cap elapses), paste the pending prompt and submit it.
+    let sentInitial = false;
+    let initialIdleTimer: ReturnType<typeof setTimeout> | undefined;
+    let initialCapTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function clearInitialTimers() {
+      clearTimeout(initialIdleTimer);
+      clearTimeout(initialCapTimer);
+    }
+
+    function sendInitial() {
+      if (sentInitial || !initial) return;
+      sentInitial = true;
+      clearInitialTimers();
+      const payload = `${PASTE_START}${initial}${PASTE_END}\r`;
+      invoke('pty_write', {
+        id: paneId,
+        data: Array.from(new TextEncoder().encode(payload)),
+      }).catch(console.error);
+      pendingPaneInput.delete(paneId);
+    }
+
+    function noteOutputForInitial() {
+      if (sentInitial || !initial) return;
+      if (initialCapTimer === undefined) {
+        initialCapTimer = setTimeout(sendInitial, INITIAL_INPUT_CAP_MS);
+      }
+      clearTimeout(initialIdleTimer);
+      initialIdleTimer = setTimeout(sendInitial, INITIAL_INPUT_IDLE_MS);
+    }
 
     // Backend emits this OSC marker once the agent command exits and the pane
     // drops to a plain shell. Swallow it (return true) and re-label the pane.
@@ -305,6 +349,11 @@ export function useTerminal({
     listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
       const bytes = base64ToBytes(event.payload.data);
       terminal.write(bytes);
+      // Drive the initial-input timing off real output so we type only once the
+      // agent's TUI has rendered and gone quiet.
+      if (initial) {
+        noteOutputForInitial();
+      }
       // Decode for agent status detection
       if (kind === 'Agent') {
         const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -354,6 +403,7 @@ export function useTerminal({
       cancelAnimationFrame(initialFitFrame);
       window.clearTimeout(initialFitTimer);
       clearTimeout(idleTimer);
+      clearInitialTimers();
       observer.disconnect();
       resizeDisposable.dispose();
       oscDisposable.dispose();

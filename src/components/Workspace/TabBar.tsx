@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useProjectsStore } from '../../stores/projects';
+import { useGitPanelStore } from '../../stores/gitPanel';
 import { AddMenu } from '../ProjectTree/AddMenu';
+import { OpenInMenu } from './OpenInMenu';
 import { RenameField } from '../ProjectTree/RenameField';
-import { AiIcon, TermIcon, SplitIcon, CloseIcon } from '../icons';
+import { AiIcon, TermIcon, SplitIcon, CloseIcon, BaseBranchIcon, WorktreeIcon, PanelRightIcon } from '../icons';
 import type { PaneInfo, PaneTree } from '../../types/pane';
 
 function basename(path: string): string {
@@ -27,13 +30,26 @@ export function TabBar() {
   const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
   const windows = useWorkspaceStore((s) => s.windows);
   const panes = useWorkspaceStore((s) => s.panes);
+  const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const removeTab = useWorkspaceStore((s) => s.removeTab);
   const renameTab = useWorkspaceStore((s) => s.renameTab);
+  const gitInfo = useProjectsStore((s) => s.gitInfo);
+  const gitPanelOpen = useGitPanelStore((s) => s.open);
+  const toggleGitPanel = useGitPanelStore((s) => s.toggle);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
   const win = activeWindowId ? windows.get(activeWindowId) ?? null : null;
   if (!win) return null;
+
+  // Branch context for the active window, derived the same way as the pane header used to.
+  let branch: string | null = null;
+  let isMainWt = true;
+  for (const info of gitInfo.values()) {
+    const wt = info.worktrees.find((w) => w.path === win.projectPath);
+    if (wt) { branch = wt.branch; isMainWt = wt.is_main; break; }
+  }
+  if (!branch) branch = gitInfo.get(win.projectPath)?.branch ?? null;
 
   const commitName = (tabId: string, label: string) => {
     if (label.trim()) renameTab(tabId, label.trim());
@@ -41,7 +57,46 @@ export function TabBar() {
   };
 
   return (
-    <div className="scroll-thin flex flex-none items-center gap-1 overflow-x-auto border-b border-line bg-side px-2 py-1.5">
+    <div data-tauri-drag-region className="flex flex-none flex-col border-b border-line bg-side">
+      {/* Top row: workspace + branch on the left, "Open in" on the right. */}
+      <div
+        data-tauri-drag-region
+        className={
+          'flex items-center gap-2 border-b border-line-soft py-1.5 pr-3 ' +
+          (sidebarCollapsed ? 'pl-[72px]' : 'pl-3')
+        }
+      >
+        <div data-tauri-drag-region className="flex min-w-0 items-center gap-[7px] text-[13px] text-ink-dim">
+          <span className="truncate text-ink-dim">{basename(win.projectPath)}</span>
+          {branch && (
+            <>
+              <span className="text-ink-ghost">/</span>
+              <span className={`inline-flex ${isMainWt ? 'text-ember' : 'text-ink-faint'}`}>
+                {isMainWt ? <BaseBranchIcon size={13} /> : <WorktreeIcon size={13} />}
+              </span>
+              <span className="truncate font-mono text-[13px] text-ink-dim">{branch}</span>
+            </>
+          )}
+        </div>
+        <div className="ml-auto flex flex-none items-center gap-1">
+          <OpenInMenu path={win.projectPath} />
+          <button
+            type="button"
+            onClick={toggleGitPanel}
+            title="Toggle Git panel (⌘⇧G)"
+            aria-label="Toggle Git panel"
+            className={
+              'grid size-[26px] place-items-center rounded-md transition-colors ' +
+              (gitPanelOpen ? 'bg-active text-ember' : 'text-ink-faint hover:bg-hover hover:text-ink')
+            }
+          >
+            <PanelRightIcon size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom row: the tab strip. */}
+      <div data-tauri-drag-region className="scroll-thin flex min-w-0 items-center gap-1 overflow-x-auto px-2 py-1.5">
       {win.tabs.map((tab) => {
         const leaves = leafIds(tab.paneTree);
         const isSplit = leaves.length > 1;
@@ -94,6 +149,7 @@ export function TabBar() {
         );
       })}
       <AddMenu windowPath={win.projectPath} label={basename(win.projectPath)} compact />
+      </div>
     </div>
   );
 }

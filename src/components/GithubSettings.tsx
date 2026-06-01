@@ -7,7 +7,6 @@ interface DeviceCode {
   verification_uri: string;
 }
 
-const sectionClass = 'mb-[18px] border-b border-line pb-4 last:mb-0 last:border-b-0 last:pb-0';
 const h3Class = 'mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-ink-ghost';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const btnClass =
@@ -68,7 +67,7 @@ export function GithubSettings() {
   }, [deviceCode]);
 
   return (
-    <div className={sectionClass}>
+    <div>
       <h3 className={h3Class}>GitHub</h3>
 
       {!connected && !busy && (

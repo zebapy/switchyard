@@ -6,6 +6,7 @@
 //! Mirrors the structure of `linear.rs` (raw `reqwest` + `keyring`).
 
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_opener::OpenerExt;
 
@@ -13,7 +14,7 @@ use tauri_plugin_opener::OpenerExt;
 /// settings → OAuth Apps). The app must have **"Enable Device Flow"** ticked.
 /// Client IDs are not secret, so embedding this is safe; device flow needs no
 /// client secret.
-const CLIENT_ID: &str = "REPLACE_WITH_GITHUB_OAUTH_APP_CLIENT_ID";
+const CLIENT_ID: &str = "Ov23li4XBrbnyplWQ643";
 /// `repo` covers private-repo read + future push; `read:org` lets org repos resolve.
 const SCOPE: &str = "repo read:org";
 
@@ -28,18 +29,28 @@ const API_BASE: &str = "https://api.github.com";
 
 // ── Token storage (OS keychain) ──────────────────────────────────────────────
 
-fn entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|e| e.to_string())
-}
+/// Process-wide cache of the access token so we read the OS keychain only once
+/// per launch. macOS prompts the user on every keychain *read* when the app's
+/// code signature doesn't match the item's ACL — which happens on every dev
+/// rebuild — so polling commands (`get_pr_info`, `github_pr_checks`) that fire
+/// every few seconds would otherwise trigger a popup each time. Populated on
+/// first read and after login; cleared on logout.
+static TOKEN_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 fn read_token() -> Result<String, String> {
-    entry()?
-        .get_password()
-        .map_err(|_| "Not signed in to GitHub. Open Settings to sign in.".to_string())
+    if let Some(token) = TOKEN_CACHE.lock().unwrap().clone() {
+        return Ok(token);
+    }
+    let token = crate::token_store::get(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|_| "Not signed in to GitHub. Open Settings to sign in.".to_string())?;
+    *TOKEN_CACHE.lock().unwrap() = Some(token.clone());
+    Ok(token)
 }
 
 fn store_token(token: &str) -> Result<(), String> {
-    entry()?.set_password(token).map_err(|e| e.to_string())
+    crate::token_store::set(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)?;
+    *TOKEN_CACHE.lock().unwrap() = Some(token.to_string());
+    Ok(())
 }
 
 // ── Device flow ──────────────────────────────────────────────────────────────
@@ -154,9 +165,8 @@ pub async fn github_login(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 pub fn github_logout() -> Result<(), String> {
-    entry()?
-        .delete_credential()
-        .map_err(|e| e.to_string())
+    *TOKEN_CACHE.lock().unwrap() = None;
+    crate::token_store::delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
 }
 
 #[tauri::command]
@@ -495,6 +505,118 @@ async fn list_branches(path: &str) -> Option<Vec<GhItem>> {
         })
         .collect();
     Some(items)
+}
+
+// ── PR checks + GitHub Actions job logs ──────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckRun {
+    pub name: String,
+    /// queued | in_progress | completed
+    pub status: String,
+    /// success | failure | neutral | cancelled | skipped | timed_out | action_required | null
+    pub conclusion: Option<String>,
+    pub html_url: String,
+    pub details_url: String,
+    /// GitHub Actions job id parsed from `details_url` when this check is an
+    /// Actions job (lets us fetch its log inline). `None` for other checks.
+    pub job_id: Option<u64>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+/// Local HEAD commit sha, used as a fallback when the branch has no PR yet.
+fn head_sha(path: &str) -> Option<String> {
+    let repo = git2::Repository::open(path).ok()?;
+    let sha = repo.head().ok()?.peel_to_commit().ok()?.id().to_string();
+    Some(sha)
+}
+
+/// Pull the trailing Actions job id out of a check-run `details_url` shaped like
+/// `https://github.com/owner/repo/actions/runs/123/job/456`.
+fn parse_job_id(details_url: &str) -> Option<u64> {
+    let tail = details_url.split("/job/").nth(1)?;
+    let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Individual check-runs for the current branch's PR head commit, falling back
+/// to the local HEAD commit when there is no PR yet.
+#[tauri::command]
+pub async fn github_pr_checks(path: String) -> Result<Vec<CheckRun>, String> {
+    let token = read_token()?;
+    let (owner, repo) = repo_slug(&path).ok_or("No GitHub `origin` remote for this repo.")?;
+    let http = reqwest::Client::new();
+
+    let pr_sha = if let Some(branch) = current_branch(&path) {
+        let url = format!(
+            "{API_BASE}/repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=all&per_page=1"
+        );
+        api_get(&http, &token, &url).await.ok().and_then(|arr| {
+            arr.as_array()
+                .and_then(|a| a.first())
+                .and_then(|pr| pr["head"]["sha"].as_str().map(String::from))
+        })
+    } else {
+        None
+    };
+
+    let Some(sha) = pr_sha.or_else(|| head_sha(&path)) else {
+        return Ok(Vec::new());
+    };
+
+    let cr = api_get(
+        &http,
+        &token,
+        &format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}/check-runs"),
+    )
+    .await?;
+
+    let mut out = Vec::new();
+    if let Some(runs) = cr["check_runs"].as_array() {
+        for run in runs {
+            let details_url = run["details_url"].as_str().unwrap_or("").to_string();
+            let html_url = run["html_url"].as_str().unwrap_or(&details_url).to_string();
+            out.push(CheckRun {
+                name: run["name"].as_str().unwrap_or("(unnamed check)").to_string(),
+                status: run["status"].as_str().unwrap_or("").to_string(),
+                conclusion: run["conclusion"].as_str().map(String::from),
+                job_id: parse_job_id(&details_url),
+                details_url,
+                html_url,
+                started_at: run["started_at"].as_str().map(String::from),
+                completed_at: run["completed_at"].as_str().map(String::from),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Plain-text log for a GitHub Actions job. The API 302-redirects to a
+/// short-lived storage URL with the raw text, which reqwest follows.
+#[tauri::command]
+pub async fn github_check_log(path: String, job_id: u64) -> Result<String, String> {
+    let token = read_token()?;
+    let (owner, repo) = repo_slug(&path).ok_or("No GitHub `origin` remote for this repo.")?;
+    let http = reqwest::Client::new();
+    let resp = http
+        .get(format!(
+            "{API_BASE}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs"
+        ))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Couldn't fetch logs (HTTP {}). This check may not be a GitHub Actions job — open it on GitHub instead.",
+            resp.status()
+        ));
+    }
+    resp.text().await.map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
