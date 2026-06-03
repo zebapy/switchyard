@@ -1,12 +1,25 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectInfo, GitInfo, PrInfo } from '../types/project';
+import type { ProjectInfo, GitInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
+import type { ScriptSource } from '../types/scripts';
 import { DEFAULT_AGENT } from '../types/agent';
+import { randomWorktreeName } from '../lib/worktreeName';
 
 /** Where new git worktrees are created. */
 export type WorktreeLocation = 'project' | 'global';
+
+/** A worktree whose creation is in flight. Shown as an optimistic placeholder
+ *  row in the project tree until the real worktree lands in git info. */
+export interface PendingWorktree {
+  /** Transient id — the React key and the removal handle. */
+  id: string;
+  /** Project the worktree is being created under. */
+  projectPath: string;
+  /** Friendly name shown in the placeholder and used as the branch leaf. */
+  label: string;
+}
 
 interface AppSettings {
   $schema: string;
@@ -16,6 +29,7 @@ interface AppSettings {
   use_tmux: boolean;
   desktop_notifications: boolean;
   project_scripts: Record<string, string[]>;
+  project_sort: Record<string, WorktreeSort>;
   agents: AgentConfig[];
   worktree_location: WorktreeLocation;
 }
@@ -33,13 +47,13 @@ interface ProjectsState {
   agents: AgentConfig[];
   /** Where new git worktrees are created. */
   worktreeLocation: WorktreeLocation;
+  /** Per-project worktree-list sort order, keyed by project path. */
+  projectSort: Record<string, WorktreeSort>;
+  /** Worktrees whose creation is in flight, shown as placeholder rows. */
+  pendingWorktrees: PendingWorktree[];
   filter: string;
   expandedProjects: Set<string>;
   tmuxSessions: TmuxSessionInfo[];
-  /** Per-project: list of package.json absolute paths pinned for the Scripts section. */
-  projectScripts: Map<string, string[]>;
-  /** Cache: package.json absolute path → { scriptName: command }. */
-  scriptData: Map<string, Record<string, string>>;
 
   // Actions
   loadSettings: () => Promise<void>;
@@ -47,6 +61,10 @@ interface ProjectsState {
   loadPins: () => Promise<void>;
   togglePin: (projectPath: string) => Promise<void>;
   refreshGitInfo: (projectPath: string) => Promise<void>;
+  /** Fetch one worktree's deferred +/- line counts and patch them into cached git info. */
+  refreshWorktreeDiffStats: (projectPath: string, worktreePath: string) => Promise<void>;
+  /** Refresh cached git info for a worktree path and any project whose worktree list contains it, so a branch switch is reflected wherever the branch name is read. */
+  refreshGitInfoForPath: (worktreePath: string) => Promise<void>;
   refreshPrInfo: (projectPath: string) => Promise<void>;
   createProject: (parentDir: string, name: string) => Promise<void>;
   cloneRepo: (url: string, parentDir: string) => Promise<string>;
@@ -59,6 +77,8 @@ interface ProjectsState {
   setDesktopNotifications: (value: boolean) => Promise<void>;
   setAgents: (agents: AgentConfig[]) => Promise<void>;
   setWorktreeLocation: (location: WorktreeLocation) => Promise<void>;
+  /** Persist a project's worktree-list sort order. */
+  setProjectSort: (projectPath: string, sort: WorktreeSort) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
   /** Expand a project (idempotent — never collapses). */
@@ -66,13 +86,18 @@ interface ProjectsState {
   loadTmuxSessions: () => Promise<void>;
   killTmuxSession: (name: string) => Promise<void>;
   // Scripts
-  addProjectScript: (projectPath: string, packageJsonPath: string) => Promise<void>;
-  removeProjectScript: (projectPath: string, packageJsonPath: string) => Promise<void>;
-  loadScriptData: (packageJsonPath: string) => Promise<void>;
-  findPackageJsons: (projectPath: string) => Promise<string[]>;
+  /** Walk a project for package.json / pyproject.toml manifests and their runnable scripts. */
+  discoverScripts: (projectPath: string) => Promise<ScriptSource[]>;
   // Worktrees
   createWorktree: (repoPath: string, branchName: string) => Promise<string>;
+  /** Create a worktree with a random `adjective-noun` name, branch-prefixed with
+   *  the git user (e.g. `zebapy/brave-otter`). Returns its path and short label. */
+  quickWorktree: (repoPath: string) => Promise<{ path: string; label: string }>;
   deleteWorktree: (repoPath: string, name: string) => Promise<void>;
+  /** Whether a worktree can be archived, plus uncommitted-change warnings. */
+  getWorktreeArchiveStatus: (repoPath: string, name: string) => Promise<WorktreeArchiveStatus>;
+  /** Archive a worktree: remove its working directory, keep the branch. */
+  archiveWorktree: (repoPath: string, name: string) => Promise<void>;
 }
 
 export const useProjectsStore = create<ProjectsState>((set, get) => ({
@@ -86,18 +111,15 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   desktopNotifications: true,
   agents: [DEFAULT_AGENT],
   worktreeLocation: 'project',
+  projectSort: {},
+  pendingWorktrees: [],
   filter: '',
   expandedProjects: new Set(),
   tmuxSessions: [],
-  projectScripts: new Map(),
-  scriptData: new Map(),
 
   loadSettings: async () => {
     try {
       const settings = await invoke<AppSettings>('get_app_settings');
-      const projectScripts = new Map<string, string[]>(
-        Object.entries(settings.project_scripts ?? {}),
-      );
       const agents = settings.agents?.length ? settings.agents : [DEFAULT_AGENT];
       set({
         scanRoot: settings.scan_root,
@@ -106,7 +128,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         desktopNotifications: settings.desktop_notifications,
         agents,
         worktreeLocation: settings.worktree_location ?? 'project',
-        projectScripts,
+        projectSort: settings.project_sort ?? {},
       });
       return;
     } catch (e) {
@@ -151,9 +173,38 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         newMap.set(projectPath, info);
         return { gitInfo: newMap };
       });
+      // Diff stats are deferred so the tree paints immediately. Fetch each
+      // worktree's +/- counts concurrently and patch them in as they land.
+      info.worktrees.forEach((wt) => get().refreshWorktreeDiffStats(projectPath, wt.path));
     } catch {
       // Not a git repo or other error - ignore
     }
+  },
+
+  refreshWorktreeDiffStats: async (projectPath, worktreePath) => {
+    try {
+      const stat = await invoke<DiffStat>('get_worktree_diff_stats', { path: worktreePath });
+      set((state) => {
+        const info = state.gitInfo.get(projectPath);
+        if (!info) return state;
+        const worktrees = info.worktrees.map((wt) =>
+          wt.path === worktreePath ? { ...wt, added: stat.added, deleted: stat.deleted } : wt
+        );
+        const newMap = new Map(state.gitInfo);
+        newMap.set(projectPath, { ...info, worktrees });
+        return { gitInfo: newMap };
+      });
+    } catch {
+      // Worktree removed or not a repo - leave counts at 0
+    }
+  },
+
+  refreshGitInfoForPath: async (worktreePath) => {
+    const keys = new Set<string>([worktreePath]);
+    for (const [key, info] of get().gitInfo) {
+      if (info.worktrees.some((w) => w.path === worktreePath)) keys.add(key);
+    }
+    await Promise.all([...keys].map((key) => get().refreshGitInfo(key)));
   },
 
   refreshPrInfo: async (projectPath) => {
@@ -268,6 +319,19 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
+  setProjectSort: async (projectPath, sort) => {
+    // Optimistic: reflect the new order immediately, then persist.
+    const previous = get().projectSort;
+    set({ projectSort: { ...previous, [projectPath]: sort } });
+    try {
+      const settings = await invoke<AppSettings>('set_project_sort', { projectPath, sort });
+      set({ projectSort: settings.project_sort ?? {} });
+    } catch (e) {
+      console.error('Failed to set project sort:', e);
+      set({ projectSort: previous });
+    }
+  },
+
   setFilter: (filter) => set({ filter }),
 
   toggleExpanded: (projectPath) => {
@@ -309,47 +373,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
-  addProjectScript: async (projectPath, packageJsonPath) => {
-    const current = get().projectScripts.get(projectPath) ?? [];
-    if (current.includes(packageJsonPath)) return;
-    const next = [...current, packageJsonPath];
-    const settings = await invoke<AppSettings>('set_project_scripts', {
-      projectPath,
-      paths: next,
-    });
-    const projectScripts = new Map<string, string[]>(
-      Object.entries(settings.project_scripts ?? {}),
-    );
-    set({ projectScripts });
-    await get().loadScriptData(packageJsonPath);
-  },
-
-  removeProjectScript: async (projectPath, packageJsonPath) => {
-    const current = get().projectScripts.get(projectPath) ?? [];
-    const next = current.filter((p) => p !== packageJsonPath);
-    const settings = await invoke<AppSettings>('set_project_scripts', {
-      projectPath,
-      paths: next,
-    });
-    const projectScripts = new Map<string, string[]>(
-      Object.entries(settings.project_scripts ?? {}),
-    );
-    set({ projectScripts });
-  },
-
-  loadScriptData: async (packageJsonPath) => {
-    const scripts = await invoke<Record<string, string>>('read_package_json_scripts', {
-      path: packageJsonPath,
-    });
-    set((state) => {
-      const newMap = new Map(state.scriptData);
-      newMap.set(packageJsonPath, scripts);
-      return { scriptData: newMap };
-    });
-  },
-
-  findPackageJsons: async (projectPath) => {
-    return await invoke<string[]>('find_package_jsons', { projectPath });
+  discoverScripts: async (projectPath) => {
+    return await invoke<ScriptSource[]>('discover_scripts', { projectPath });
   },
 
   createWorktree: async (repoPath, branchName) => {
@@ -358,8 +383,52 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     return path;
   },
 
+  quickWorktree: async (repoPath) => {
+    const existingNames = (get().gitInfo.get(repoPath)?.worktrees ?? []).map(
+      (wt) => wt.path.split('/').filter(Boolean).pop() ?? '',
+    );
+    const pendingNames = get().pendingWorktrees
+      .filter((p) => p.projectPath === repoPath)
+      .map((p) => p.label);
+    const label = randomWorktreeName([...existingNames, ...pendingNames]);
+    const id = crypto.randomUUID();
+
+    // Optimistic: show a placeholder row immediately, before any backend round-trip,
+    // so the click registers instead of looking like nothing happened.
+    set((state) => ({
+      pendingWorktrees: [...state.pendingWorktrees, { id, projectPath: repoPath, label }],
+    }));
+    const dropPlaceholder = () =>
+      set((state) => ({ pendingWorktrees: state.pendingWorktrees.filter((p) => p.id !== id) }));
+
+    const slug = await invoke<string>('git_user_slug', { repoPath }).catch(() => '');
+    const branchName = slug ? `${slug}/${label}` : label;
+    const path = await invoke<string>('create_worktree', { repoPath, branchName }).catch(
+      (e: unknown) => {
+        dropPlaceholder();
+        throw e;
+      },
+    );
+
+    // The worktree exists on disk now, so the caller can open its Workspace tab
+    // immediately. Reconcile the real row into the tree in the background, then
+    // drop the placeholder once the real row is present (avoids a flash).
+    void get().refreshGitInfo(repoPath).finally(dropPlaceholder);
+
+    return { path, label };
+  },
+
   deleteWorktree: async (repoPath, name) => {
     await invoke('delete_worktree', { repoPath, name });
+    await get().refreshGitInfo(repoPath);
+  },
+
+  getWorktreeArchiveStatus: async (repoPath, name) => {
+    return await invoke<WorktreeArchiveStatus>('get_worktree_archive_status', { repoPath, name });
+  },
+
+  archiveWorktree: async (repoPath, name) => {
+    await invoke('archive_worktree', { repoPath, name });
     await get().refreshGitInfo(repoPath);
   },
 }));

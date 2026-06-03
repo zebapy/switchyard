@@ -24,6 +24,7 @@ export function ProjectTree() {
   const loadTmuxSessions = useProjectsStore((s) => s.loadTmuxSessions);
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const addProjectPath = useProjectsStore((s) => s.addProjectPath);
+  const reorderProjects = useProjectsStore((s) => s.reorderProjects);
 
   const treeFocused = useUiStore((s) => s.treeFocused);
   const setTreeFocused = useUiStore((s) => s.setTreeFocused);
@@ -33,6 +34,9 @@ export function ProjectTree() {
   const treeRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // Drag-to-reorder: index of the row being dragged, and the insertion slot (0..len) it would drop into.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const isDashboard = useLocation().pathname === '/';
 
@@ -116,6 +120,40 @@ export function ProjectTree() {
     }
   }, [navList, selectedIndex, toggleExpanded, toggleHelp, setTreeFocused]);
 
+  const resetDrag = useCallback(() => {
+    setDragIndex(null);
+    setDropIndex(null);
+  }, []);
+
+  const handleDragStart = useCallback((index: number) => {
+    setDragIndex(index);
+    setDropIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((index: number, e: React.DragEvent) => {
+    if (dragIndex === null) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    setDropIndex(after ? index + 1 : index);
+  }, [dragIndex]);
+
+  const handleDrop = useCallback(() => {
+    if (dragIndex === null || dropIndex === null) return resetDrag();
+    let insertAt = dropIndex;
+    if (dragIndex < dropIndex) insertAt -= 1;
+    if (insertAt === dragIndex) return resetDrag();
+    const paths = navList.map((p) => p.path);
+    const [moved] = paths.splice(dragIndex, 1);
+    paths.splice(insertAt, 0, moved);
+    reorderProjects(paths);
+    resetDrag();
+  }, [dragIndex, dropIndex, navList, reorderProjects, resetDrag]);
+
+  // A drop slot only gets an indicator when landing there actually moves the row.
+  const isRealMove = (slot: number) =>
+    dragIndex !== null && slot !== dragIndex && slot !== dragIndex + 1;
+
   return (
     <div
       ref={treeRef}
@@ -180,8 +218,26 @@ export function ProjectTree() {
             key={project.path}
             project={project}
             isSelected={treeFocused && idx === selectedIndex}
+            index={idx}
+            isDragging={dragIndex === idx}
+            showDropLine={dropIndex === idx && isRealMove(idx)}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragEnd={resetDrag}
           />
         ))}
+        {dragIndex !== null && navList.length > 0 && (
+          <div
+            className="relative h-3"
+            onDragOver={(e) => { e.preventDefault(); setDropIndex(navList.length); }}
+            onDrop={(e) => { e.preventDefault(); handleDrop(); }}
+          >
+            {dropIndex === navList.length && isRealMove(navList.length) && (
+              <div className="pointer-events-none absolute top-0 left-2 right-2 h-0.5 rounded-full bg-ember" />
+            )}
+          </div>
+        )}
       </div>
 
       <Footer />

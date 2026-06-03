@@ -27,6 +27,11 @@ const DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const API_BASE: &str = "https://api.github.com";
 
+/// In-app "Send feedback" files issues against this repo regardless of which
+/// project the user currently has open.
+const FEEDBACK_OWNER: &str = "zebapy";
+const FEEDBACK_REPO: &str = "switchyard";
+
 // ── Token storage (OS keychain) ──────────────────────────────────────────────
 
 /// Process-wide cache of the access token so we read the OS keychain only once
@@ -208,6 +213,60 @@ async fn api_get(
         .json()
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn api_post(
+    http: &reqwest::Client,
+    token: &str,
+    url: &str,
+    body: &serde_json::Value,
+) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
+    let resp = http
+        .post(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let json = resp
+        .json()
+        .await
+        .unwrap_or(serde_json::Value::Null);
+    Ok((status, json))
+}
+
+/// File a GitHub issue against the Switchyard repo on the signed-in user's
+/// behalf — backs the in-app "Send feedback" form. Returns the new issue URL.
+#[tauri::command]
+pub async fn github_create_issue(
+    title: String,
+    body: String,
+    labels: Vec<String>,
+) -> Result<String, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("Add a title before sending.".into());
+    }
+    let token =
+        read_token().map_err(|_| "Sign in to GitHub in Settings to send feedback.".to_string())?;
+    let http = reqwest::Client::new();
+    let url = format!("{API_BASE}/repos/{FEEDBACK_OWNER}/{FEEDBACK_REPO}/issues");
+    let payload = serde_json::json!({ "title": title, "body": body, "labels": labels });
+    let (status, json) = api_post(&http, &token, &url, &payload).await?;
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error");
+        return Err(format!(
+            "GitHub couldn't create the issue ({status}): {msg}"
+        ));
+    }
+    json["html_url"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| "Issue created, but GitHub returned no link.".to_string())
 }
 
 // ── owner/repo + branch resolution (libgit2) ─────────────────────────────────

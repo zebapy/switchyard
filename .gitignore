@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# App-created worktrees: full repo checkouts under the project dir when
+# dogfooding switchyard on itself. Ignored so git status, Vite, and Tailwind's
+# source scan don't pick up the duplicate trees.
+.claude/worktrees/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

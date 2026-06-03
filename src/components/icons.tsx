@@ -187,6 +187,18 @@ export function PlusIcon({ size = 13, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.7}><path d="M8 3v10M3 8h10" /></Svg>;
 }
 
+/** Git branch ending in a plus — "create a worktree from a source". */
+export function BranchPlusIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <circle cx="4.5" cy="4" r="1.5" />
+      <circle cx="4.5" cy="12" r="1.5" />
+      <path d="M4.5 5.5v5M4.5 8.6h2.3A2.6 2.6 0 009.4 6" />
+      <path d="M11.5 3.6v3.4M9.8 5.3h3.4" />
+    </Svg>
+  );
+}
+
 export function ExternalLinkIcon({ size = 14, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.4}>
@@ -256,6 +268,17 @@ export function CloseIcon({ size = 16, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.6}><path d="M4 4l8 8M12 4l-8 8" /></Svg>;
 }
 
+/** Archive box: a lidded crate with a pull slot. */
+export function ArchiveIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="2.3" y="3" width="11.4" height="2.8" rx="0.8" />
+      <path d="M3.3 5.8v6a1 1 0 001 1h7.4a1 1 0 001-1v-6" />
+      <path d="M6.4 8.2h3.2" />
+    </Svg>
+  );
+}
+
 export function BrandMark({ size = 16, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.6}>
@@ -310,6 +333,37 @@ export function ClearIcon({ size = 14, className }: IconProps) {
 
 export function CheckIcon({ size = 13, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={2}><path d="M3.3 8.6l3 3 6.4-7.2" /></Svg>;
+}
+
+export function SortIcon({ size = 14, className }: IconProps) {
+  return <Svg size={size} className={className}><path d="M3 4h9M3 8h6M3 12h3" /></Svg>;
+}
+
+export function HelpIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.5}>
+      <circle cx="8" cy="8" r="6.3" />
+      <path d="M6.1 6.15a1.9 1.9 0 0 1 3.6.6c0 1.25-1.8 1.55-1.8 2.75" />
+      <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function BugIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="5" y="5.3" width="6" height="7.2" rx="3" />
+      <path d="M8 3v2.3M5.6 3.6l1.1 1.4M10.4 3.6 9.3 5M4.9 8H2.6M11.1 8h2.3M5.1 10.8 3 11.9M10.9 10.8 13 11.9M5.1 6.2 3 5.1M10.9 6.2 13 5.1" />
+    </Svg>
+  );
+}
+
+export function SparkleIcon({ size = 13, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <path d="M8 2.4c.45 2.75 1.4 3.7 4.15 4.15C9.4 7 8.45 7.95 8 10.7 7.55 7.95 6.6 7 3.85 6.55 6.6 6.1 7.55 5.15 8 2.4z" />
+    </Svg>
+  );
 }
 
 // ── new-worktree modal source icons ─────────────────────────────────────

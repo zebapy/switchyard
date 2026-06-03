@@ -26,8 +26,11 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, plus `.claude` — quick
+      //    worktrees check out a full repo copy under `.claude/worktrees/...`
+      //    when dogfooding switchyard on itself; without this the new files
+      //    flood Vite's watcher and trigger a full-page HMR reload on create.
+      ignored: ["**/src-tauri/**", "**/.claude/**"],
     },
   },
 }));

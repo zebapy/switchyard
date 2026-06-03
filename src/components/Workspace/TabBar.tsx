@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
 import { AddMenu } from '../ProjectTree/AddMenu';
+import { BranchMenu } from '../GitPanel/BranchMenu';
 import { OpenInMenu } from './OpenInMenu';
 import { RenameField } from '../ProjectTree/RenameField';
 import { AiIcon, TermIcon, SplitIcon, CloseIcon, BaseBranchIcon, WorktreeIcon, PanelRightIcon } from '../icons';
@@ -44,9 +45,10 @@ export function TabBar() {
   // Branch context for the active window, derived the same way as the pane header used to.
   let branch: string | null = null;
   let isMainWt = true;
-  for (const info of gitInfo.values()) {
+  let projectRoot: string | null = null;
+  for (const [root, info] of gitInfo) {
     const wt = info.worktrees.find((w) => w.path === win.projectPath);
-    if (wt) { branch = wt.branch; isMainWt = wt.is_main; break; }
+    if (wt) { branch = wt.branch; isMainWt = wt.is_main; projectRoot = root; break; }
   }
   if (!branch) branch = gitInfo.get(win.projectPath)?.branch ?? null;
 
@@ -70,7 +72,7 @@ export function TabBar() {
               <span className={`inline-flex ${isMainWt ? 'text-ember' : 'text-ink-faint'}`}>
                 {isMainWt ? <BaseBranchIcon size={13} /> : <WorktreeIcon size={13} />}
               </span>
-              <span className="truncate font-mono text-[13px] text-ink-dim">{branch}</span>
+              <BranchMenu path={win.projectPath} branch={branch} />
             </>
           )}
         </div>
@@ -144,7 +146,12 @@ export function TabBar() {
           </button>
         );
       })}
-      <AddMenu windowPath={win.projectPath} label={basename(win.projectPath)} compact />
+      <AddMenu
+        windowPath={win.projectPath}
+        label={basename(win.projectPath)}
+        scriptsProjectPath={isMainWt ? projectRoot ?? undefined : undefined}
+        compact
+      />
       </div>
     </div>
   );

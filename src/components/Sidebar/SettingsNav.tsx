@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router';
 import { ChevronIcon } from '../icons';
-import { SETTINGS_SECTIONS } from '../settingsSections';
+import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '../settingsSections';
 
 const navItemClass = 'block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] transition';
 
@@ -11,7 +11,6 @@ export function SettingsNav() {
 
   const goToSection = (id: string) => {
     navigate(`/settings/${id}`);
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
@@ -33,19 +32,26 @@ export function SettingsNav() {
         <div className="px-2.5 pb-1 pt-1.5">
           <span className="text-sm font-semibold text-white">Settings</span>
         </div>
-        {SETTINGS_SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => goToSection(s.id)}
-            className={`${navItemClass} ${
-              activeSection === s.id
-                ? 'bg-ember-tint text-ink'
-                : 'text-ink-dim hover:bg-hover hover:text-ink'
-            }`}
-          >
-            {s.label}
-          </button>
+        {SETTINGS_GROUPS.map((group) => (
+          <div key={group.id} className="mt-2 first:mt-1">
+            <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-ghost">
+              {group.label}
+            </div>
+            {group.sections.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => goToSection(s.id)}
+                className={`${navItemClass} ${
+                  activeSection === s.id
+                    ? 'bg-ember-tint text-ink'
+                    : 'text-ink-dim hover:bg-hover hover:text-ink'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     </div>

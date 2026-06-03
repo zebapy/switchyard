@@ -1,14 +1,33 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { Command as Cmdk } from 'cmdk';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
-import { fuzzyMatch } from './fuzzyMatch';
+import { useUiStore } from '../../stores/ui';
 
-interface Command {
+interface PaletteCommand {
   id: string;
   label: string;
   category: string;
   action: () => void;
+  /** Dimmed secondary text shown after the label (e.g. the owning project). */
+  hint?: string;
+  /** Dimmed line shown beneath the label (e.g. the worktree path / cwd). */
+  sublabel?: string;
+  /** Text matched against the query when set; falls back to `label`. */
+  searchText?: string;
 }
+
+/** A branch/worktree (or open window) the palette can locate and open. */
+interface BranchTarget {
+  path: string;
+  branchName: string;
+  projectName: string;
+  /** lastActiveAt of its open window, or null when no window is open. */
+  lastActiveAt: number | null;
+}
+
+/** Order categories appear in the list; unknown categories are appended. */
+const CATEGORY_ORDER = ['Workspace', 'Branch', 'Pane', 'Tab', 'Navigation', 'Settings', 'Window'];
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -18,10 +37,6 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }: CommandPaletteProps) {
-  const [query, setQuery] = useState('');
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-
   const closePane = useWorkspaceStore((s) => s.closePane);
   const detachPane = useWorkspaceStore((s) => s.detachPane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
@@ -33,18 +48,24 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   const windows = useWorkspaceStore((s) => s.windows);
   const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
+  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
+  const addTab = useWorkspaceStore((s) => s.addTab);
   const closeWindow = useWorkspaceStore((s) => s.closeWindow);
   const useTmux = useProjectsStore((s) => s.useTmux);
   const setUseTmux = useProjectsStore((s) => s.setUseTmux);
   const agents = useProjectsStore((s) => s.agents);
+  const projects = useProjectsStore((s) => s.projects);
+  const gitInfo = useProjectsStore((s) => s.gitInfo);
+  const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
+  const showPane = useUiStore((s) => s.showPane);
 
   const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
   const activePaneId = activeWindow?.activePaneId ?? null;
 
-  const commands: Command[] = useMemo(() => {
+  const commands: PaletteCommand[] = useMemo(() => {
     const activeCwd = activePaneId ? panes.get(activePaneId)?.cwd ?? '.' : '.';
 
-    const base: Command[] = [
+    const base: PaletteCommand[] = [
       {
         id: 'close-pane',
         label: 'Close Pane',
@@ -158,109 +179,159 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
       });
     }
 
-    const sortedWindows = Array.from(windows.values())
-      .filter((w) => w.projectPath !== activeWindowId)
-      .sort((a, b) => b.lastActiveAt - a.lastActiveAt);
-    for (const win of sortedWindows) {
-      const label = win.projectPath.split('/').pop() || win.projectPath;
-      base.push({
-        id: `switch-window-${win.projectPath}`,
-        label: `Switch to Window: ${label}`,
-        category: 'Window',
-        action: () => switchWindow(win.projectPath),
-      });
-    }
-
     return base;
   }, [
     activePaneId, panes, closePane, detachPane, splitPane,
     cyclePaneForward, cyclePaneBackward, nextTab, prevTab, onFocusTree,
-    onOpenSettings, useTmux, setUseTmux, agents, windows, activeWindowId, activeWindow,
-    switchWindow, closeWindow,
+    onOpenSettings, useTmux, setUseTmux, agents, activeWindow, closeWindow,
   ]);
 
-  const filtered = useMemo(() => {
-    if (!query) return commands;
-    return commands
-      .map((cmd) => ({ cmd, result: fuzzyMatch(query, cmd.label) }))
-      .filter((r) => r.result !== null)
-      .sort((a, b) => b.result!.score - a.result!.score)
-      .map((r) => r.cmd);
-  }, [query, commands]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setSelectedIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 0);
+  // Reveal or open a branch/worktree window. Mirrors BranchRow's openWorkspace:
+  // switch to the existing window if it has tabs, otherwise start the default
+  // agent. Reads live window state so a stale closure can't reopen a dead window.
+  const defaultAgent = agents[0]?.command;
+  const openTarget = (target: BranchTarget) => {
+    const win = useWorkspaceStore.getState().windows.get(target.path);
+    if (win && win.tabs.length > 0) {
+      switchWindow(target.path);
+      setActiveTab(win.activeTabId ?? win.tabs[0].id);
+    } else {
+      addTab(target.path, target.branchName, { kind: 'Agent', cwd: target.path, agent: defaultAgent });
     }
-  }, [isOpen]);
+    showPane();
+  };
 
+  // One searchable entry per branch/worktree across every project, plus any open
+  // window not yet covered by git info. Matched on "branch project path" so typing
+  // any of them locates it; open workspaces are categorised separately.
+  const locateCommands: PaletteCommand[] = useMemo(() => {
+    const targets = new Map<string, BranchTarget>();
+
+    for (const project of projects) {
+      const info = gitInfo.get(project.path);
+      if (!info) continue;
+      for (const wt of info.worktrees) {
+        const win = windows.get(wt.path);
+        targets.set(wt.path, {
+          path: wt.path,
+          branchName: wt.branch ?? basename(wt.path),
+          projectName: project.name,
+          lastActiveAt: win && win.tabs.length > 0 ? win.lastActiveAt : null,
+        });
+      }
+    }
+
+    // Open windows whose git info hasn't loaded yet still need to be reachable.
+    for (const win of windows.values()) {
+      if (targets.has(win.projectPath) || win.tabs.length === 0) continue;
+      const owner = projects.find(
+        (p) => p.path === win.projectPath || win.projectPath.startsWith(`${p.path}/`),
+      );
+      targets.set(win.projectPath, {
+        path: win.projectPath,
+        branchName: basename(win.projectPath),
+        projectName: owner?.name ?? '',
+        lastActiveAt: win.lastActiveAt,
+      });
+    }
+
+    return Array.from(targets.values())
+      .sort((a, b) => {
+        // Open workspaces first (most recent on top), then branches by name.
+        if (a.lastActiveAt !== null && b.lastActiveAt !== null) return b.lastActiveAt - a.lastActiveAt;
+        if (a.lastActiveAt !== null) return -1;
+        if (b.lastActiveAt !== null) return 1;
+        return a.branchName.localeCompare(b.branchName);
+      })
+      .map((target) => ({
+        id: `locate-${target.path}`,
+        label: target.branchName,
+        category: target.lastActiveAt !== null ? 'Workspace' : 'Branch',
+        hint: target.projectName,
+        sublabel: tildePath(target.path),
+        searchText: `${target.branchName} ${target.projectName} ${target.path}`.trim(),
+        action: () => openTarget(target),
+      }));
+    // openTarget closes over stable store actions; rebuild only when data changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, gitInfo, windows]);
+
+  // Group every command under its category heading, in CATEGORY_ORDER.
+  const groups = useMemo(() => {
+    const byCategory = new Map<string, PaletteCommand[]>();
+    for (const cmd of [...locateCommands, ...commands]) {
+      const list = byCategory.get(cmd.category) ?? [];
+      list.push(cmd);
+      byCategory.set(cmd.category, list);
+    }
+    const ordered = [...byCategory.keys()].sort((a, b) => {
+      const ia = CATEGORY_ORDER.indexOf(a);
+      const ib = CATEGORY_ORDER.indexOf(b);
+      return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+    });
+    return ordered.map((category) => ({ category, items: byCategory.get(category)! }));
+  }, [commands, locateCommands]);
+
+  // Load every project's branches when the palette opens so they're all
+  // searchable, not just those whose tree row has been expanded.
   useEffect(() => {
-    setSelectedIdx(0);
-  }, [query]);
+    if (!isOpen) return;
+    for (const project of projects) {
+      if (project.is_git) refreshGitInfo(project.path);
+    }
+  }, [isOpen, projects, refreshGitInfo]);
 
   if (!isOpen) return null;
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setSelectedIdx((i) => Math.max(i - 1, 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (filtered[selectedIdx]) {
-          filtered[selectedIdx].action();
-          onClose();
-        }
-        break;
-      case 'Escape':
-        e.preventDefault();
-        onClose();
-        break;
-    }
-  };
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-start justify-center bg-[rgba(6,7,9,0.6)] pt-[12vh] backdrop-blur-[3px]"
       onClick={onClose}
     >
-      <div
+      <Cmdk
+        label="Command palette"
+        loop
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}
         className="flex max-h-[60vh] w-[540px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <input
-          ref={inputRef}
-          type="text"
+        <Cmdk.Input
+          autoFocus
+          placeholder="Search commands, branches, and workspaces…"
           className="w-full border-b border-line bg-transparent px-[18px] py-3.5 text-[15px] text-ink outline-none placeholder:text-ink-ghost"
-          placeholder="Type a command…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
         />
-        <div className="scroll-thin overflow-y-auto p-1.5">
-          {filtered.map((cmd, idx) => (
-            <div
-              key={cmd.id}
-              className={`flex cursor-pointer items-center gap-3 rounded-[9px] px-3 py-[9px] ${idx === selectedIdx ? 'bg-ember-tint' : ''}`}
-              onClick={() => { cmd.action(); onClose(); }}
-              onMouseEnter={() => setSelectedIdx(idx)}
+        <Cmdk.List className="scroll-thin overflow-y-auto p-1.5">
+          <Cmdk.Empty className="p-[18px] text-center text-[13px] text-ink-ghost">
+            No matching results
+          </Cmdk.Empty>
+          {groups.map(({ category, items }) => (
+            <Cmdk.Group
+              key={category}
+              heading={category}
+              className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-ink-ghost"
             >
-              <span className="w-[72px] flex-none text-[11px] uppercase tracking-[0.06em] text-ink-ghost">{cmd.category}</span>
-              <span className="text-[13px] text-ink">{cmd.label}</span>
-            </div>
+              {items.map((cmd) => (
+                <Cmdk.Item
+                  key={cmd.id}
+                  value={cmd.searchText ?? cmd.label}
+                  onSelect={() => { cmd.action(); onClose(); }}
+                  className="flex cursor-pointer items-center gap-3 rounded-[9px] px-3 py-[9px] data-[selected=true]:bg-ember-tint"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[13px] text-ink">{cmd.label}</span>
+                    {cmd.sublabel && (
+                      <span className="truncate font-mono text-[11px] text-ink-ghost">{cmd.sublabel}</span>
+                    )}
+                  </span>
+                  {cmd.hint && (
+                    <span className="flex-none self-start truncate pl-3 text-[12px] text-ink-ghost">{cmd.hint}</span>
+                  )}
+                </Cmdk.Item>
+              ))}
+            </Cmdk.Group>
           ))}
-          {filtered.length === 0 && (
-            <div className="p-[18px] text-center text-[13px] text-ink-ghost">No matching commands</div>
-          )}
-        </div>
-      </div>
+        </Cmdk.List>
+      </Cmdk>
     </div>
   );
 }
@@ -268,4 +339,13 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
 function paneInTree(tree: import('../../types/pane').PaneTree, paneId: string): boolean {
   if (tree.type === 'leaf') return tree.paneId === paneId;
   return paneInTree(tree.children[0], paneId) || paneInTree(tree.children[1], paneId);
+}
+
+function basename(path: string): string {
+  return path.replace(/\/+$/, '').split('/').pop() ?? path;
+}
+
+/** Abbreviate the home directory to `~` for a shorter, readable cwd. */
+function tildePath(path: string): string {
+  return path.replace(/^\/Users\/[^/]+/, '~').replace(/^\/home\/[^/]+/, '~');
 }

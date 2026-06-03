@@ -11,6 +11,9 @@ import { ProjectTree } from '../components/ProjectTree/ProjectTree';
 import { SettingsNav } from '../components/Sidebar/SettingsNav';
 import { NewWorktreeModal } from '../components/Worktree/NewWorktreeModal';
 import { CloneRepoModal } from '../components/Project/CloneRepoModal';
+import { SendFeedbackModal } from '../components/Feedback/SendFeedbackModal';
+import { GithubConnectModal } from '../components/Github/GithubConnectModal';
+import { ScriptPalette } from '../components/Workspace/ScriptPalette';
 import { CommandPalette } from '../components/CommandPalette/CommandPalette';
 import { HelpOverlay } from '../components/HelpOverlay';
 import { CloseConfirmDialog } from '../components/CloseConfirmDialog';
@@ -192,6 +195,9 @@ export function RootLayout() {
 
       <NewWorktreeModal />
       <CloneRepoModal />
+      <SendFeedbackModal />
+      <GithubConnectModal />
+      <ScriptPalette />
 
       <CommandPalette
         isOpen={paletteOpen}

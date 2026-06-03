@@ -1,8 +1,7 @@
-import { useEffect, useMemo } from 'react';
 import { Menu } from '@base-ui-components/react/menu';
-import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useUiStore } from '../../stores/ui';
 import { goToWorkspace } from '../../router';
 import { AgentGlyph, TermIcon, PlusIcon } from '../icons';
 
@@ -11,7 +10,7 @@ interface AddMenuProps {
   windowPath: string;
   /** Base label for new sessions (branch or project name). */
   label: string;
-  /** When set (base branch), surfaces "Run script…" items + "Add scripts…". */
+  /** When set (base branch), surfaces the "New script…" item that scans this project. */
   scriptsProjectPath?: string;
   /** Compact square "+" trigger for the tab strip instead of the full sidebar row. */
   compact?: boolean;
@@ -25,44 +24,13 @@ const itemClass =
   'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink';
 const iconClass = 'grid w-4 place-items-center text-ink-faint';
 const sepClass = 'my-[5px] mx-1 h-px bg-line';
-const labelClass = 'px-[9px] pt-[6px] pb-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-ghost';
 const kbdClass =
   'ml-auto rounded-[5px] border border-line bg-app px-1.5 py-px font-mono text-[11px] leading-none text-ink-faint';
 
-function packageDir(pkgPath: string): string {
-  return pkgPath.replace(/\/package\.json$/, '');
-}
-
 export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddMenuProps) {
   const addTab = useWorkspaceStore((s) => s.addTab);
+  const openScriptPalette = useUiStore((s) => s.openScriptPalette);
   const agents = useProjectsStore((s) => s.agents);
-  const projectScripts = useProjectsStore((s) => s.projectScripts);
-  const scriptData = useProjectsStore((s) => s.scriptData);
-  const loadScriptData = useProjectsStore((s) => s.loadScriptData);
-  const addProjectScript = useProjectsStore((s) => s.addProjectScript);
-
-  const pkgPaths = useMemo(
-    () => (scriptsProjectPath ? projectScripts.get(scriptsProjectPath) ?? [] : []),
-    [scriptsProjectPath, projectScripts],
-  );
-
-  useEffect(() => {
-    for (const path of pkgPaths) {
-      if (!scriptData.has(path)) loadScriptData(path).catch(() => null);
-    }
-  }, [pkgPaths, scriptData, loadScriptData]);
-
-  const scriptItems = useMemo(() => {
-    const items: { pkgPath: string; name: string; command: string }[] = [];
-    for (const pkgPath of pkgPaths) {
-      const scripts = scriptData.get(pkgPath);
-      if (!scripts) continue;
-      for (const name of Object.keys(scripts).sort()) {
-        items.push({ pkgPath, name, command: scripts[name] });
-      }
-    }
-    return items;
-  }, [pkgPaths, scriptData]);
 
   const spawnAgent = (agentCommand: string) => {
     addTab(windowPath, label, { kind: 'Agent', cwd: windowPath, agent: agentCommand });
@@ -74,27 +42,9 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
     goToWorkspace();
   };
 
-  const runScript = (pkgPath: string, name: string) => {
-    addTab(windowPath, label, {
-      kind: 'Custom',
-      command: `npm run ${name}`,
-      cwd: packageDir(pkgPath),
-      label: `${label}: ${name}`,
-    });
-    goToWorkspace();
-  };
-
-  const handleAddScripts = async () => {
+  const openScripts = () => {
     if (!scriptsProjectPath) return;
-    const selected = await open({
-      title: 'Select package.json',
-      defaultPath: scriptsProjectPath,
-      multiple: false,
-      filters: [{ name: 'package.json', extensions: ['json'] }],
-    });
-    if (typeof selected !== 'string') return;
-    if (!selected.endsWith('package.json')) return;
-    await addProjectScript(scriptsProjectPath, selected);
+    openScriptPalette({ projectPath: scriptsProjectPath, windowPath, label });
   };
 
   return (
@@ -139,19 +89,8 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
             {scriptsProjectPath && (
               <>
                 <Menu.Separator className={sepClass} />
-                {scriptItems.length > 0 && <div className={labelClass}>Run script</div>}
-                {scriptItems.map((s) => (
-                  <Menu.Item
-                    key={`${s.pkgPath}:${s.name}`}
-                    className={itemClass}
-                    onClick={() => runScript(s.pkgPath, s.name)}
-                  >
-                    <span className={`${iconClass} font-mono text-ember`}>▸</span>
-                    <span className="truncate">{s.name}</span>
-                  </Menu.Item>
-                ))}
-                <Menu.Item className={itemClass} onClick={handleAddScripts}>
-                  <span className={iconClass}><PlusIcon size={12} /></span> Add scripts…
+                <Menu.Item className={itemClass} onClick={openScripts}>
+                  <span className={`${iconClass} font-mono text-ember`}>▸</span> New script…
                 </Menu.Item>
               </>
             )}
