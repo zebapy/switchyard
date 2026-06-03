@@ -203,6 +203,54 @@ pub fn git_default_branch(path: String) -> Result<Option<String>, String> {
     Ok(resolve_default_branch(&repo))
 }
 
+/// Local branch names in the repo, sorted case-insensitively. Powers the branch
+/// switcher dropdown in the panel header.
+#[tauri::command(async)]
+pub fn git_local_branches(path: String) -> Result<Vec<String>, String> {
+    let repo = open_repo(&path)?;
+    let branches = repo
+        .branches(Some(git2::BranchType::Local))
+        .map_err(|e| e.to_string())?;
+
+    let mut names: Vec<String> = Vec::new();
+    for entry in branches {
+        let (branch, _) = entry.map_err(|e| e.to_string())?;
+        if let Some(name) = branch.name().map_err(|e| e.to_string())? {
+            names.push(name.to_string());
+        }
+    }
+    names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    Ok(names)
+}
+
+/// Switch the worktree at `path` to the local `branch`. Uses a SAFE checkout so
+/// it errors rather than clobbering uncommitted changes — the caller surfaces
+/// that message to the user.
+#[tauri::command(async)]
+pub fn git_checkout_branch(path: String, branch: String) -> Result<(), String> {
+    let repo = open_repo(&path)?;
+
+    let reference = repo
+        .find_branch(&branch, git2::BranchType::Local)
+        .map_err(|_| format!("Branch '{branch}' not found."))?
+        .into_reference();
+    let ref_name = reference
+        .name()
+        .ok_or("Branch reference has no name.")?
+        .to_string();
+    let tree_object = reference.peel(git2::ObjectType::Tree).map_err(|e| e.to_string())?;
+
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.safe();
+    repo.checkout_tree(&tree_object, Some(&mut checkout))
+        .map_err(|e| {
+            format!("Couldn't switch to '{branch}': {e}. Commit or stash your changes first.")
+        })?;
+
+    repo.set_head(&ref_name).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Every working-tree file path that git knows about — tracked files (from the
 /// index) plus untracked-but-not-ignored files. Powers the Files tab's codebase
 /// tree. Paths are repo-relative, forward-slashed, and sorted.

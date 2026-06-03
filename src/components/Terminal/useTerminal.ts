@@ -88,12 +88,32 @@ export function useTerminal({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const spawnedRef = useRef(false);
 
+  // FitAddon always reserves a fixed 14px gutter on the right for a scrollbar.
+  // macOS/WebKit (Tauri's webview) draws the scrollbar as an overlay, so that
+  // gutter stays permanently empty — the agent/terminal content stops short of
+  // the pane's right edge and reads as off-centre ("not full width"). After the
+  // base fit, recompute cols against the full container width to reclaim it.
   const fit = useCallback(() => {
     const container = termRef.current;
-    if (!container || container.clientWidth === 0 || container.clientHeight === 0) {
-      return;
+    const terminal = terminalRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!container || !terminal || !fitAddon) return;
+    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+
+    fitAddon.fit();
+
+    const screen = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null;
+    if (!screen || terminal.cols === 0) return;
+
+    // After fit, the screen is exactly cols * cellWidth wide, so this recovers
+    // the real cell width without reaching into xterm internals.
+    const cellWidth = screen.clientWidth / terminal.cols;
+    if (cellWidth === 0) return;
+
+    const cols = Math.max(2, Math.floor(container.clientWidth / cellWidth));
+    if (cols !== terminal.cols) {
+      terminal.resize(cols, terminal.rows);
     }
-    fitAddonRef.current?.fit();
   }, []);
 
   const focus = useCallback(() => {

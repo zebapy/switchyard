@@ -1,20 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-interface LinearIssue {
-  identifier: string;
-  title: string;
-  state: { name: string };
+interface LinearViewer {
+  name: string;
+  displayName: string;
+  email: string;
+  avatarUrl: string | null;
 }
 
 interface LinearQueryResponse {
-  data?: { issues: { nodes: LinearIssue[] } };
+  data?: { viewer: LinearViewer };
 }
 
-const ISSUES_QUERY = `{
-  issues(first: 10, orderBy: updatedAt) {
-    nodes { identifier title state { name } }
-  }
+const VIEWER_QUERY = `{
+  viewer { name displayName email avatarUrl }
 }`;
 
 const sectionClass = 'mb-[18px] border-b border-line pb-4 last:mb-0 last:border-b-0 last:pb-0';
@@ -27,11 +26,23 @@ export function LinearSettings() {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [issues, setIssues] = useState<LinearIssue[] | null>(null);
+  const [viewer, setViewer] = useState<LinearViewer | null>(null);
+
+  const loadViewer = useCallback(async () => {
+    const result = await invoke<LinearQueryResponse>('linear_query', { query: VIEWER_QUERY }).catch((e) => String(e));
+    if (typeof result === 'string') {
+      setError(result);
+      return;
+    }
+    setViewer(result.data?.viewer ?? null);
+  }, []);
 
   useEffect(() => {
-    invoke<boolean>('linear_is_connected').then(setConnected);
-  }, []);
+    invoke<boolean>('linear_is_connected').then((isConnected) => {
+      setConnected(isConnected);
+      if (isConnected) loadViewer();
+    });
+  }, [loadViewer]);
 
   const handleConnect = useCallback(async () => {
     setBusy(true);
@@ -43,24 +54,13 @@ export function LinearSettings() {
       return;
     }
     setConnected(true);
-  }, []);
+    loadViewer();
+  }, [loadViewer]);
 
   const handleDisconnect = useCallback(async () => {
     await invoke('linear_logout');
     setConnected(false);
-    setIssues(null);
-  }, []);
-
-  const handleLoadIssues = useCallback(async () => {
-    setBusy(true);
-    setError('');
-    const result = await invoke<LinearQueryResponse>('linear_query', { query: ISSUES_QUERY }).catch((e) => String(e));
-    setBusy(false);
-    if (typeof result === 'string') {
-      setError(result);
-      return;
-    }
-    setIssues(result.data?.issues.nodes ?? []);
+    setViewer(null);
   }, []);
 
   return (
@@ -76,32 +76,28 @@ export function LinearSettings() {
       )}
       {connected && (
         <>
-          <p className={descClass}>Connected to Linear.</p>
-          <div className="flex gap-2">
-            <button className={btnClass} onClick={handleLoadIssues} disabled={busy}>
-              {busy ? 'Loading…' : 'Load recent issues'}
-            </button>
-            <button className={btnClass} onClick={handleDisconnect}>
-              Disconnect
-            </button>
+          <div className="mb-2.5 flex items-center gap-2.5">
+            {viewer?.avatarUrl ? (
+              <img
+                src={viewer.avatarUrl}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full border border-line object-cover"
+              />
+            ) : (
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-app text-xs font-semibold text-ink-dim">
+                {(viewer?.displayName || viewer?.name || '?').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-ink">
+                {viewer ? viewer.displayName || viewer.name : 'Connected to Linear'}
+              </div>
+              {viewer?.email && <div className="truncate text-xs text-ink-faint">{viewer.email}</div>}
+            </div>
           </div>
-          {issues && issues.length === 0 && <p className="mt-2.5 text-xs italic text-ink-ghost">No issues found.</p>}
-          {issues && issues.length > 0 && (
-            <ul className="mt-2.5 flex flex-col gap-1.5">
-              {issues.map((issue) => (
-                <li
-                  key={issue.identifier}
-                  className="flex items-center gap-2 rounded-[9px] border border-line bg-app px-2.5 py-2 text-xs"
-                >
-                  <span className="shrink-0 font-mono text-ink-faint">{issue.identifier}</span>
-                  <span className="flex-1 truncate text-ink" title={issue.title}>
-                    {issue.title}
-                  </span>
-                  <span className="shrink-0 text-ink-faint">{issue.state.name}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <button className={btnClass} onClick={handleDisconnect}>
+            Sign out
+          </button>
         </>
       )}
       {error && <p className="mt-2 text-xs text-del">{error}</p>}

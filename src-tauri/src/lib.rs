@@ -82,12 +82,16 @@ pub fn run() {
             // Project commands
             projects::scan_projects,
             projects::get_git_info,
+            projects::get_worktree_diff_stats,
             projects::get_pinned_projects,
             projects::toggle_pin,
             projects::create_project,
             projects::clone_repo,
             projects::create_worktree,
             projects::delete_worktree,
+            projects::get_worktree_archive_status,
+            projects::archive_worktree,
+            projects::git_user_slug,
             projects::get_app_settings,
             projects::get_settings_schema,
             projects::settings_file_path,
@@ -99,9 +103,9 @@ pub fn run() {
             projects::set_desktop_notifications,
             projects::set_agents,
             projects::set_worktree_location,
-            projects::find_package_jsons,
-            projects::read_package_json_scripts,
+            projects::discover_scripts,
             projects::set_project_scripts,
+            projects::set_project_sort,
             // Session commands
             session::save_session,
             session::load_session,
@@ -109,6 +113,7 @@ pub fn run() {
             // Linear commands
             linear::linear_login,
             linear::linear_query,
+            linear::linear_list_issues,
             linear::linear_logout,
             linear::linear_is_connected,
             // GitHub commands (OAuth device flow + API, replacing the `gh` CLI)
@@ -122,10 +127,13 @@ pub fn run() {
             github::gh_list_branches,
             github::github_pr_checks,
             github::github_check_log,
+            github::github_create_issue,
             // Git diff/status panel commands
             git_ext::git_changed_files,
             git_ext::git_file_diff,
             git_ext::git_default_branch,
+            git_ext::git_local_branches,
+            git_ext::git_checkout_branch,
             git_ext::git_list_tree,
             git_ext::read_file_text,
         ])

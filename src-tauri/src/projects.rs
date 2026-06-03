@@ -63,6 +63,19 @@ fn default_worktree_location() -> WorktreeLocation {
     WorktreeLocation::Project
 }
 
+/// How a project's worktree list is ordered (the root/main worktree always
+/// stays pinned to the top regardless).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum WorktreeSort {
+    /// Branch name, A→Z.
+    Name,
+    /// Working directory creation time, newest first.
+    Created,
+    /// Last commit time, newest first.
+    Updated,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[schemars(title = "AppSettings", description = "User settings for the Switchyard app.")]
 pub struct AppSettings {
@@ -87,6 +100,10 @@ pub struct AppSettings {
     /// Per-project list of package.json absolute paths to show in the Scripts section.
     #[serde(default)]
     pub project_scripts: HashMap<String, Vec<String>>,
+    /// Per-project worktree-list sort order, keyed by project path. Projects
+    /// absent from the map fall back to the default sort.
+    #[serde(default)]
+    pub project_sort: HashMap<String, WorktreeSort>,
     /// Configured AI agents, ordered by preference. First entry is the default.
     #[serde(default = "default_agents")]
     pub agents: Vec<AgentConfig>,
@@ -106,6 +123,7 @@ impl Default for AppSettings {
             use_tmux: true,
             desktop_notifications: true,
             project_scripts: HashMap::new(),
+            project_sort: HashMap::new(),
             agents: default_agents(),
             worktree_location: default_worktree_location(),
         }
@@ -134,6 +152,10 @@ pub struct WorktreeInfo {
     pub is_main: bool,
     /// Unix timestamp (seconds) of the HEAD commit, or None if unavailable.
     pub last_commit_unix: Option<i64>,
+    /// Unix timestamp (seconds) the working directory was created on disk
+    /// (filesystem birth time), or None if the platform/filesystem can't report
+    /// it. Used as a proxy for when the worktree was created.
+    pub created_unix: Option<i64>,
     /// Uncommitted added lines (HEAD tree → workdir, staged + unstaged).
     pub added: i64,
     /// Uncommitted deleted lines (HEAD tree → workdir, staged + unstaged).
@@ -144,6 +166,17 @@ fn head_commit_time(repo: &git2::Repository) -> Option<i64> {
     let head = repo.head().ok()?;
     let commit = head.peel_to_commit().ok()?;
     Some(commit.time().seconds())
+}
+
+/// Filesystem birth time of a directory as Unix seconds. `None` when the
+/// platform or filesystem doesn't expose a creation time.
+fn dir_created_time(path: &str) -> Option<i64> {
+    let created = fs::metadata(path).ok()?.created().ok()?;
+    let secs = created
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(secs as i64)
 }
 
 /// Count uncommitted added/deleted lines from the HEAD tree to the workdir
@@ -273,14 +306,18 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
     let main_last_commit = head_commit_time(&repo);
-    let (main_added, main_deleted) = diff_stats(&repo);
+    let main_created = dir_created_time(&main_path);
     worktrees.push(WorktreeInfo {
         path: main_path,
         branch: branch.clone(),
         is_main: true,
         last_commit_unix: main_last_commit,
-        added: main_added,
-        deleted: main_deleted,
+        created_unix: main_created,
+        // Diff stats are deferred — fetched per worktree via
+        // `get_worktree_diff_stats` so the tree renders before every working
+        // directory is scanned.
+        added: 0,
+        deleted: 0,
     });
 
     // Additional worktrees
@@ -288,32 +325,49 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         for name in wt_names.iter().flatten() {
             if let Ok(wt) = repo.find_worktree(name) {
                 let wt_path = wt.path().to_string_lossy().to_string();
-                let (wt_branch, wt_last_commit, wt_added, wt_deleted) =
-                    git2::Repository::open(wt.path())
-                        .ok()
-                        .map(|r| {
-                            let branch = r
-                                .head()
-                                .ok()
-                                .and_then(|h| h.shorthand().map(|s| s.to_string()));
-                            let last = head_commit_time(&r);
-                            let (added, deleted) = diff_stats(&r);
-                            (branch, last, added, deleted)
-                        })
-                        .unwrap_or((None, None, 0, 0));
+                let (wt_branch, wt_last_commit) = git2::Repository::open(wt.path())
+                    .ok()
+                    .map(|r| {
+                        let branch = r
+                            .head()
+                            .ok()
+                            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+                        let last = head_commit_time(&r);
+                        (branch, last)
+                    })
+                    .unwrap_or((None, None));
+                let wt_created = dir_created_time(&wt_path);
                 worktrees.push(WorktreeInfo {
                     path: wt_path,
                     branch: wt_branch,
                     is_main: false,
                     last_commit_unix: wt_last_commit,
-                    added: wt_added,
-                    deleted: wt_deleted,
+                    created_unix: wt_created,
+                    // Deferred — see main worktree above.
+                    added: 0,
+                    deleted: 0,
                 });
             }
         }
     }
 
     Ok(GitInfo { branch, worktrees })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffStat {
+    pub added: i64,
+    pub deleted: i64,
+}
+
+/// Uncommitted line counts for a single worktree path. Split out of
+/// `get_git_info` so the tree can render before every working directory is
+/// scanned; the frontend fires one call per worktree, concurrently.
+#[tauri::command(async)]
+pub fn get_worktree_diff_stats(path: String) -> Result<DiffStat, String> {
+    let repo = git2::Repository::open(&path).map_err(|e| e.to_string())?;
+    let (added, deleted) = diff_stats(&repo);
+    Ok(DiffStat { added, deleted })
 }
 
 #[tauri::command]
@@ -380,12 +434,62 @@ pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String,
     let location = load_settings().worktree_location;
     let worktrees_dir = worktree_base_dir(&repo_path, location);
     fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
-    let worktree_path = worktrees_dir.join(&branch_name);
 
-    repo.worktree(&branch_name, &worktree_path, None)
+    // Git worktree names (and their on-disk folders) can't contain '/', so the
+    // folder is the branch's last segment while the branch keeps its full path
+    // (e.g. branch `zebapy/brave-otter` lives in a `brave-otter` folder).
+    let folder = branch_name.rsplit('/').next().unwrap_or(&branch_name);
+    let worktree_path = worktrees_dir.join(folder);
+
+    let commit = repo
+        .head()
+        .and_then(|head| head.peel_to_commit())
+        .map_err(|e| e.to_string())?;
+    let branch = repo
+        .branch(&branch_name, &commit, false)
+        .map_err(|e| e.to_string())?;
+    let reference = branch.into_reference();
+
+    let mut opts = git2::WorktreeAddOptions::new();
+    opts.reference(Some(&reference));
+    repo.worktree(folder, &worktree_path, Some(&opts))
         .map_err(|e| e.to_string())?;
 
     Ok(worktree_path.to_string_lossy().to_string())
+}
+
+/// Lowercase, collapse non-alphanumeric runs to '-', trim dashes. Used to turn a
+/// git `user.name` into a branch-prefix slug.
+fn slugify(value: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+/// Branch-prefix slug derived from git `user.name` (repo config, falling back to
+/// the global config). Empty string when unset — callers then skip the prefix.
+#[tauri::command]
+pub fn git_user_slug(repo_path: String) -> String {
+    let name = git2::Repository::open(&repo_path)
+        .ok()
+        .and_then(|repo| repo.config().ok())
+        .and_then(|cfg| cfg.get_string("user.name").ok())
+        .or_else(|| {
+            git2::Config::open_default()
+                .ok()
+                .and_then(|cfg| cfg.get_string("user.name").ok())
+        })
+        .unwrap_or_default();
+    slugify(&name)
 }
 
 #[tauri::command]
@@ -469,6 +573,98 @@ pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     }
 
     // Prune the worktree reference
+    wt.prune(None).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Whether a linked worktree can be archived, and what to warn about first.
+/// Archiving removes the working directory but keeps the branch (and its
+/// commits) in the repo, so the only hard blockers are a git lock or a missing
+/// worktree; uncommitted changes are a discard warning, not a blocker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeArchiveStatus {
+    /// True when archiving is allowed (no hard blocker).
+    pub can_archive: bool,
+    /// Human-readable reason archiving is blocked, when `can_archive` is false.
+    pub blocked_reason: Option<String>,
+    /// True if git has the worktree locked (a hard blocker).
+    pub locked: bool,
+    /// Uncommitted added lines that archiving would discard (warning only).
+    pub uncommitted_added: i64,
+    /// Uncommitted deleted lines that archiving would discard (warning only).
+    pub uncommitted_deleted: i64,
+}
+
+/// Inspect a linked worktree to decide whether it can be archived. The base
+/// (main) worktree is never a linked worktree, so the frontend handles that case
+/// without calling this — here a missing name reports as not-found.
+#[tauri::command(async)]
+pub fn get_worktree_archive_status(
+    repo_path: String,
+    name: String,
+) -> Result<WorktreeArchiveStatus, String> {
+    let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let wt = match repo.find_worktree(&name) {
+        Ok(wt) => wt,
+        Err(_) => {
+            return Ok(WorktreeArchiveStatus {
+                can_archive: false,
+                blocked_reason: Some("Worktree no longer exists.".to_string()),
+                locked: false,
+                uncommitted_added: 0,
+                uncommitted_deleted: 0,
+            });
+        }
+    };
+
+    let lock = wt.is_locked().map_err(|e| e.to_string())?;
+    let locked = matches!(lock, git2::WorktreeLockStatus::Locked(_));
+    let lock_reason = match lock {
+        git2::WorktreeLockStatus::Locked(Some(reason)) if !reason.trim().is_empty() => {
+            Some(format!("Worktree is locked: {}", reason.trim()))
+        }
+        git2::WorktreeLockStatus::Locked(_) => Some("Worktree is locked.".to_string()),
+        git2::WorktreeLockStatus::Unlocked => None,
+    };
+
+    // Uncommitted line counts — a warning the confirm surfaces, not a blocker.
+    let (uncommitted_added, uncommitted_deleted) = git2::Repository::open(wt.path())
+        .map(|r| diff_stats(&r))
+        .unwrap_or((0, 0));
+
+    Ok(WorktreeArchiveStatus {
+        can_archive: lock_reason.is_none(),
+        blocked_reason: lock_reason,
+        locked,
+        uncommitted_added,
+        uncommitted_deleted,
+    })
+}
+
+/// Archive a linked worktree: remove its working directory and prune the git
+/// registration, leaving the branch and its commits in the repo. Refuses when
+/// git has the worktree locked; uncommitted changes are the caller's call
+/// (confirmed in the UI) since the work only lives in the working directory.
+#[tauri::command(async)]
+pub fn archive_worktree(repo_path: String, name: String) -> Result<(), String> {
+    let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let wt = repo.find_worktree(&name).map_err(|e| e.to_string())?;
+
+    if let git2::WorktreeLockStatus::Locked(reason) =
+        wt.is_locked().map_err(|e| e.to_string())?
+    {
+        let detail = reason
+            .filter(|r| !r.trim().is_empty())
+            .map(|r| format!(": {}", r.trim()))
+            .unwrap_or_default();
+        return Err(format!("Worktree is locked{detail}. Unlock it before archiving."));
+    }
+
+    let wt_path = wt.path();
+    if wt_path.exists() {
+        fs::remove_dir_all(wt_path).map_err(|e| e.to_string())?;
+    }
     wt.prune(None).map_err(|e| e.to_string())?;
 
     Ok(())
@@ -617,66 +813,272 @@ pub fn set_worktree_location(location: WorktreeLocation) -> Result<AppSettings, 
     Ok(settings)
 }
 
-/// Walk a project directory and return absolute paths to every package.json,
-/// skipping noisy directories (node_modules, build output, hidden dirs).
+/// A single runnable script extracted from a manifest.
+#[derive(Serialize, Clone)]
+pub struct ScriptEntry {
+    pub name: String,
+    pub command: String,
+}
+
+/// A manifest (package.json or pyproject.toml) and the scripts it defines,
+/// along with the detected runner used to execute them.
+#[derive(Serialize, Clone)]
+pub struct ScriptSource {
+    /// Absolute path to the manifest file.
+    pub manifest_path: String,
+    /// Directory the script should run in (the manifest's parent).
+    pub dir: String,
+    /// Package name (from the manifest) or directory basename as a fallback.
+    pub project_name: String,
+    /// Manifest filename: "package.json" or "pyproject.toml".
+    pub manifest: String,
+    /// Detected runner: npm | pnpm | yarn | bun | pdm | uv.
+    pub runner: String,
+    /// "js" or "py" — drives the badge colour in the UI.
+    pub lang: String,
+    /// Human label for where scripts came from, e.g. "scripts" or "[tool.pdm.scripts]".
+    pub source: String,
+    pub scripts: Vec<ScriptEntry>,
+}
+
+/// Directory names that never contain project scripts worth surfacing.
+const SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+];
+
+/// Walk a project directory and return every package.json / pyproject.toml that
+/// defines runnable scripts, grouped per manifest with its detected runner.
+///
+/// Respects `.gitignore`, skips hidden + build/dependency dirs, and caps depth.
 #[tauri::command(async)]
-pub fn find_package_jsons(project_path: String) -> Result<Vec<String>, String> {
+pub fn discover_scripts(project_path: String) -> Result<Vec<ScriptSource>, String> {
     let root = Path::new(&project_path);
     if !root.is_dir() {
         return Err(format!("{} is not a directory", project_path));
     }
-    let mut results = Vec::new();
-    collect_package_jsons(root, &mut results, 0);
-    results.sort();
-    Ok(results)
-}
 
-fn collect_package_jsons(dir: &Path, results: &mut Vec<String>, depth: u32) {
-    if depth > 6 {
-        return;
-    }
-    let entries = match fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if name.starts_with('.')
-            || name == "node_modules"
-            || name == "target"
-            || name == "dist"
-            || name == "build"
-            || name == "out"
-        {
+    let walker = ignore::WalkBuilder::new(root)
+        .standard_filters(true) // .gitignore, .ignore, hidden files, git excludes
+        .max_depth(Some(8))
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            !SKIP_DIRS.contains(&name.as_ref())
+        })
+        .build();
+
+    let mut sources: Vec<ScriptSource> = Vec::new();
+    for entry in walker.flatten() {
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             continue;
         }
-        if path.is_dir() {
-            collect_package_jsons(&path, results, depth + 1);
-        } else if name == "package.json" {
-            results.push(path.to_string_lossy().to_string());
+        let path = entry.path();
+        let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let source = match name.as_ref() {
+            "package.json" => read_package_json_source(path, root),
+            "pyproject.toml" => read_pyproject_source(path, root),
+            _ => None,
+        };
+        if let Some(src) = source {
+            if !src.scripts.is_empty() {
+                sources.push(src);
+            }
         }
     }
+
+    sources.sort_by(|a, b| a.manifest_path.cmp(&b.manifest_path));
+    Ok(sources)
 }
 
-/// Read the `scripts` object from a package.json. Missing scripts yields an empty map.
-#[tauri::command]
-pub fn read_package_json_scripts(path: String) -> Result<HashMap<String, String>, String> {
-    let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let json: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-    let scripts = json
+/// Directory of a manifest and a sorted vec of (name, command) pairs.
+fn manifest_dir(path: &Path) -> String {
+    path.parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// Walk up from `dir` to `root` looking for any of `markers`; returns the first match.
+fn find_marker_upward(dir: &Path, root: &Path, markers: &[&str]) -> bool {
+    let mut current = dir;
+    loop {
+        for marker in markers {
+            if current.join(marker).exists() {
+                return true;
+            }
+        }
+        if current == root {
+            break;
+        }
+        match current.parent() {
+            Some(parent) if parent.starts_with(root) || parent == root => current = parent,
+            _ => break,
+        }
+    }
+    false
+}
+
+/// Detect the JS package manager from the nearest lockfile, defaulting to npm.
+fn detect_js_runner(dir: &Path, root: &Path) -> String {
+    if find_marker_upward(dir, root, &["pnpm-lock.yaml"]) {
+        return "pnpm".to_string();
+    }
+    if find_marker_upward(dir, root, &["yarn.lock"]) {
+        return "yarn".to_string();
+    }
+    if find_marker_upward(dir, root, &["bun.lockb", "bun.lock"]) {
+        return "bun".to_string();
+    }
+    "npm".to_string()
+}
+
+fn read_package_json_source(path: &Path, root: &Path) -> Option<ScriptSource> {
+    let data = fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&data).ok()?;
+    let scripts: Vec<ScriptEntry> = json
         .get("scripts")
         .and_then(|s| s.as_object())
         .map(|obj| {
             obj.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .filter_map(|(k, v)| {
+                    v.as_str().map(|s| ScriptEntry {
+                        name: k.clone(),
+                        command: s.to_string(),
+                    })
+                })
                 .collect()
         })
         .unwrap_or_default();
-    Ok(scripts)
+
+    let dir = manifest_dir(path);
+    let project_name = json
+        .get("name")
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| basename_or(&dir));
+
+    Some(ScriptSource {
+        manifest_path: path.to_string_lossy().to_string(),
+        dir: dir.clone(),
+        project_name,
+        manifest: "package.json".to_string(),
+        runner: detect_js_runner(Path::new(&dir), root),
+        lang: "js".to_string(),
+        source: "scripts".to_string(),
+        scripts,
+    })
+}
+
+/// Stringify a PDM script value, which may be a bare string or a table with
+/// `cmd` / `shell` / `call` / `composite` keys.
+fn pdm_command_string(value: &toml::Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        return Some(s.to_string());
+    }
+    let table = value.as_table()?;
+    if let Some(cmd) = table.get("cmd") {
+        if let Some(s) = cmd.as_str() {
+            return Some(s.to_string());
+        }
+        if let Some(arr) = cmd.as_array() {
+            let parts: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            return Some(parts.join(" "));
+        }
+    }
+    if let Some(shell) = table.get("shell").and_then(|v| v.as_str()) {
+        return Some(shell.to_string());
+    }
+    if let Some(call) = table.get("call").and_then(|v| v.as_str()) {
+        return Some(format!("call {call}"));
+    }
+    if let Some(comp) = table.get("composite").and_then(|v| v.as_array()) {
+        let parts: Vec<String> = comp.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        return Some(parts.join(" && "));
+    }
+    None
+}
+
+fn read_pyproject_source(path: &Path, root: &Path) -> Option<ScriptSource> {
+    let data = fs::read_to_string(path).ok()?;
+    let doc: toml::Value = toml::from_str(&data).ok()?;
+    let dir = manifest_dir(path);
+    let dir_path = Path::new(&dir);
+
+    let has_tool_uv = doc.get("tool").and_then(|t| t.get("uv")).is_some();
+    let has_tool_pdm = doc.get("tool").and_then(|t| t.get("pdm")).is_some();
+    let uv_detected = has_tool_uv || find_marker_upward(dir_path, root, &["uv.lock"]);
+    let _pdm_detected = has_tool_pdm || find_marker_upward(dir_path, root, &["pdm.lock"]);
+
+    // PDM's scripts table is an explicit task runner — always surface it as pdm.
+    let pdm_scripts = doc
+        .get("tool")
+        .and_then(|t| t.get("pdm"))
+        .and_then(|p| p.get("scripts"))
+        .and_then(|s| s.as_table());
+
+    let (runner, source, scripts) = if let Some(table) = pdm_scripts.filter(|t| !t.is_empty()) {
+        let scripts: Vec<ScriptEntry> = table
+            .iter()
+            .filter(|(k, _)| *k != "_") // PDM uses "_" for shared script options
+            .filter_map(|(k, v)| {
+                pdm_command_string(v).map(|command| ScriptEntry {
+                    name: k.clone(),
+                    command,
+                })
+            })
+            .collect();
+        ("pdm".to_string(), "[tool.pdm.scripts]".to_string(), scripts)
+    } else if uv_detected {
+        // uv runs console-script entry points declared under [project.scripts].
+        let table = doc
+            .get("project")
+            .and_then(|p| p.get("scripts"))
+            .and_then(|s| s.as_table())
+            .filter(|t| !t.is_empty())?;
+        let scripts: Vec<ScriptEntry> = table
+            .iter()
+            .filter_map(|(k, v)| {
+                v.as_str().map(|s| ScriptEntry {
+                    name: k.clone(),
+                    command: s.to_string(),
+                })
+            })
+            .collect();
+        ("uv".to_string(), "[project.scripts]".to_string(), scripts)
+    } else {
+        return None;
+    };
+
+    let project_name = doc
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| basename_or(&dir));
+
+    Some(ScriptSource {
+        manifest_path: path.to_string_lossy().to_string(),
+        dir: dir.clone(),
+        project_name,
+        manifest: "pyproject.toml".to_string(),
+        runner,
+        lang: "py".to_string(),
+        source,
+        scripts,
+    })
+}
+
+fn basename_or(dir: &str) -> String {
+    Path::new(dir)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| dir.to_string())
 }
 
 #[tauri::command]
@@ -690,6 +1092,17 @@ pub fn set_project_scripts(
     } else {
         settings.project_scripts.insert(project_path, paths);
     }
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_project_sort(
+    project_path: String,
+    sort: WorktreeSort,
+) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.project_sort.insert(project_path, sort);
     save_settings(&settings)?;
     Ok(settings)
 }

@@ -144,6 +144,60 @@ pub async fn linear_query(query: String) -> Result<serde_json::Value, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Issues for the worktree picker, mapped to the shared `GhItem` shape so the
+/// frontend renders them like GitHub items. `all = false` lists the viewer's own
+/// active issues; `all = true` lists every active issue across their teams.
+#[tauri::command]
+pub async fn linear_list_issues(all: bool) -> Result<Vec<crate::github::GhItem>, String> {
+    let token = read_token()?;
+    let query = if all {
+        r#"{ issues(first: 50, filter: { state: { type: { nin: ["completed","canceled"] } } }, orderBy: updatedAt) { nodes { identifier title branchName state { name } assignee { displayName } } } }"#
+    } else {
+        r#"{ viewer { assignedIssues(first: 50, filter: { state: { type: { nin: ["completed","canceled"] } } }, orderBy: updatedAt) { nodes { identifier title branchName state { name } } } } }"#
+    };
+
+    let res: serde_json::Value = reqwest::Client::new()
+        .post("https://api.linear.app/graphql")
+        .header("Authorization", token) // Linear expects the raw token, no "Bearer" prefix.
+        .json(&serde_json::json!({ "query": query }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let nodes = if all {
+        &res["data"]["issues"]["nodes"]
+    } else {
+        &res["data"]["viewer"]["assignedIssues"]["nodes"]
+    };
+
+    let items = nodes
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|node| {
+                    let state = node["state"]["name"].as_str().unwrap_or("");
+                    let assignee = node["assignee"]["displayName"].as_str().unwrap_or("");
+                    let sub = if all && !assignee.is_empty() {
+                        format!("{state} · {assignee}")
+                    } else {
+                        state.to_string()
+                    };
+                    crate::github::GhItem {
+                        id: node["identifier"].as_str().unwrap_or("").to_string(),
+                        title: node["title"].as_str().unwrap_or("").to_string(),
+                        sub,
+                        branch: node["branchName"].as_str().unwrap_or("").to_string(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(items)
+}
+
 #[tauri::command]
 pub fn linear_logout() -> Result<(), String> {
     clear_token()

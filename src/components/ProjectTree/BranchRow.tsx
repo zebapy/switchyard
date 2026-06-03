@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react';
+import { ContextMenu } from '@base-ui-components/react/context-menu';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
 import { SessionRow } from './SessionRow';
 import { AddMenu } from './AddMenu';
-import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon } from '../icons';
-import type { WorktreeInfo, PrInfo } from '../../types/project';
+import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon, ArchiveIcon } from '../icons';
+import type { WorktreeInfo, PrInfo, WorktreeArchiveStatus } from '../../types/project';
+
+const menuPopupClass =
+  'z-[300] min-w-[210px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
+  'text-[13px] text-ink shadow-[0_16px_48px_rgba(0,0,0,0.5)] outline-none';
+const menuItemClass =
+  'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
+  'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink ' +
+  'data-[disabled]:cursor-not-allowed data-[disabled]:text-ink-faint data-[disabled]:data-[highlighted]:bg-transparent';
+const menuIconClass = 'grid w-4 place-items-center text-ink-faint';
+const menuStatusClass = 'px-[9px] pb-[3px] pt-[4px] text-[11px] leading-snug text-ink-faint';
 
 function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path;
@@ -16,6 +27,54 @@ function prClass(state: string): string {
   if (s === 'merged') return 'pr-merged border-[rgba(199,155,255,0.3)] text-ai';
   if (s === 'closed') return 'pr-closed border-[rgba(240,117,138,0.3)] text-del';
   return 'pr-open border-[rgba(111,208,140,0.25)] text-add';
+}
+
+interface ArchiveMenuItemsProps {
+  /** The base/main worktree can never be archived. */
+  isMain: boolean;
+  /** Status fetch is in flight. */
+  loading: boolean;
+  /** Archive eligibility + warnings, or null before the first fetch / on error. */
+  status: WorktreeArchiveStatus | null;
+  /** Message from a failed archive attempt, shown in place of the status. */
+  error: string | null;
+  onArchive: () => void;
+}
+
+/** Context-menu body for a worktree row: the archive action plus a status line
+ *  explaining any blocker or the uncommitted work that archiving would discard. */
+function ArchiveMenuItems({ isMain, loading, status, error, onArchive }: ArchiveMenuItemsProps) {
+  if (isMain) {
+    return (
+      <>
+        <ContextMenu.Item className={menuItemClass} disabled>
+          <span className={menuIconClass}><ArchiveIcon size={14} /></span> Archive worktree
+        </ContextMenu.Item>
+        <div className={menuStatusClass}>The base branch worktree cannot be archived.</div>
+      </>
+    );
+  }
+
+  const canArchive = !loading && (status?.can_archive ?? false);
+  const dirtyLines = (status?.uncommitted_added ?? 0) + (status?.uncommitted_deleted ?? 0);
+
+  return (
+    <>
+      <ContextMenu.Item className={menuItemClass} disabled={!canArchive} onClick={onArchive}>
+        <span className={menuIconClass}><ArchiveIcon size={14} /></span> Archive worktree
+      </ContextMenu.Item>
+      {error && <div className={`${menuStatusClass} text-del`}>{error}</div>}
+      {!error && loading && <div className={menuStatusClass}>Checking status…</div>}
+      {!error && !loading && status && !status.can_archive && status.blocked_reason && (
+        <div className={`${menuStatusClass} text-del`}>{status.blocked_reason}</div>
+      )}
+      {!error && !loading && status?.can_archive && dirtyLines > 0 && (
+        <div className={menuStatusClass}>
+          {dirtyLines} uncommitted line{dirtyLines === 1 ? '' : 's'} will be discarded.
+        </div>
+      )}
+    </>
+  );
 }
 
 interface BranchRowProps {
@@ -38,11 +97,16 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const mainView = useUiStore((s) => s.mainView);
   const showPane = useUiStore((s) => s.showPane);
   const deleteWorktree = useProjectsStore((s) => s.deleteWorktree);
+  const archiveWorktree = useProjectsStore((s) => s.archiveWorktree);
+  const getWorktreeArchiveStatus = useProjectsStore((s) => s.getWorktreeArchiveStatus);
   const expandProject = useProjectsStore((s) => s.expandProject);
   const defaultAgent = useProjectsStore((s) => s.agents[0]?.command);
 
   const tabs = win?.tabs ?? [];
   const [open, setOpen] = useState(isMain || tabs.length > 0);
+  const [archiveStatus, setArchiveStatus] = useState<WorktreeArchiveStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const isWindowActive = activeWindowId === path && mainView === 'pane';
 
@@ -82,18 +146,51 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
     deleteWorktree(projectPath, basename(path)).catch(() => null);
   };
 
+  // Fetch fresh archive eligibility each time the menu opens — dirty counts and
+  // lock state can change between opens. The base worktree never queries.
+  const handleMenuOpenChange = (menuOpen: boolean) => {
+    if (!menuOpen || isMain) return;
+    setArchiveError(null);
+    setArchiveStatus(null);
+    setStatusLoading(true);
+    getWorktreeArchiveStatus(projectPath, basename(path))
+      .then(setArchiveStatus)
+      .catch(() => setArchiveStatus(null))
+      .finally(() => setStatusLoading(false));
+  };
+
+  const handleArchive = () => {
+    const dirtyLines =
+      (archiveStatus?.uncommitted_added ?? 0) + (archiveStatus?.uncommitted_deleted ?? 0);
+    const warning =
+      dirtyLines > 0
+        ? `\n\n${dirtyLines} uncommitted line${dirtyLines === 1 ? '' : 's'} will be discarded.`
+        : '';
+    const ok = confirm(
+      `Archive worktree "${branchName}"?\n\n` +
+        `This removes its working directory. The branch and its commits stay in the repo.${warning}`,
+    );
+    if (!ok) return;
+    archiveWorktree(projectPath, basename(path)).catch((e) => setArchiveError(String(e)));
+  };
+
   return (
     <div className="relative">
-      <button
-        onClick={openWorkspace}
-        title={path}
-        className={
-          'group relative flex w-full items-center gap-[7px] rounded-lg px-2 py-1.5 text-left transition-colors ' +
-          (isWindowActive
-            ? "bg-ember-tint before:absolute before:-left-2.5 before:top-1/2 before:h-[15px] before:w-[3px] before:-translate-y-1/2 before:rounded-[3px] before:bg-ember-strong before:content-['']"
-            : 'hover:bg-hover')
-        }
-      >
+      <ContextMenu.Root onOpenChange={handleMenuOpenChange}>
+        <ContextMenu.Trigger
+          render={
+            <button
+              onClick={openWorkspace}
+              title={path}
+              className={
+                'group relative flex w-full items-center gap-[7px] rounded-lg px-2 py-1.5 text-left transition-colors ' +
+                (isWindowActive
+                  ? "bg-ember-tint before:absolute before:-left-2.5 before:top-1/2 before:h-[15px] before:w-[3px] before:-translate-y-1/2 before:rounded-[3px] before:bg-ember-strong before:content-['']"
+                  : 'hover:bg-hover')
+              }
+            />
+          }
+        >
         <span
           role="button"
           tabIndex={-1}
@@ -141,7 +238,22 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
             </span>
           )}
         </span>
-      </button>
+        </ContextMenu.Trigger>
+
+        <ContextMenu.Portal>
+          <ContextMenu.Positioner className="z-[300]">
+            <ContextMenu.Popup className={menuPopupClass}>
+              <ArchiveMenuItems
+                isMain={isMain}
+                loading={statusLoading}
+                status={archiveStatus}
+                error={archiveError}
+                onArchive={handleArchive}
+              />
+            </ContextMenu.Popup>
+          </ContextMenu.Positioner>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
 
       <div className={`grid transition-[grid-template-rows] duration-[260ms] ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden">

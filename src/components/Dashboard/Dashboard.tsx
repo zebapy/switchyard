@@ -29,7 +29,7 @@ function isRunning(pane: PaneInfo | undefined): boolean {
 
 function worktreesFor(project: ProjectInfo, git: { worktrees: WorktreeInfo[] } | undefined): WorktreeInfo[] {
   if (git?.worktrees?.length) return [...git.worktrees].sort((a, b) => Number(b.is_main) - Number(a.is_main));
-  if (!project.is_git) return [{ path: project.path, branch: null, is_main: true, last_commit_unix: null, added: 0, deleted: 0 }];
+  if (!project.is_git) return [{ path: project.path, branch: null, is_main: true, last_commit_unix: null, created_unix: null, added: 0, deleted: 0 }];
   return [];
 }
 
