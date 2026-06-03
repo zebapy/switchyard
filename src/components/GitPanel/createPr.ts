@@ -1,6 +1,6 @@
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import type { FileStatus } from '../../types/gitpanel';
 
 const TEMPLATE_KEY = 'gitPanel.prTemplate';
@@ -83,5 +83,5 @@ export function openCreatePrChat({ path, branch, defaultBranch, baseFiles }: Cre
     command: prompt,
     label: 'Create PR',
   });
-  useUiStore.getState().showPane();
+  goToWorkspace();
 }

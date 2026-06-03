@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../stores/projects';
-import { useUiStore } from '../stores/ui';
 import { CloseIcon } from './icons';
 import { AgentSettings } from './AgentSettings';
 import { LinearSettings } from './LinearSettings';
@@ -10,10 +10,6 @@ import { PrTemplateSettings } from './PrTemplateSettings';
 import { SettingsFileSection } from './SettingsFileSection';
 import { Switch } from './Switch';
 import { SETTINGS_SECTIONS } from './settingsSections';
-
-interface SettingsPageProps {
-  onClose: () => void;
-}
 
 const sectionClass = 'mb-[18px] border-b border-line pb-4 last:mb-0 last:border-b-0 last:pb-0';
 const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
@@ -24,7 +20,9 @@ const btnClass = 'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs 
 const wtOptionClass = 'flex cursor-pointer items-start gap-2.5 rounded-[9px] border border-line bg-app px-2.5 py-2 transition hover:border-ember-edge';
 const wtOptionSelectedClass = 'flex cursor-pointer items-start gap-2.5 rounded-[9px] border border-ember-edge bg-ember-tint px-2.5 py-2 transition';
 
-export function SettingsPage({ onClose }: SettingsPageProps) {
+export function SettingsPage() {
+  const navigate = useNavigate();
+  const { section } = useParams();
   const scanRoot = useProjectsStore((s) => s.scanRoot);
   const setScanRoot = useProjectsStore((s) => s.setScanRoot);
   const addedProjects = useProjectsStore((s) => s.addedProjects);
@@ -37,10 +35,16 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
   const worktreeLocation = useProjectsStore((s) => s.worktreeLocation);
   const setWorktreeLocation = useProjectsStore((s) => s.setWorktreeLocation);
 
-  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
-
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Deep-link support: on first mount, scroll the section named in the URL into
+  // view. Later section changes come from sidebar clicks, which scroll themselves.
+  useEffect(() => {
+    if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' });
+  }, []);
+
+  // Scroll-spy: keep the URL's :section in sync with whatever is in view. Uses
+  // `replace` so scrolling doesn't pile up history entries.
   useEffect(() => {
     const root = scrollRef.current;
     if (!root) return;
@@ -49,16 +53,17 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible.length > 0) setSettingsSection(visible[0].target.id);
+        const id = visible[0]?.target.id;
+        if (id) navigate(`/settings/${id}`, { replace: true });
       },
       { root, rootMargin: '0px 0px -70% 0px', threshold: 0 },
     );
-    for (const section of SETTINGS_SECTIONS) {
-      const el = document.getElementById(section.id);
+    for (const sec of SETTINGS_SECTIONS) {
+      const el = document.getElementById(sec.id);
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
-  }, [setSettingsSection]);
+  }, [navigate]);
 
   const handlePickScanRoot = useCallback(async () => {
     const sel = await open({ directory: true, multiple: false, title: 'Default folder for new projects' });
@@ -75,7 +80,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       <header className="flex shrink-0 items-center justify-between border-b border-line px-6 py-4">
         <h2 className="text-base font-bold text-ink">Settings</h2>
         <button
-          onClick={onClose}
+          onClick={() => navigate(-1)}
           aria-label="Close settings"
           className="grid size-7 place-items-center rounded-md text-ink-faint hover:bg-hover hover:text-ink"
         >

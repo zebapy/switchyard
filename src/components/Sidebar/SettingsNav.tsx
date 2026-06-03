@@ -1,16 +1,16 @@
-import { useUiStore } from '../../stores/ui';
+import { useNavigate, useParams } from 'react-router';
 import { ChevronIcon } from '../icons';
 import { SETTINGS_SECTIONS } from '../settingsSections';
 
 const navItemClass = 'block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] transition';
 
 export function SettingsNav() {
-  const settingsSection = useUiStore((s) => s.settingsSection);
-  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const navigate = useNavigate();
+  const { section } = useParams();
+  const activeSection = section ?? SETTINGS_SECTIONS[0].id;
 
   const goToSection = (id: string) => {
-    setSettingsSection(id);
+    navigate(`/settings/${id}`);
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -19,7 +19,7 @@ export function SettingsNav() {
       <div className="border-b border-line-soft px-3 pb-3 pt-3">
         <button
           type="button"
-          onClick={() => setSettingsOpen(false)}
+          onClick={() => navigate(-1)}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-[7px] text-[13px] font-semibold text-ink-dim transition-colors hover:bg-hover hover:text-ink"
         >
           <span className="grid place-items-center text-ink-faint">
@@ -33,18 +33,18 @@ export function SettingsNav() {
         <div className="px-2.5 pb-1 pt-1.5">
           <span className="text-sm font-semibold text-white">Settings</span>
         </div>
-        {SETTINGS_SECTIONS.map((section) => (
+        {SETTINGS_SECTIONS.map((s) => (
           <button
-            key={section.id}
+            key={s.id}
             type="button"
-            onClick={() => goToSection(section.id)}
+            onClick={() => goToSection(s.id)}
             className={`${navItemClass} ${
-              settingsSection === section.id
+              activeSection === s.id
                 ? 'bg-ember-tint text-ink'
                 : 'text-ink-dim hover:bg-hover hover:text-ink'
             }`}
           >
-            {section.label}
+            {s.label}
           </button>
         ))}
       </div>

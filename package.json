@@ -25,6 +25,7 @@
     "diff2html": "^3.4.56",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router": "^7.16.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router';
 import { Menu } from '@base-ui-components/react/menu';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
+import { goToDashboard } from '../../router';
 import { ProjectItem } from './ProjectItem';
 import { Footer } from '../Sidebar/Footer';
 import { DashboardIcon, FolderPlusIcon, GitBranchIcon } from '../icons';
@@ -23,8 +25,6 @@ export function ProjectTree() {
   const toggleExpanded = useProjectsStore((s) => s.toggleExpanded);
   const addProjectPath = useProjectsStore((s) => s.addProjectPath);
 
-  const mainView = useUiStore((s) => s.mainView);
-  const showDashboard = useUiStore((s) => s.showDashboard);
   const treeFocused = useUiStore((s) => s.treeFocused);
   const setTreeFocused = useUiStore((s) => s.setTreeFocused);
   const toggleHelp = useUiStore((s) => s.toggleHelp);
@@ -34,7 +34,7 @@ export function ProjectTree() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const isDashboard = mainView === 'dashboard';
+  const isDashboard = useLocation().pathname === '/';
 
   useEffect(() => {
     const init = async () => {
@@ -126,7 +126,7 @@ export function ProjectTree() {
       <div className="border-b border-line-soft px-3 pb-3 pt-3">
         <button
           type="button"
-          onClick={showDashboard}
+          onClick={goToDashboard}
           className={
             'flex w-full items-center gap-2 rounded-lg px-3 py-[7px] text-[13px] font-semibold transition-colors ' +
             (isDashboard ? 'bg-ember-tint text-ink' : 'text-ink-dim hover:bg-hover hover:text-ink')

@@ -30,7 +30,6 @@ export function TabBar() {
   const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
   const windows = useWorkspaceStore((s) => s.windows);
   const panes = useWorkspaceStore((s) => s.panes);
-  const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const removeTab = useWorkspaceStore((s) => s.removeTab);
   const renameTab = useWorkspaceStore((s) => s.renameTab);
@@ -61,10 +60,7 @@ export function TabBar() {
       {/* Top row: workspace + branch on the left, "Open in" on the right. */}
       <div
         data-tauri-drag-region
-        className={
-          'flex items-center gap-2 border-b border-line-soft py-1.5 pr-3 ' +
-          (sidebarCollapsed ? 'pl-[72px]' : 'pl-3')
-        }
+        className="flex items-center gap-2 border-b border-line-soft py-1.5 pl-3 pr-3"
       >
         <div data-tauri-drag-region className="flex min-w-0 items-center gap-[7px] text-[13px] text-ink-dim">
           <span className="truncate text-ink-dim">{basename(win.projectPath)}</span>

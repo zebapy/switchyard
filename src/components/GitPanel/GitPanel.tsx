@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
-import { useUiStore } from '../../stores/ui';
 import type { DiffSource } from '../../types/gitpanel';
 import { PanelHeader } from './PanelHeader';
 import { PanelTabs } from './PanelTabs';
@@ -74,7 +74,7 @@ export function GitPanel() {
 
   // The panel belongs to the workspace surface only — not the dashboard or
   // settings views.
-  const mainView = useUiStore((s) => s.mainView);
+  const inWorkspace = useLocation().pathname.startsWith('/workspace');
 
   // The active tab's worktree is its window's project path (windows are keyed by
   // worktree). `null` when no workspace is open.
@@ -97,7 +97,7 @@ export function GitPanel() {
     if (path) refreshPrInfo(path).catch(() => null);
   }, [path, refreshPrInfo]);
 
-  if (!open || mainView !== 'pane') return null;
+  if (!open || !inWorkspace) return null;
 
   const handleSelectFile = (file: string) => {
     if (!path) return;

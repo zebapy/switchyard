@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import type { PaneInfo, PaneTree, Tab } from '../../types/pane';
 import { AiIcon, TermIcon, SplitIcon, SplitBadgeIcon, ChevronIcon, CloseIcon } from '../icons';
 import { RenameField } from './RenameField';
@@ -57,7 +57,6 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const setPaneName = useWorkspaceStore((s) => s.setPaneName);
   const removeTab = useWorkspaceStore((s) => s.removeTab);
-  const showPane = useUiStore((s) => s.showPane);
   const [open, setOpen] = useState(true);
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
 
@@ -65,7 +64,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
     switchWindow(windowPath);
     setActiveTab(tab.id);
     if (paneId) setActivePane(paneId);
-    showPane();
+    goToWorkspace();
   };
 
   const commitName = (paneId: string, name: string) => {

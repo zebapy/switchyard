@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import type { GhItem } from '../../types/project';
 import {
   LinearIcon, IssueIcon, GitBranchIcon, PrIcon, SearchIcon, CheckIcon, CloseIcon,
@@ -31,7 +32,6 @@ const fieldInput =
 export function NewWorktreeModal() {
   const { open, projectPath, baseBranch } = useUiStore((s) => s.worktreeModal);
   const closeModal = useUiStore((s) => s.closeWorktreeModal);
-  const showPane = useUiStore((s) => s.showPane);
   const createWorktree = useProjectsStore((s) => s.createWorktree);
   const agents = useProjectsStore((s) => s.agents);
   const addTab = useWorkspaceStore((s) => s.addTab);
@@ -104,10 +104,10 @@ export function NewWorktreeModal() {
       setBusy(false);
       if (!newPath) return;
       addTab(newPath, wtName, { kind: 'Agent', cwd: newPath, command: prompt.trim() || undefined, agent });
-      showPane();
+      goToWorkspace();
       closeModal();
     },
-    [projectPath, name, branch, prompt, agent, createWorktree, addTab, showPane, closeModal],
+    [projectPath, name, branch, prompt, agent, createWorktree, addTab, closeModal],
   );
 
   useEffect(() => {

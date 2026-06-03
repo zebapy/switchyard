@@ -2,15 +2,15 @@ import { useUiStore } from '../../stores/ui';
 import { SearchIcon } from '../icons';
 
 /**
- * Search trigger pinned to the top of the left sidebar. The wrapper doubles as
- * the macOS window drag region; its top padding clears the Overlay-style
- * traffic lights (there is no full-width header anymore).
+ * Search trigger pinned to the top of the left sidebar. The full-width TopBar
+ * above now clears the Overlay-style traffic lights, so this only needs normal
+ * spacing.
  */
 export function SidebarSearch() {
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen);
 
   return (
-    <div data-tauri-drag-region className="flex-none px-3 pb-2 pt-9">
+    <div data-tauri-drag-region className="flex-none px-3 pb-2 pt-3">
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}

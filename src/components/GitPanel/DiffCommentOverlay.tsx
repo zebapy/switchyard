@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import type { DiffSource } from '../../types/gitpanel';
 import { pendingPaneInput } from '../Terminal/pendingInput';
 import { AgentGlyph, PlusIcon, CloseIcon } from '../icons';
@@ -119,7 +119,6 @@ export function DiffCommentOverlay({
   const agents = useProjectsStore((s) => s.agents);
   const addTab = useWorkspaceStore((s) => s.addTab);
   const findWindowForPane = useWorkspaceStore((s) => s.findWindowForPane);
-  const showPane = useUiStore((s) => s.showPane);
 
   const [lines, setLines] = useState<LineMeta[]>([]);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -242,7 +241,7 @@ export function DiffCommentOverlay({
     // as the active window's activePaneId.
     const newPaneId = useWorkspaceStore.getState().getActiveWindow()?.activePaneId;
     if (newPaneId) pendingPaneInput.set(newPaneId, prompt);
-    showPane();
+    goToWorkspace();
     close();
   };
 

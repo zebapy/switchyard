@@ -39,6 +39,14 @@ export function ChevronIcon({ size = 11, className }: IconProps) {
   return <Svg size={size} className={className} strokeWidth={1.8}><path d="M6 4l4 4-4 4" /></Svg>;
 }
 
+export function ArrowLeftIcon({ size = 16, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={1.8}><path d="M10 3l-5 5 5 5" /><path d="M5 8h6" /></Svg>;
+}
+
+export function ArrowRightIcon({ size = 16, className }: IconProps) {
+  return <Svg size={size} className={className} strokeWidth={1.8}><path d="M6 3l5 5-5 5" /><path d="M11 8H5" /></Svg>;
+}
+
 export function GearIcon({ size = 15, className }: IconProps) {
   return (
     <Svg size={size} className={className} viewBox="0 0 24 24" strokeWidth={2}>

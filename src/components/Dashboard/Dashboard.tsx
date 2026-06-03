@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import type { ProjectInfo, WorktreeInfo } from '../../types/project';
 import type { PaneInfo, PaneTree, Tab } from '../../types/pane';
 import {
@@ -42,7 +43,6 @@ export function Dashboard() {
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
-  const showPane = useUiStore((s) => s.showPane);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
   const openCloneModal = useUiStore((s) => s.openCloneModal);
 
@@ -60,7 +60,7 @@ export function Dashboard() {
     switchWindow(wtPath);
     setActiveTab(tab.id);
     if (paneId) setActivePane(paneId);
-    showPane();
+    goToWorkspace();
   };
 
   const handleAddLocalFolder = async () => {

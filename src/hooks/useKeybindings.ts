@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../stores/workspace';
-import { useUiStore } from '../stores/ui';
 import { useProjectsStore } from '../stores/projects';
 import { useGitPanelStore } from '../stores/gitPanel';
+import { goToWorkspace } from '../router';
 
 interface UseKeybindingsOptions {
   onTogglePalette: () => void;
@@ -20,7 +20,7 @@ function spawnInActiveWindow(kind: 'Agent' | 'Shell') {
   if (!win) return;
   const agent = kind === 'Agent' ? useProjectsStore.getState().agents[0]?.command : undefined;
   state.addTab(win.projectPath, win.projectPath.split('/').pop() ?? win.projectPath, { kind, agent });
-  useUiStore.getState().showPane();
+  goToWorkspace();
 }
 
 function activePane() {
@@ -36,7 +36,7 @@ function splitActivePane(direction: 'horizontal' | 'vertical') {
   if (!paneId) return;
   const cwd = state.panes.get(paneId)?.cwd ?? '.';
   state.splitPane(paneId, direction, 'Shell', cwd);
-  useUiStore.getState().showPane();
+  goToWorkspace();
 }
 
 function closeActivePane() {
@@ -142,7 +142,7 @@ export function useKeybindings({
         const state = useWorkspaceStore.getState();
         if (e.shiftKey) state.prevTab();
         else state.nextTab();
-        useUiStore.getState().showPane();
+        goToWorkspace();
         return;
       }
 
@@ -154,7 +154,7 @@ export function useKeybindings({
         e.preventDefault();
         const n = Number(e.key);
         const tab = n === 9 ? win.tabs[win.tabs.length - 1] : win.tabs[n - 1];
-        if (tab) { state.setActiveTab(tab.id); useUiStore.getState().showPane(); }
+        if (tab) { state.setActiveTab(tab.id); goToWorkspace(); }
         return;
       }
 

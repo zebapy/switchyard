@@ -3,7 +3,7 @@ import { Menu } from '@base-ui-components/react/menu';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import { AgentGlyph, TermIcon, PlusIcon } from '../icons';
 
 interface AddMenuProps {
@@ -35,7 +35,6 @@ function packageDir(pkgPath: string): string {
 
 export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddMenuProps) {
   const addTab = useWorkspaceStore((s) => s.addTab);
-  const showPane = useUiStore((s) => s.showPane);
   const agents = useProjectsStore((s) => s.agents);
   const projectScripts = useProjectsStore((s) => s.projectScripts);
   const scriptData = useProjectsStore((s) => s.scriptData);
@@ -67,12 +66,12 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
 
   const spawnAgent = (agentCommand: string) => {
     addTab(windowPath, label, { kind: 'Agent', cwd: windowPath, agent: agentCommand });
-    showPane();
+    goToWorkspace();
   };
 
   const spawnShell = () => {
     addTab(windowPath, label, { kind: 'Shell', cwd: windowPath });
-    showPane();
+    goToWorkspace();
   };
 
   const runScript = (pkgPath: string, name: string) => {
@@ -82,7 +81,7 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
       cwd: packageDir(pkgPath),
       label: `${label}: ${name}`,
     });
-    showPane();
+    goToWorkspace();
   };
 
   const handleAddScripts = async () => {

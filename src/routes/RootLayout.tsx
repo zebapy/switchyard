@@ -1,66 +1,63 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useWorkspaceStore } from './stores/workspace';
-import { useUiStore } from './stores/ui';
-import { SidebarSearch } from './components/Sidebar/SidebarSearch';
-import { ProjectTree } from './components/ProjectTree/ProjectTree';
-import { SettingsNav } from './components/Sidebar/SettingsNav';
-import { SplitPane } from './components/Workspace/SplitPane';
-import { TabBar } from './components/Workspace/TabBar';
-import { Dashboard } from './components/Dashboard/Dashboard';
-import { NewWorktreeModal } from './components/Worktree/NewWorktreeModal';
-import { CloneRepoModal } from './components/Project/CloneRepoModal';
-import { CommandPalette } from './components/CommandPalette/CommandPalette';
-import { HelpOverlay } from './components/HelpOverlay';
-import { SettingsPage } from './components/SettingsPage';
-import { CloseConfirmDialog } from './components/CloseConfirmDialog';
-import { GitPanel } from './components/GitPanel/GitPanel';
-import { useKeybindings } from './hooks/useKeybindings';
-import { initNotifications, consumePendingFocus } from './notifications';
-import type { TmuxSessionInfo } from './types/tmux';
-import './styles.css';
+import { useWorkspaceStore } from '../stores/workspace';
+import { useUiStore } from '../stores/ui';
+import { TopBar } from '../components/TopBar';
+import { SidebarSearch } from '../components/Sidebar/SidebarSearch';
+import { ProjectTree } from '../components/ProjectTree/ProjectTree';
+import { SettingsNav } from '../components/Sidebar/SettingsNav';
+import { NewWorktreeModal } from '../components/Worktree/NewWorktreeModal';
+import { CloneRepoModal } from '../components/Project/CloneRepoModal';
+import { CommandPalette } from '../components/CommandPalette/CommandPalette';
+import { HelpOverlay } from '../components/HelpOverlay';
+import { CloseConfirmDialog } from '../components/CloseConfirmDialog';
+import { GitPanel } from '../components/GitPanel/GitPanel';
+import { useKeybindings } from '../hooks/useKeybindings';
+import { initNotifications, consumePendingFocus } from '../notifications';
+import type { TmuxSessionInfo } from '../types/tmux';
+import '../styles.css';
 
-export default function App() {
+/**
+ * Persistent app chrome — top bar, sidebar, git panel, modals, global
+ * keybindings — wrapping the routed main content rendered through `<Outlet/>`.
+ */
+export function RootLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const inSettings = location.pathname.startsWith('/settings');
+
   const [closePrompt, setClosePrompt] = useState<{ open: boolean; sessions: TmuxSessionInfo[] }>({
     open: false,
     sessions: [],
   });
 
-  const windows = useWorkspaceStore((s) => s.windows);
-  const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
   const sidebarWidth = useWorkspaceStore((s) => s.sidebarWidth);
   const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed);
   const setSidebarWidth = useWorkspaceStore((s) => s.setSidebarWidth);
   const saveSession = useWorkspaceStore((s) => s.saveSession);
   const loadSession = useWorkspaceStore((s) => s.loadSession);
 
-  const mainView = useUiStore((s) => s.mainView);
-  const showPane = useUiStore((s) => s.showPane);
   const paletteOpen = useUiStore((s) => s.paletteOpen);
   const helpOpen = useUiStore((s) => s.helpOpen);
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen);
   const togglePalette = useUiStore((s) => s.togglePalette);
   const setHelpOpen = useUiStore((s) => s.setHelpOpen);
   const toggleHelp = useUiStore((s) => s.toggleHelp);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
-  const toggleSettings = useUiStore((s) => s.toggleSettings);
   const setTreeFocused = useUiStore((s) => s.setTreeFocused);
 
   const sessionLoaded = useRef(false);
   const dragStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
-  const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
-  const activeTab = activeWindow ? activeWindow.tabs.find((t) => t.id === activeWindow.activeTabId) ?? null : null;
-
   useEffect(() => {
     if (sessionLoaded.current) return;
     sessionLoaded.current = true;
     loadSession()
-      .then((loaded) => { if (loaded) showPane(); })
+      .then((loaded) => { if (loaded) navigate('/workspace'); })
       .catch(() => null);
-  }, [loadSession, showPane]);
+  }, [loadSession, navigate]);
 
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
@@ -79,9 +76,9 @@ export default function App() {
   }, [saveSession]);
 
   useEffect(() => {
-    const unlisten = listen('menu:settings', () => setSettingsOpen(true));
+    const unlisten = listen('menu:settings', () => navigate('/settings'));
     return () => { unlisten.then((fn) => fn()); };
-  }, [setSettingsOpen]);
+  }, [navigate]);
 
   useEffect(() => {
     initNotifications().catch(() => null);
@@ -147,6 +144,11 @@ export default function App() {
     saveSession();
   }, [setSidebarWidth, saveSession]);
 
+  const toggleSettings = useCallback(() => {
+    if (inSettings) navigate(-1);
+    else navigate('/settings');
+  }, [inSettings, navigate]);
+
   useKeybindings({
     onTogglePalette: togglePalette,
     onFocusTree: () => setTreeFocused(true),
@@ -156,44 +158,37 @@ export default function App() {
   });
 
   return (
-    <div className="flex h-full w-full">
-      {!sidebarCollapsed && (
-        <>
-          <aside
-            style={{ width: sidebarWidth }}
-            className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
-          >
-            <SidebarSearch />
-            {mainView === 'settings' ? <SettingsNav /> : <ProjectTree />}
-          </aside>
+    <div className="flex h-full w-full flex-col">
+      <TopBar />
 
-          <div
-            className="relative z-[5] -mx-0.5 w-1 shrink-0 cursor-col-resize transition-colors hover:bg-ember/40"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            onMouseDown={handleResizerMouseDown}
-            onDoubleClick={handleResizerDoubleClick}
-          />
-        </>
-      )}
-
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
-        {mainView === 'settings' ? (
-          <SettingsPage onClose={() => setSettingsOpen(false)} />
-        ) : mainView === 'pane' && activeWindow && activeTab ? (
+      <div className="flex min-h-0 flex-1">
+        {!sidebarCollapsed && (
           <>
-            <TabBar />
-            <div className="relative min-h-0 flex-1 overflow-hidden">
-              <SplitPane key={activeTab.id} tree={activeTab.paneTree} tabId={activeTab.id} path={[]} />
-            </div>
-          </>
-        ) : (
-          <Dashboard />
-        )}
-      </main>
+            <aside
+              style={{ width: sidebarWidth }}
+              className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
+            >
+              <SidebarSearch />
+              {inSettings ? <SettingsNav /> : <ProjectTree />}
+            </aside>
 
-      <GitPanel />
+            <div
+              className="relative z-[5] -mx-0.5 w-1 shrink-0 cursor-col-resize transition-colors hover:bg-ember/40"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              onMouseDown={handleResizerMouseDown}
+              onDoubleClick={handleResizerDoubleClick}
+            />
+          </>
+        )}
+
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
+          <Outlet />
+        </main>
+
+        <GitPanel />
+      </div>
 
       <NewWorktreeModal />
       <CloneRepoModal />
@@ -202,7 +197,7 @@ export default function App() {
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onFocusTree={() => setTreeFocused(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => navigate('/settings')}
       />
       <HelpOverlay isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       <CloseConfirmDialog

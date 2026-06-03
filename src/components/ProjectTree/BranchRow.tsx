@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 import { SessionRow } from './SessionRow';
 import { AddMenu } from './AddMenu';
 import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon } from '../icons';
@@ -35,8 +36,6 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const addTab = useWorkspaceStore((s) => s.addTab);
-  const mainView = useUiStore((s) => s.mainView);
-  const showPane = useUiStore((s) => s.showPane);
   const deleteWorktree = useProjectsStore((s) => s.deleteWorktree);
   const expandProject = useProjectsStore((s) => s.expandProject);
   const defaultAgent = useProjectsStore((s) => s.agents[0]?.command);
@@ -44,7 +43,8 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const tabs = win?.tabs ?? [];
   const [open, setOpen] = useState(isMain || tabs.length > 0);
 
-  const isWindowActive = activeWindowId === path && mainView === 'pane';
+  const inWorkspace = useLocation().pathname.startsWith('/workspace');
+  const isWindowActive = activeWindowId === path && inWorkspace;
 
   // When this branch's window becomes the active workspace (Cmd+1-9, window
   // cycling, focusing a pane, session restore), reveal it in the sidebar: open
@@ -69,7 +69,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
     } else {
       addTab(path, branchName, { kind: 'Agent', cwd: path, agent: defaultAgent });
     }
-    showPane();
+    goToWorkspace();
   };
 
   const toggleOpen = (e: React.MouseEvent) => {
