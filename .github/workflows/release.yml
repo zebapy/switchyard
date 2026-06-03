@@ -17,10 +17,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: aarch64-apple-darwin # Apple Silicon (M1+)
+          - target: aarch64-apple-darwin # Apple Silicon (M1+) — native on arm64 runner
             runner: macos-latest
-          - target: x86_64-apple-darwin # Intel
-            runner: macos-latest
+          - target: x86_64-apple-darwin # Intel — native on macos-13 (Intel) runner.
+            # Must build natively: macos-latest is arm64, and cross-compiling x86_64
+            # there fails on openssl-sys (pulled in by git2) with no cross sysroot.
+            runner: macos-13
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
