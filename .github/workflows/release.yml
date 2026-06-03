@@ -1,0 +1,61 @@
+name: Release
+
+# Build macOS installers (Apple Silicon + Intel) and publish to a GitHub Release.
+# Triggered by pushing a tag like `app-v0.1.0`.
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+permissions:
+  contents: write # needed to create the release and upload assets
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin # Apple Silicon (M1+)
+            runner: macos-latest
+          - target: x86_64-apple-darwin # Intel
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing — minisign key (separate from Apple code signing).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: --target ${{ matrix.target }}
+          # One shared release across both arch jobs. ${{ github.ref_name }} = the tag.
+          tagName: ${{ github.ref_name }}
+          releaseName: "Switchyard ${{ github.ref_name }}"
+          releaseBody: "See the assets below to download. Apple Silicon and Intel builds attached."
+          releaseDraft: true # publish manually after sanity-checking; updater ignores drafts
+          prerelease: false
+          includeUpdaterJson: true # generates + uploads latest.json for the in-app updater

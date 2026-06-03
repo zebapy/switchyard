@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Command as Cmdk } from 'cmdk';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
-import { useUiStore } from '../../stores/ui';
+import { goToWorkspace } from '../../router';
 
 interface PaletteCommand {
   id: string;
@@ -57,7 +57,6 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   const projects = useProjectsStore((s) => s.projects);
   const gitInfo = useProjectsStore((s) => s.gitInfo);
   const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
-  const showPane = useUiStore((s) => s.showPane);
 
   const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
   const activePaneId = activeWindow?.activePaneId ?? null;
@@ -198,7 +197,7 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
     } else {
       addTab(target.path, target.branchName, { kind: 'Agent', cwd: target.path, agent: defaultAgent });
     }
-    showPane();
+    goToWorkspace();
   };
 
   // One searchable entry per branch/worktree across every project, plus any open

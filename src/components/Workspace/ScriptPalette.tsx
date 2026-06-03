@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../../stores/ui';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { goToWorkspace } from '../../router';
 import { fuzzyMatch } from '../CommandPalette/fuzzyMatch';
 import { SearchIcon } from '../icons';
 import type { ScriptSource, ScriptEntry } from '../../types/scripts';
@@ -32,7 +33,6 @@ function badgeClass(lang: string): string {
 export function ScriptPalette() {
   const { open, projectPath, windowPath, label } = useUiStore((s) => s.scriptPalette);
   const closeScriptPalette = useUiStore((s) => s.closeScriptPalette);
-  const showPane = useUiStore((s) => s.showPane);
   const discoverScripts = useProjectsStore((s) => s.discoverScripts);
   const addTab = useWorkspaceStore((s) => s.addTab);
 
@@ -108,7 +108,7 @@ export function ScriptPalette() {
       cwd: item.src.dir,
       label: `${label ?? item.src.project_name}: ${item.script.name}`,
     });
-    showPane();
+    goToWorkspace();
     closeScriptPalette();
   };
 

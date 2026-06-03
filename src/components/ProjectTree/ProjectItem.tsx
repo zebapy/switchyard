@@ -9,6 +9,7 @@ import { WorktreeSortMenu } from './WorktreeSortMenu';
 import { ChevronIcon, RepoIcon, PlusIcon, BranchPlusIcon, ClearIcon } from '../icons';
 import { DEFAULT_WORKTREE_SORT, type ProjectInfo, type WorktreeInfo } from '../../types/project';
 import { sortWorktrees } from '../../lib/sortWorktrees';
+import { goToWorkspace } from '../../router';
 
 const menuPopupClass =
   'z-[300] min-w-[180px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
@@ -59,7 +60,6 @@ export function ProjectItem({
   const addTab = useWorkspaceStore((s) => s.addTab);
   const pendingWorktrees = useProjectsStore((s) => s.pendingWorktrees);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
-  const showPane = useUiStore((s) => s.showPane);
 
   const pending = useMemo(
     () => pendingWorktrees.filter((p) => p.projectPath === project.path),
@@ -73,7 +73,7 @@ export function ProjectItem({
     const created = await quickWorktree(project.path).catch(() => null);
     if (!created) return;
     addTab(created.path, created.label, { kind: 'Agent', cwd: created.path, agent: agents[0]?.command });
-    showPane();
+    goToWorkspace();
   }
 
   const isExpanded = expandedProjects.has(project.path);

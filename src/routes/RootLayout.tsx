@@ -20,6 +20,7 @@ import { CloseConfirmDialog } from '../components/CloseConfirmDialog';
 import { GitPanel } from '../components/GitPanel/GitPanel';
 import { useKeybindings } from '../hooks/useKeybindings';
 import { initNotifications, consumePendingFocus } from '../notifications';
+import { checkForUpdates } from '../lib/updater';
 import type { TmuxSessionInfo } from '../types/tmux';
 import '../styles.css';
 
@@ -85,6 +86,10 @@ export function RootLayout() {
 
   useEffect(() => {
     initNotifications().catch(() => null);
+  }, []);
+
+  useEffect(() => {
+    checkForUpdates().catch(() => null);
   }, []);
 
   // Desktop notifications can't report which one was clicked, so when the app
