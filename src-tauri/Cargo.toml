@@ -27,6 +27,10 @@ schemars = "0.8"
 portable-pty = "0.8"
 tokio = { version = "1", features = ["full"] }
 git2 = "0.19"
+# git2 -> libgit2-sys pulls openssl-sys. Vendored builds OpenSSL from source so
+# it cross-compiles (no system sysroot/pkg-config needed) — required to build the
+# x86_64 slice of the universal macOS binary on an arm64 runner.
+openssl-sys = { version = "0.9", features = ["vendored"] }
 dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
