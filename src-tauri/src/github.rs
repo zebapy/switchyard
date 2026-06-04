@@ -6,9 +6,18 @@
 //! Mirrors the structure of `linear.rs` (raw `reqwest` + `keyring`).
 
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_opener::OpenerExt;
+
+/// Shared HTTP client. `reqwest::Client` pools connections internally (it wraps
+/// an `Arc`), so building it once and cloning cheaply reuses the connection pool
+/// and TLS sessions across the polling commands — instead of a fresh client and
+/// TLS handshake per request, which is what a per-call `Client::new()` forced.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 /// Client ID of the GitHub **OAuth App** (github.com → Settings → Developer
 /// settings → OAuth Apps). The app must have **"Enable Device Flow"** ticked.
@@ -93,7 +102,7 @@ struct TokenResponse {
 /// Returns the signed-in GitHub login on success.
 #[tauri::command]
 pub async fn github_login(app: AppHandle) -> Result<String, String> {
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
 
     // 1. Request a device + user code.
     let dc: DeviceCodeResponse = http
@@ -185,7 +194,7 @@ pub async fn github_account() -> Result<Option<String>, String> {
     let Ok(token) = read_token() else {
         return Ok(None);
     };
-    Ok(fetch_login(&reqwest::Client::new(), &token).await)
+    Ok(fetch_login(http_client(), &token).await)
 }
 
 async fn fetch_login(http: &reqwest::Client, token: &str) -> Option<String> {
@@ -253,7 +262,7 @@ pub async fn github_create_issue(
     }
     let token =
         read_token().map_err(|_| "Sign in to GitHub in Settings to send feedback.".to_string())?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let url = format!("{API_BASE}/repos/{FEEDBACK_OWNER}/{FEEDBACK_REPO}/issues");
     let payload = serde_json::json!({ "title": title, "body": body, "labels": labels });
     let (status, json) = api_post(&http, &token, &url, &payload).await?;
@@ -354,7 +363,7 @@ pub async fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
         return Ok(None);
     };
 
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let url = format!(
         "{API_BASE}/repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=all&per_page=1"
     );
@@ -464,7 +473,7 @@ pub async fn gh_list_prs(path: String) -> Result<Vec<GhItem>, String> {
 async fn list_prs(path: &str) -> Option<Vec<GhItem>> {
     let token = read_token().ok()?;
     let (owner, repo) = repo_slug(path)?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let arr = api_get(
         &http,
         &token,
@@ -499,7 +508,7 @@ pub async fn gh_list_issues(path: String) -> Result<Vec<GhItem>, String> {
 async fn list_issues(path: &str) -> Option<Vec<GhItem>> {
     let token = read_token().ok()?;
     let (owner, repo) = repo_slug(path)?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let arr = api_get(
         &http,
         &token,
@@ -541,7 +550,7 @@ pub async fn gh_list_branches(path: String) -> Result<Vec<GhItem>, String> {
 async fn list_branches(path: &str) -> Option<Vec<GhItem>> {
     let token = read_token().ok()?;
     let (owner, repo) = repo_slug(path)?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let arr = api_get(
         &http,
         &token,
@@ -605,7 +614,7 @@ fn parse_job_id(details_url: &str) -> Option<u64> {
 pub async fn github_pr_checks(path: String) -> Result<Vec<CheckRun>, String> {
     let token = read_token()?;
     let (owner, repo) = repo_slug(&path).ok_or("No GitHub `origin` remote for this repo.")?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
 
     let pr_sha = if let Some(branch) = current_branch(&path) {
         let url = format!(
@@ -657,7 +666,7 @@ pub async fn github_pr_checks(path: String) -> Result<Vec<CheckRun>, String> {
 pub async fn github_check_log(path: String, job_id: u64) -> Result<String, String> {
     let token = read_token()?;
     let (owner, repo) = repo_slug(&path).ok_or("No GitHub `origin` remote for this repo.")?;
-    let http = reqwest::Client::new();
+    let http = http_client().clone();
     let resp = http
         .get(format!(
             "{API_BASE}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs"

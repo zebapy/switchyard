@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router';
 import { Menu } from '@base-ui-components/react/menu';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
@@ -50,8 +51,13 @@ export function ProjectTree() {
   }, [loadSettings, loadAddedProjects, loadTmuxSessions]);
 
   // Keep git info fresh for every git project (drives diffs, dashboard, footer stats).
+  // Paused while the window is unfocused — refreshing every project's git + PR +
+  // tmux state every 15s in the background is wasted work (repo opens, gh API
+  // calls). Resume with an immediate refresh on regaining focus so data isn't stale.
   useEffect(() => {
+    let focused = true;
     const refreshAll = () => {
+      if (!focused) return;
       const { projects: ps, refreshGitInfo, refreshPrInfo, loadTmuxSessions: lts } = useProjectsStore.getState();
       for (const p of ps) {
         if (p.is_git && !p.worktree_parent) {
@@ -63,7 +69,15 @@ export function ProjectTree() {
     };
     refreshAll();
     const interval = setInterval(refreshAll, 15000);
-    return () => clearInterval(interval);
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload }) => {
+      const regainedFocus = payload && !focused;
+      focused = payload;
+      if (regainedFocus) refreshAll();
+    });
+    return () => {
+      clearInterval(interval);
+      unlisten.then((fn) => fn());
+    };
   }, [projects]);
 
   const handleAddProject = useCallback(async () => {

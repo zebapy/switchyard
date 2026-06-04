@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { codeToTokens } from 'shiki';
+import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
+import { createOnigurumaEngine } from 'shiki/engine/oniguruma';
+import { bundledLanguages } from 'shiki/langs';
 import type { BundledLanguage, ThemedToken } from 'shiki';
 
 /** Dark theme tuned to the app's warm ember/ink palette. */
@@ -95,6 +97,36 @@ export function languageForFile(file: string | null): BundledLanguage | null {
   return EXT_TO_LANG[ext] ?? null;
 }
 
+// One shared highlighter for the whole app, created lazily on first use. The
+// `shiki` barrel pulls every grammar (~290) plus the oniguruma WASM engine into
+// the eager bundle; this fine-grained core loads only the vesper theme up front,
+// fetches the WASM engine on first highlight, and pulls each language grammar on
+// demand (cached after). Keeps startup lean and stops shipping unused grammars.
+let highlighterPromise: Promise<HighlighterCore> | null = null;
+const loadedLangs = new Set<string>();
+
+function getHighlighter(): Promise<HighlighterCore> {
+  if (!highlighterPromise) {
+    highlighterPromise = createHighlighterCore({
+      themes: [import('shiki/themes/vesper.mjs')],
+      langs: [],
+      engine: createOnigurumaEngine(import('shiki/wasm')),
+    });
+  }
+  return highlighterPromise;
+}
+
+async function highlightToLines(content: string, lang: BundledLanguage): Promise<ThemedToken[][]> {
+  const highlighter = await getHighlighter();
+  if (!loadedLangs.has(lang)) {
+    const loader = bundledLanguages[lang];
+    if (!loader) return [];
+    await highlighter.loadLanguage(loader);
+    loadedLangs.add(lang);
+  }
+  return highlighter.codeToTokens(content, { lang, theme: THEME }).tokens;
+}
+
 /** Tokenize file contents into per-line themed tokens for syntax highlighting.
  *  Returns null when the language is unknown, the file is too big, content is
  *  empty, or highlighting fails — callers fall back to plain text. */
@@ -109,8 +141,10 @@ export function useHighlightedLines(content: string, file: string | null): Theme
       return;
     }
     let active = true;
-    codeToTokens(content, { lang, theme: THEME })
-      .then((result) => active && setLines(result.tokens))
+    highlightToLines(content, lang)
+      .then((result) => {
+        if (active) setLines(result.length ? result : null);
+      })
       .catch(() => active && setLines(null));
     return () => {
       active = false;

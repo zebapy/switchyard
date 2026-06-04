@@ -9,11 +9,23 @@ interface SplitPaneProps {
   path: number[];
 }
 
+/**
+ * A single leaf. Selects ONLY its own pane and a boolean active flag, so an
+ * agent-status tick (which replaces the whole `panes` Map but leaves unrelated
+ * pane objects reference-stable) re-renders just the one pane that changed,
+ * never the entire split tree.
+ */
+function LeafPane({ paneId }: { paneId: string }) {
+  const paneInfo = useWorkspaceStore((s) => s.panes.get(paneId));
+  const isActive = useWorkspaceStore((s) => {
+    const win = s.activeWindowId ? s.windows.get(s.activeWindowId) : null;
+    return win?.activePaneId === paneId;
+  });
+  if (!paneInfo) return null;
+  return <PaneContainer paneInfo={paneInfo} isActive={isActive} />;
+}
+
 export function SplitPane({ tree, tabId, path }: SplitPaneProps) {
-  const panes = useWorkspaceStore((s) => s.panes);
-  const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
-  const windows = useWorkspaceStore((s) => s.windows);
-  const activePaneId = activeWindowId ? windows.get(activeWindowId)?.activePaneId ?? null : null;
   const setRatio = useWorkspaceStore((s) => s.setRatio);
   const dividerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,14 +64,7 @@ export function SplitPane({ tree, tabId, path }: SplitPaneProps) {
   );
 
   if (tree.type === 'leaf') {
-    const paneInfo = panes.get(tree.paneId);
-    if (!paneInfo) return null;
-    return (
-      <PaneContainer
-        paneInfo={paneInfo}
-        isActive={tree.paneId === activePaneId}
-      />
-    );
+    return <LeafPane paneId={tree.paneId} />;
   }
 
   const isHorizontal = tree.direction === 'horizontal';

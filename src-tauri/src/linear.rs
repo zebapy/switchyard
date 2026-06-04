@@ -1,8 +1,15 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
+
+/// Shared HTTP client — built once and reused so the connection pool and TLS
+/// sessions survive across calls, instead of a fresh client per request.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 // Set this to the client_id from your Linear OAuth application.
 const CLIENT_ID: &str = "cc7e3e8f6e61ef3d7daf5ee1bb56b5c6";
@@ -101,7 +108,7 @@ pub async fn linear_login(app: AppHandle) -> Result<(), String> {
         return Err("state mismatch — possible CSRF".into());
     }
 
-    let res: serde_json::Value = reqwest::Client::new()
+    let res: serde_json::Value = http_client()
         .post("https://api.linear.app/oauth/token")
         .form(&[
             ("grant_type", "authorization_code"),
@@ -132,7 +139,7 @@ pub async fn linear_login(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn linear_query(query: String) -> Result<serde_json::Value, String> {
     let token = read_token()?;
-    reqwest::Client::new()
+    http_client()
         .post("https://api.linear.app/graphql")
         .header("Authorization", token) // Linear expects the raw token, no "Bearer" prefix.
         .json(&serde_json::json!({ "query": query }))
@@ -156,7 +163,7 @@ pub async fn linear_list_issues(all: bool) -> Result<Vec<crate::github::GhItem>,
         r#"{ viewer { assignedIssues(first: 50, filter: { state: { type: { nin: ["completed","canceled"] } } }, orderBy: updatedAt) { nodes { identifier title branchName state { name } } } } }"#
     };
 
-    let res: serde_json::Value = reqwest::Client::new()
+    let res: serde_json::Value = http_client()
         .post("https://api.linear.app/graphql")
         .header("Authorization", token) // Linear expects the raw token, no "Bearer" prefix.
         .json(&serde_json::json!({ "query": query }))

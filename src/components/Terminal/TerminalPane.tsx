@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useTerminal } from './useTerminal';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { PaneKind } from '../../types/pane';
@@ -14,7 +14,10 @@ interface TerminalPaneProps {
   isActive: boolean;
 }
 
-export function TerminalPane({ paneId, kind, cwd, command, tmuxSession, agent, isActive }: TerminalPaneProps) {
+// Memoized: all props are primitives, so agent-status ticks (which replace the
+// panes Map but not this pane's props) skip re-rendering — keeping the heavy
+// useTerminal/xterm machinery untouched.
+export const TerminalPane = memo(function TerminalPane({ paneId, kind, cwd, command, tmuxSession, agent, isActive }: TerminalPaneProps) {
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const setPaneTitle = useWorkspaceStore((s) => s.setPaneTitle);
 
@@ -51,4 +54,4 @@ export function TerminalPane({ paneId, kind, cwd, command, tmuxSession, agent, i
       />
     </div>
   );
-}
+});
