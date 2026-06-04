@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
@@ -40,17 +40,21 @@ export function TabBar() {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
   const win = activeWindowId ? windows.get(activeWindowId) ?? null : null;
-  if (!win) return null;
 
-  // Branch context for the active window, derived the same way as the pane header used to.
-  let branch: string | null = null;
-  let isMainWt = true;
-  let projectRoot: string | null = null;
-  for (const [root, info] of gitInfo) {
-    const wt = info.worktrees.find((w) => w.path === win.projectPath);
-    if (wt) { branch = wt.branch; isMainWt = wt.is_main; projectRoot = root; break; }
-  }
-  if (!branch) branch = gitInfo.get(win.projectPath)?.branch ?? null;
+  // Branch context for the active window, derived the same way as the pane header
+  // used to. Memoized so it only re-scans gitInfo when the map or active project
+  // changes — not on every pane-status tick that re-renders this strip.
+  const { branch, isMainWt, projectRoot } = useMemo(() => {
+    const projectPath = win?.projectPath;
+    if (!projectPath) return { branch: null as string | null, isMainWt: true, projectRoot: null as string | null };
+    for (const [root, info] of gitInfo) {
+      const wt = info.worktrees.find((w) => w.path === projectPath);
+      if (wt) return { branch: wt.branch, isMainWt: wt.is_main, projectRoot: root };
+    }
+    return { branch: gitInfo.get(projectPath)?.branch ?? null, isMainWt: true, projectRoot: null as string | null };
+  }, [gitInfo, win?.projectPath]);
+
+  if (!win) return null;
 
   const commitName = (tabId: string, label: string) => {
     if (label.trim()) renameTab(tabId, label.trim());

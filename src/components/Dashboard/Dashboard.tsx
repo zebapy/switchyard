@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Menu } from '@base-ui-components/react/menu';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
@@ -28,6 +28,10 @@ function isRunning(pane: PaneInfo | undefined): boolean {
   return !!pane && pane.kind === 'Agent' && (pane.agentStatus === 'working' || pane.agentStatus === 'waiting');
 }
 
+/** Stable empty array so cards with no sessions keep a constant `tabs` prop and
+ *  stay memoized across the dashboard's pane-tick re-renders. */
+const EMPTY_TABS: Tab[] = [];
+
 function worktreesFor(project: ProjectInfo, git: { worktrees: WorktreeInfo[] } | undefined): WorktreeInfo[] {
   if (git?.worktrees?.length) return [...git.worktrees].sort((a, b) => Number(b.is_main) - Number(a.is_main));
   if (!project.is_git) return [{ path: project.path, branch: null, is_main: true, last_commit_unix: null, created_unix: null, added: 0, deleted: 0 }];
@@ -56,12 +60,12 @@ export function Dashboard() {
     return { branchCount: branches, runningCount: running };
   }, [topProjects, gitInfo, panes]);
 
-  const select = (wtPath: string, tab: Tab, paneId?: string) => {
+  const select = useCallback((wtPath: string, tab: Tab, paneId?: string) => {
     switchWindow(wtPath);
     setActiveTab(tab.id);
     if (paneId) setActivePane(paneId);
     goToWorkspace();
-  };
+  }, [switchWindow, setActiveTab, setActivePane]);
 
   const handleAddLocalFolder = async () => {
     const sel = await open({ directory: true, multiple: false, title: 'Select project folder' });
@@ -133,9 +137,9 @@ export function Dashboard() {
                   <BranchCard
                     key={wt.path}
                     worktree={wt}
-                    tabs={windows.get(wt.path)?.tabs ?? []}
-                    panes={panes}
-                    onSelect={(tab, paneId) => select(wt.path, tab, paneId)}
+                    wtPath={wt.path}
+                    tabs={windows.get(wt.path)?.tabs ?? EMPTY_TABS}
+                    onSelect={select}
                   />
                 ))}
               </div>
@@ -149,19 +153,23 @@ export function Dashboard() {
 
 interface BranchCardProps {
   worktree: WorktreeInfo;
+  wtPath: string;
   tabs: Tab[];
-  panes: Map<string, PaneInfo>;
-  onSelect: (tab: Tab, paneId?: string) => void;
+  onSelect: (wtPath: string, tab: Tab, paneId?: string) => void;
 }
 
-function BranchCard({ worktree, tabs, panes, onSelect }: BranchCardProps) {
+// Memoized: props are reference-stable across the dashboard's pane-tick
+// re-renders (gitInfo/windows don't change on a tick), so a streaming agent no
+// longer re-renders every card. Each session row subscribes to its own pane via
+// TabRow, so its running dot/title still updates independently.
+const BranchCard = memo(function BranchCard({ worktree, wtPath, tabs, onSelect }: BranchCardProps) {
   const isBase = worktree.is_main;
   const name = worktree.branch ?? worktree.path.split('/').filter(Boolean).pop() ?? worktree.path;
   const total = worktree.added + worktree.deleted;
   const addPct = total > 0 ? Math.round((worktree.added / total) * 100) : 0;
 
   const openFirst = () => {
-    if (tabs.length > 0) onSelect(tabs[0]);
+    if (tabs.length > 0) onSelect(wtPath, tabs[0]);
   };
 
   return (
@@ -197,38 +205,54 @@ function BranchCard({ worktree, tabs, panes, onSelect }: BranchCardProps) {
 
       <div className="flex flex-col gap-[5px]">
         {tabs.length === 0 && <div className="px-0.5 py-1 text-xs text-ink-ghost">No sessions yet</div>}
-        {tabs.map((tab) => {
-          if (tab.paneTree.type === 'leaf') {
-            const pane = panes.get(tab.paneTree.paneId);
-            const isAi = pane?.kind === 'Agent' && !pane.agentExited;
-            return (
-              <button
-                key={tab.id}
-                onClick={(e) => { e.stopPropagation(); onSelect(tab, tab.paneTree.type === 'leaf' ? tab.paneTree.paneId : undefined); }}
-                className="flex w-full items-center gap-2 rounded-lg border border-transparent bg-app px-[9px] py-1.5 text-left text-[12.5px] text-ink-dim transition hover:border-line hover:bg-hover hover:text-ink"
-              >
-                <span className={`grid shrink-0 place-items-center ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
-                  {isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{pane?.title ?? tab.label}</span>
-                {isRunning(pane) && <span className="size-1.5 shrink-0 rounded-full bg-green" />}
-              </button>
-            );
-          }
-          const leaves = leafIds(tab.paneTree);
-          return (
-            <button
-              key={tab.id}
-              onClick={(e) => { e.stopPropagation(); onSelect(tab, leaves[0]); }}
-              className="flex w-full items-center gap-2 rounded-lg border border-transparent bg-app px-[9px] py-1.5 text-left text-[12.5px] text-ink-dim transition hover:border-line hover:bg-hover hover:text-ink"
-            >
-              <span className="grid shrink-0 place-items-center text-ink-faint"><SplitIcon size={13} /></span>
-              <span className="min-w-0 flex-1 truncate">{tab.label}</span>
-              <span className="shrink-0 rounded-full border border-line px-1.5 font-mono text-[11px] leading-4 text-ink-faint">{leaves.length}</span>
-            </button>
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabRow key={tab.id} tab={tab} wtPath={wtPath} onSelect={onSelect} />
+        ))}
       </div>
     </div>
+  );
+});
+
+interface TabRowProps {
+  tab: Tab;
+  wtPath: string;
+  onSelect: (wtPath: string, tab: Tab, paneId?: string) => void;
+}
+
+// Subscribes to only its own leaf pane, so a status change on this session
+// updates just this row — not the whole card or dashboard.
+function TabRow({ tab, wtPath, onSelect }: TabRowProps) {
+  const paneId = tab.paneTree.type === 'leaf' ? tab.paneTree.paneId : null;
+  const pane = useWorkspaceStore((s) => (paneId ? s.panes.get(paneId) : undefined));
+
+  const rowClass =
+    'flex w-full items-center gap-2 rounded-lg border border-transparent bg-app px-[9px] py-1.5 text-left text-[12.5px] text-ink-dim transition hover:border-line hover:bg-hover hover:text-ink';
+
+  if (paneId) {
+    const isAi = pane?.kind === 'Agent' && !pane.agentExited;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onSelect(wtPath, tab, paneId); }}
+        className={rowClass}
+      >
+        <span className={`grid shrink-0 place-items-center ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
+          {isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{pane?.title ?? tab.label}</span>
+        {isRunning(pane) && <span className="size-1.5 shrink-0 rounded-full bg-green" />}
+      </button>
+    );
+  }
+
+  const leaves = leafIds(tab.paneTree);
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onSelect(wtPath, tab, leaves[0]); }}
+      className={rowClass}
+    >
+      <span className="grid shrink-0 place-items-center text-ink-faint"><SplitIcon size={13} /></span>
+      <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+      <span className="shrink-0 rounded-full border border-line px-1.5 font-mono text-[11px] leading-4 text-ink-faint">{leaves.length}</span>
+    </button>
   );
 }
