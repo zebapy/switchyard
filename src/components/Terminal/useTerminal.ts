@@ -37,6 +37,12 @@ const PASTE_END = '\x1b[201~';
 const INITIAL_INPUT_IDLE_MS = 800; // Quiet period after first output → ready.
 const INITIAL_INPUT_CAP_MS = 4000; // Hard cap from first output.
 
+// Shared encoder/decoder. Reused across every keystroke and output chunk in all
+// panes — allocating a fresh one per call is pure overhead on the hot I/O path.
+// decode() without { stream: true } is stateless per call, so sharing is safe.
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder('utf-8', { fatal: false });
+
 // Decode a base64 string to bytes in a single tight loop. Faster than
 // Uint8Array.from(atob(s), cb) under heavy PTY output (no per-byte callback).
 function base64ToBytes(b64: string): Uint8Array {
@@ -227,7 +233,7 @@ export function useTerminal({
       const payload = `${PASTE_START}${initial}${PASTE_END}\r`;
       invoke('pty_write', {
         id: paneId,
-        data: Array.from(new TextEncoder().encode(payload)),
+        data: Array.from(textEncoder.encode(payload)),
       }).catch(console.error);
       pendingPaneInput.delete(paneId);
     }
@@ -329,10 +335,9 @@ export function useTerminal({
       if (event.ctrlKey && event.shiftKey && event.key === 'V' && event.type === 'keydown') {
         navigator.clipboard.readText().then((text) => {
           if (text) {
-            const encoder = new TextEncoder();
             invoke('pty_write', {
               id: paneId,
-              data: Array.from(encoder.encode(text)),
+              data: Array.from(textEncoder.encode(text)),
             }).catch(console.error);
           }
         }).catch(() => {});
@@ -351,10 +356,9 @@ export function useTerminal({
 
     // Send keyboard input to PTY
     const dataDisposable = terminal.onData((data) => {
-      const encoder = new TextEncoder();
       invoke('pty_write', {
         id: paneId,
-        data: Array.from(encoder.encode(data)),
+        data: Array.from(textEncoder.encode(data)),
       }).catch(console.error);
     });
 
@@ -376,8 +380,7 @@ export function useTerminal({
       }
       // Decode for agent status detection
       if (kind === 'Agent') {
-        const decoder = new TextDecoder('utf-8', { fatal: false });
-        detectAgentStatus(decoder.decode(bytes));
+        detectAgentStatus(textDecoder.decode(bytes));
       }
     }).then((fn) => {
       if (disposed) {

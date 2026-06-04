@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { TerminalPane } from '../Terminal/TerminalPane';
 import { DiffPane } from './DiffPane';
@@ -14,7 +15,9 @@ function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path;
 }
 
-export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
+// Memoized: the per-pane selector in SplitPane keeps paneInfo reference-stable
+// unless this pane actually changed, so unrelated panes' updates are skipped.
+export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
   const closePane = useWorkspaceStore((s) => s.closePane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
 
@@ -69,4 +72,4 @@ export function PaneContainer({ paneInfo, isActive }: PaneContainerProps) {
       </div>
     </div>
   );
-}
+});

@@ -173,9 +173,29 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         newMap.set(projectPath, info);
         return { gitInfo: newMap };
       });
-      // Diff stats are deferred so the tree paints immediately. Fetch each
-      // worktree's +/- counts concurrently and patch them in as they land.
-      info.worktrees.forEach((wt) => get().refreshWorktreeDiffStats(projectPath, wt.path));
+      // Diff stats are deferred so the tree paints immediately. Fetch every
+      // worktree's +/- counts concurrently, then patch them all in with a single
+      // store update — one re-render per project instead of one per worktree.
+      const stats = await Promise.all(
+        info.worktrees.map((wt) =>
+          invoke<DiffStat>('get_worktree_diff_stats', { path: wt.path })
+            .then((stat) => ({ path: wt.path, added: stat.added, deleted: stat.deleted }))
+            .catch(() => null),
+        ),
+      );
+      const byPath = new Map(stats.flatMap((s) => (s ? [[s.path, s] as const] : [])));
+      if (byPath.size === 0) return;
+      set((state) => {
+        const current = state.gitInfo.get(projectPath);
+        if (!current) return state;
+        const worktrees = current.worktrees.map((wt) => {
+          const stat = byPath.get(wt.path);
+          return stat ? { ...wt, added: stat.added, deleted: stat.deleted } : wt;
+        });
+        const newMap = new Map(state.gitInfo);
+        newMap.set(projectPath, { ...current, worktrees });
+        return { gitInfo: newMap };
+      });
     } catch {
       // Not a git repo or other error - ignore
     }

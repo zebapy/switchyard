@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 use crate::projects::{default_agent_command, load_settings};
@@ -101,11 +101,16 @@ printf '\\033]0;%s\\007' \"${PWD:t}\"\n";
 }
 
 fn tmux_available() -> bool {
-    std::process::Command::new("tmux")
-        .arg("-V")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    // The tmux binary won't appear or disappear mid-session, so probe once and
+    // cache it — this is hit on every pane spawn and every (polled) session list.
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        std::process::Command::new("tmux")
+            .arg("-V")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
 }
 
 fn tmux_session_name(id: &str) -> String {
