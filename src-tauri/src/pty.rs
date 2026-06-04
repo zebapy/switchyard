@@ -189,7 +189,10 @@ pub enum PaneKind {
 struct PtyInstance {
     child: Box<dyn Child + Send + Sync>,
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    // Each pane's writer is behind its own lock so pty_write only holds the
+    // global instances lock long enough to clone this Arc — a slow/backpressured
+    // write to one pane no longer blocks writes, resizes, or kills on every other.
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     // Distinguishes a pane's current instance from a stale, respawned one so a
     // dying reader thread never removes the live instance that replaced it.
     epoch: u64,
@@ -352,7 +355,7 @@ pub async fn pty_spawn(
     let instance = PtyInstance {
         child,
         master: pair.master,
-        writer,
+        writer: Arc::new(Mutex::new(writer)),
         epoch,
         _kind: kind,
     };
@@ -366,13 +369,43 @@ pub async fn pty_spawn(
         }
     }
 
-    // Spawn reader thread
+    // Reader + emitter split. The reader does blocking reads and hands each
+    // chunk to the emitter over a channel; the emitter coalesces whatever has
+    // already queued into a single base64 IPC event. Bursty output (build logs,
+    // agent spinners) collapses into far fewer events, and the encode+emit work
+    // runs off the reader thread so it never stalls draining the PTY. Coalescing
+    // only merges already-queued chunks (no waiting), so interactive echo keeps
+    // its latency.
     let read_id = id.clone();
+    let emit_id = id.clone();
     let instances_ref = state.instances.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+
+    std::thread::spawn(move || {
+        // Cap a coalesced batch so one burst can't build an unbounded payload.
+        const MAX_BATCH: usize = 256 * 1024;
+        while let Ok(first) = rx.recv() {
+            let mut batch = first;
+            while batch.len() < MAX_BATCH {
+                match rx.try_recv() {
+                    Ok(more) => batch.extend_from_slice(&more),
+                    Err(_) => break, // nothing more queued (or sender gone)
+                }
+            }
+            let encoded = BASE64.encode(&batch);
+            let _ = app.emit(
+                &format!("pty-output-{}", emit_id),
+                PtyOutputPayload {
+                    id: emit_id.clone(),
+                    data: encoded,
+                },
+            );
+        }
+    });
+
     std::thread::spawn(move || {
         eprintln!("[pty] reader thread started for {} (epoch {})", read_id, epoch);
-        // Large buffer coalesces bursty output into far fewer IPC events: one
-        // read drains up to 64 KiB of pending output instead of 4 KiB.
+        // Large buffer coalesces bursty output: one read drains up to 64 KiB.
         let mut buf = [0u8; 65536];
         let mut total_bytes = 0usize;
         loop {
@@ -383,18 +416,15 @@ pub async fn pty_spawn(
                 }
                 Ok(n) => {
                     total_bytes += n;
-                    let encoded = BASE64.encode(&buf[..n]);
-                    let _ = app.emit(
-                        &format!("pty-output-{}", read_id),
-                        PtyOutputPayload {
-                            id: read_id.clone(),
-                            data: encoded,
-                        },
-                    );
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break; // emitter gone
+                    }
                 }
                 Err(_) => break,
             }
         }
+        // Close the channel so the emitter thread exits.
+        drop(tx);
         // Clean up when PTY exits, but only if this instance is still the live
         // one — a respawn may have replaced it under the same id.
         let _ = instances_ref.lock().map(|mut map| {
@@ -409,14 +439,18 @@ pub async fn pty_spawn(
 
 #[tauri::command]
 pub fn pty_write(state: tauri::State<'_, PtyState>, id: String, data: Vec<u8>) -> Result<(), String> {
-    let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
-    if let Some(instance) = instances.get_mut(&id) {
-        instance
-            .writer
-            .write_all(&data)
-            .map_err(|e| e.to_string())?;
-        instance.writer.flush().map_err(|e| e.to_string())?;
-    }
+    // Clone the pane's writer handle while briefly holding the global lock, then
+    // release it before the blocking write so other panes aren't serialized.
+    let writer = {
+        let instances = state.instances.lock().map_err(|e| e.to_string())?;
+        match instances.get(&id) {
+            Some(instance) => instance.writer.clone(),
+            None => return Ok(()),
+        }
+    };
+    let mut writer = writer.lock().map_err(|e| e.to_string())?;
+    writer.write_all(&data).map_err(|e| e.to_string())?;
+    writer.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 

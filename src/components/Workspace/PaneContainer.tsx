@@ -1,10 +1,16 @@
-import { memo } from 'react';
+import { lazy, memo, Suspense } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { TerminalPane } from '../Terminal/TerminalPane';
-import { DiffPane } from './DiffPane';
-import { FilePane } from './FilePane';
 import { AiIcon, TermIcon, SplitSquareIcon, CloseIcon, CodeIcon } from '../icons';
 import type { PaneInfo } from '../../types/pane';
+
+// Each pane type carries a heavy dependency (xterm, diff2html, shiki/markdown).
+// Splitting them means opening a workspace pulls only what the open panes need —
+// a terminal-only tab never loads diff2html or the shiki highlighter.
+const TerminalPane = lazy(() =>
+  import('../Terminal/TerminalPane').then((m) => ({ default: m.TerminalPane })),
+);
+const DiffPane = lazy(() => import('./DiffPane').then((m) => ({ default: m.DiffPane })));
+const FilePane = lazy(() => import('./FilePane').then((m) => ({ default: m.FilePane })));
 
 interface PaneContainerProps {
   paneInfo: PaneInfo;
@@ -54,21 +60,23 @@ export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }:
         </div>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-canvas">
-        {isDiff ? (
-          <DiffPane paneInfo={paneInfo} />
-        ) : isFile ? (
-          <FilePane paneInfo={paneInfo} />
-        ) : (
-          <TerminalPane
-            paneId={paneInfo.id}
-            kind={paneInfo.kind}
-            cwd={paneInfo.cwd}
-            command={paneInfo.command}
-            tmuxSession={paneInfo.tmuxSession}
-            agent={paneInfo.agent}
-            isActive={isActive}
-          />
-        )}
+        <Suspense fallback={null}>
+          {isDiff ? (
+            <DiffPane paneInfo={paneInfo} />
+          ) : isFile ? (
+            <FilePane paneInfo={paneInfo} />
+          ) : (
+            <TerminalPane
+              paneId={paneInfo.id}
+              kind={paneInfo.kind}
+              cwd={paneInfo.cwd}
+              command={paneInfo.command}
+              tmuxSession={paneInfo.tmuxSession}
+              agent={paneInfo.agent}
+              isActive={isActive}
+            />
+          )}
+        </Suspense>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
@@ -17,15 +17,19 @@ function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path;
 }
 
-/** Branch name for a worktree path, derived from cached git info (as TabBar does). */
+/** Branch name for a worktree path, derived from cached git info (as TabBar does).
+ *  Memoized so it only re-scans gitInfo when the map or path actually changes,
+ *  not on every render of the panel. */
 function useBranchForPath(path: string | null): string | null {
   const gitInfo = useProjectsStore((s) => s.gitInfo);
-  if (!path) return null;
-  for (const info of gitInfo.values()) {
-    const worktree = info.worktrees.find((w) => w.path === path);
-    if (worktree) return worktree.branch;
-  }
-  return gitInfo.get(path)?.branch ?? null;
+  return useMemo(() => {
+    if (!path) return null;
+    for (const info of gitInfo.values()) {
+      const worktree = info.worktrees.find((w) => w.path === path);
+      if (worktree) return worktree.branch;
+    }
+    return gitInfo.get(path)?.branch ?? null;
+  }, [gitInfo, path]);
 }
 
 /** Open the file's diff as a workspace tab, reusing an existing matching tab. */

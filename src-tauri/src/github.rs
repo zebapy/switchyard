@@ -409,13 +409,18 @@ async fn compute_ci(
     let mut failing = false;
     let mut pending = false;
 
-    if let Ok(cr) = api_get(
-        http,
-        token,
-        &format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}/check-runs"),
-    )
-    .await
-    {
+    // The check-runs and commit-status endpoints are independent — fetch both
+    // concurrently rather than awaiting one after the other. This runs per PR on
+    // every poll, so the saved round-trip compounds. (URLs are bound first so the
+    // borrowed strings outlive the joined futures.)
+    let check_runs_url = format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}/check-runs");
+    let status_url = format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}/status");
+    let (cr_res, st_res) = tokio::join!(
+        api_get(http, token, &check_runs_url),
+        api_get(http, token, &status_url),
+    );
+
+    if let Ok(cr) = cr_res {
         if let Some(runs) = cr["check_runs"].as_array() {
             for run in runs {
                 any = true;
@@ -432,13 +437,7 @@ async fn compute_ci(
         }
     }
 
-    if let Ok(st) = api_get(
-        http,
-        token,
-        &format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}/status"),
-    )
-    .await
-    {
+    if let Ok(st) = st_res {
         let total = st["total_count"].as_u64().unwrap_or(0);
         match st["state"].as_str().unwrap_or("") {
             "failure" | "error" => {

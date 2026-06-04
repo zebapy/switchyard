@@ -9,6 +9,22 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  build: {
+    // Match the Tauri webview (a current WebKit/Chromium) so esbuild doesn't
+    // down-level modern syntax the runtime already supports.
+    target: "esnext",
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // Keep the rarely-changing React runtime in its own long-cached chunk,
+        // separate from app code that changes on every build.
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router"],
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

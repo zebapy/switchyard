@@ -320,36 +320,59 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
         deleted: 0,
     });
 
-    // Additional worktrees
-    if let Ok(wt_names) = repo.worktrees() {
-        for name in wt_names.iter().flatten() {
-            if let Ok(wt) = repo.find_worktree(name) {
-                let wt_path = wt.path().to_string_lossy().to_string();
-                let (wt_branch, wt_last_commit) = git2::Repository::open(wt.path())
-                    .ok()
-                    .map(|r| {
-                        let branch = r
-                            .head()
-                            .ok()
-                            .and_then(|h| h.shorthand().map(|s| s.to_string()));
-                        let last = head_commit_time(&r);
-                        (branch, last)
-                    })
-                    .unwrap_or((None, None));
-                let wt_created = dir_created_time(&wt_path);
-                worktrees.push(WorktreeInfo {
-                    path: wt_path,
-                    branch: wt_branch,
-                    is_main: false,
-                    last_commit_unix: wt_last_commit,
-                    created_unix: wt_created,
-                    // Deferred — see main worktree above.
-                    added: 0,
-                    deleted: 0,
-                });
-            }
-        }
-    }
+    // Additional worktrees. Collect their paths first (cheap, and `git2::Repository`
+    // is not Sync so it can't be shared across threads), then open each in
+    // parallel — the per-worktree open + head/commit-time read are independent
+    // filesystem reads that dominate the cost, and this runs for every project on
+    // each poll.
+    let wt_paths: Vec<String> = repo
+        .worktrees()
+        .ok()
+        .map(|names| {
+            names
+                .iter()
+                .flatten()
+                .filter_map(|name| {
+                    repo.find_worktree(name)
+                        .ok()
+                        .map(|wt| wt.path().to_string_lossy().to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let extra: Vec<WorktreeInfo> = std::thread::scope(|scope| {
+        let handles: Vec<_> = wt_paths
+            .iter()
+            .map(|wt_path| {
+                scope.spawn(move || {
+                    let (wt_branch, wt_last_commit) = git2::Repository::open(wt_path.as_str())
+                        .ok()
+                        .map(|r| {
+                            let branch = r
+                                .head()
+                                .ok()
+                                .and_then(|h| h.shorthand().map(|s| s.to_string()));
+                            let last = head_commit_time(&r);
+                            (branch, last)
+                        })
+                        .unwrap_or((None, None));
+                    WorktreeInfo {
+                        path: wt_path.clone(),
+                        branch: wt_branch,
+                        is_main: false,
+                        last_commit_unix: wt_last_commit,
+                        created_unix: dir_created_time(wt_path),
+                        // Deferred — see main worktree above.
+                        added: 0,
+                        deleted: 0,
+                    }
+                })
+            })
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    });
+    worktrees.extend(extra);
 
     Ok(GitInfo { branch, worktrees })
 }
