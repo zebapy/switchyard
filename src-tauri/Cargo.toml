@@ -36,7 +36,6 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tiny_http = "0.12"
-keyring = { version = "3", features = ["apple-native"] }
 sha2 = "0.10"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"

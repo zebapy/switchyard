@@ -16,35 +16,34 @@ const CLIENT_ID: &str = "cc7e3e8f6e61ef3d7daf5ee1bb56b5c6";
 const REDIRECT: &str = "http://127.0.0.1:8123/callback";
 const PORT: u16 = 8123;
 const SCOPES: &str = "read,write";
-const KEYCHAIN_SERVICE: &str = "Switchyard";
-const KEYCHAIN_ACCOUNT: &str = "linear_access_token";
+const TOKEN_STORE_SERVICE: &str = "Switchyard";
+const TOKEN_STORE_ACCOUNT: &str = "linear_access_token";
 
-// ── Token storage (OS keychain, cached in memory) ────────────────────────────
+// ── Token storage (token_store file, cached in memory) ──────────────────────
 
-/// See github.rs: cache the token so the OS keychain is read once per launch
-/// rather than on every `linear_query`, avoiding repeated keychain prompts when
-/// the dev build's code signature doesn't match the item ACL.
+/// See github.rs: cache the token so the token store is read once per launch
+/// rather than on every `linear_query`.
 static TOKEN_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 fn read_token() -> Result<String, String> {
     if let Some(token) = TOKEN_CACHE.lock().unwrap().clone() {
         return Ok(token);
     }
-    let token = crate::token_store::get(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+    let token = crate::token_store::get(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT)
         .map_err(|_| "not connected to Linear".to_string())?;
     *TOKEN_CACHE.lock().unwrap() = Some(token.clone());
     Ok(token)
 }
 
 fn store_token(token: &str) -> Result<(), String> {
-    crate::token_store::set(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)?;
+    crate::token_store::set(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT, token)?;
     *TOKEN_CACHE.lock().unwrap() = Some(token.to_string());
     Ok(())
 }
 
 fn clear_token() -> Result<(), String> {
     *TOKEN_CACHE.lock().unwrap() = None;
-    crate::token_store::delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+    crate::token_store::delete(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT)
 }
 
 // Returns (verifier, challenge) for the PKCE flow.

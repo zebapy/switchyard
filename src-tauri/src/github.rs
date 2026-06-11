@@ -1,9 +1,9 @@
 //! GitHub integration via OAuth **device flow** (no client secret, no loopback
-//! server) with the access token stored in the OS keychain. Replaces the old
+//! server) with the access token persisted via `token_store`. Replaces the old
 //! `gh` CLI shell-outs: the data commands (`get_pr_info`, `gh_list_*`) keep the
 //! same names and return types so the frontend contract is unchanged.
 //!
-//! Mirrors the structure of `linear.rs` (raw `reqwest` + `keyring`).
+//! Mirrors the structure of `linear.rs` (raw `reqwest` + `token_store`).
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, OnceLock};
@@ -27,8 +27,8 @@ const CLIENT_ID: &str = "Ov23li4XBrbnyplWQ643";
 /// `repo` covers private-repo read + future push; `read:org` lets org repos resolve.
 const SCOPE: &str = "repo read:org";
 
-const KEYCHAIN_SERVICE: &str = "Switchyard";
-const KEYCHAIN_ACCOUNT: &str = "github_access_token";
+const TOKEN_STORE_SERVICE: &str = "Switchyard";
+const TOKEN_STORE_ACCOUNT: &str = "github_access_token";
 /// GitHub rejects API requests without a User-Agent header.
 const USER_AGENT: &str = "Switchyard";
 
@@ -41,28 +41,26 @@ const API_BASE: &str = "https://api.github.com";
 const FEEDBACK_OWNER: &str = "zebapy";
 const FEEDBACK_REPO: &str = "switchyard";
 
-// ── Token storage (OS keychain) ──────────────────────────────────────────────
+// ── Token storage ────────────────────────────────────────────────────────────
 
-/// Process-wide cache of the access token so we read the OS keychain only once
-/// per launch. macOS prompts the user on every keychain *read* when the app's
-/// code signature doesn't match the item's ACL — which happens on every dev
-/// rebuild — so polling commands (`get_pr_info`, `github_pr_checks`) that fire
-/// every few seconds would otherwise trigger a popup each time. Populated on
-/// first read and after login; cleared on logout.
+/// Process-wide cache of the access token so the token store is read once per
+/// launch instead of on every polling command (`get_pr_info`,
+/// `github_pr_checks` fire every few seconds). Populated on first read and
+/// after login; cleared on logout.
 static TOKEN_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 fn read_token() -> Result<String, String> {
     if let Some(token) = TOKEN_CACHE.lock().unwrap().clone() {
         return Ok(token);
     }
-    let token = crate::token_store::get(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+    let token = crate::token_store::get(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT)
         .map_err(|_| "Not signed in to GitHub. Open Settings to sign in.".to_string())?;
     *TOKEN_CACHE.lock().unwrap() = Some(token.clone());
     Ok(token)
 }
 
 fn store_token(token: &str) -> Result<(), String> {
-    crate::token_store::set(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)?;
+    crate::token_store::set(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT, token)?;
     *TOKEN_CACHE.lock().unwrap() = Some(token.to_string());
     Ok(())
 }
@@ -180,7 +178,7 @@ pub async fn github_login(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn github_logout() -> Result<(), String> {
     *TOKEN_CACHE.lock().unwrap() = None;
-    crate::token_store::delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+    crate::token_store::delete(TOKEN_STORE_SERVICE, TOKEN_STORE_ACCOUNT)
 }
 
 #[tauri::command]
