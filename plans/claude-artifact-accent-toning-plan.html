@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Accent (ember) toning plan — Switchyard</title>
+<style>
+  :root{
+    --app:#0a0b0d; --canvas:#101216; --side:#131519; --side2:#16181d;
+    --hover:#1d2026; --active:#20242b; --line:#24272e; --guide:#262a31;
+    --ink:#e6e8ec; --dim:#9aa0ab; --faint:#646b76; --ghost:#454b54;
+    --ember:#ffae5c; --ember-strong:#ff9438; --ember-tint:rgba(255,148,56,.12); --ember-edge:rgba(255,148,56,.45);
+    --add:#6fd08c; --del:#f0758a; --ai:#c79bff; --url:#7cc7ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Hanken Grotesk',system-ui,-apple-system,sans-serif;
+    background:radial-gradient(1200px 600px at 12% -8%,rgba(255,148,56,.05),transparent 60%),var(--app);
+    color:var(--ink);font-size:14px;line-height:1.55;padding:40px 20px 120px;
+  }
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  h1 .em{color:var(--ember)}
+  .sub{color:var(--dim);margin-bottom:28px}
+  h2{font-size:16px;font-weight:650;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  h2 .n{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--ember-tint);color:var(--ember);font-size:12px;font-weight:700}
+  p{margin-bottom:12px;color:var(--ink)}
+  .muted{color:var(--dim)}
+  code{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--side2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ember)}
+  code.neutral{color:var(--dim)}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+  .stat{flex:1;min-width:140px;background:var(--side);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .big{font-size:26px;font-weight:700;color:var(--ember)}
+  .stat .lbl{color:var(--dim);font-size:12.5px}
+  .card{background:var(--side);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .row{display:flex;gap:14px;align-items:flex-start}
+  .verdict{flex-shrink:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:6px;padding:3px 9px;margin-top:2px}
+  .keep{background:rgba(111,208,140,.13);color:var(--add);border:1px solid rgba(111,208,140,.3)}
+  .tone{background:var(--ember-tint);color:var(--ember);border:1px solid var(--ember-edge)}
+  .drop{background:rgba(240,117,138,.12);color:var(--del);border:1px solid rgba(240,117,138,.32)}
+  .ask{background:rgba(199,155,255,.12);color:var(--ai);border:1px solid rgba(199,155,255,.32)}
+  .body{flex:1}
+  .body .t{font-weight:600;margin-bottom:4px}
+  .body .d{color:var(--dim);font-size:13px}
+  .body .where{color:var(--faint);font-size:12px;margin-top:6px;font-family:'IBM Plex Mono',monospace}
+  .swap{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:7px;padding:4px 9px;font-size:12px;font-family:'IBM Plex Mono',monospace;border:1px solid var(--line)}
+  .chip.before{background:var(--ember-tint);color:var(--ember);border-color:var(--ember-edge)}
+  .chip.after{background:var(--hover);color:var(--ink)}
+  .arrow{color:var(--faint)}
+  /* live before/after preview */
+  .demo{display:flex;gap:24px;flex-wrap:wrap;margin-top:6px}
+  .demoCol{flex:1;min-width:240px}
+  .demoCol h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:10px}
+  .ico{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;color:var(--faint);cursor:pointer;transition:.15s}
+  .ico.b:hover{background:var(--ember-tint);color:var(--ember)}
+  .ico.a:hover{background:var(--hover);color:var(--ink)}
+  .listItem{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer;transition:.15s;color:var(--dim);margin-bottom:4px}
+  .listItem.b:hover{background:var(--ember-tint);border-color:var(--ember-edge);color:var(--ember)}
+  .listItem.a:hover{background:var(--hover);color:var(--ink)}
+  .selRow{position:relative;display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;margin-bottom:6px}
+  .selRow.b1{background:var(--ember-tint);color:var(--ember)}
+  .selRow.b1::before{content:'';position:absolute;left:-9px;top:50%;width:3px;height:15px;transform:translateY(-50%);border-radius:3px;background:var(--ember-strong)}
+  .selRow.a1{background:var(--active);color:var(--ink)}
+  .selRow.a1::before{content:'';position:absolute;left:-9px;top:50%;width:3px;height:15px;transform:translateY(-50%);border-radius:3px;background:var(--ember-strong)}
+  /* decisions */
+  .q{background:var(--side2);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .q . qt{font-weight:650;margin-bottom:4px}
+  .q .qh{color:var(--dim);font-size:13px;margin-bottom:12px}
+  label.opt{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--app);margin-bottom:8px;cursor:pointer;transition:.12s}
+  label.opt:hover{border-color:var(--ember-edge)}
+  label.opt input{margin-top:3px;accent-color:var(--ember-strong);width:15px;height:15px;cursor:pointer}
+  .opt .ol{font-weight:550}
+  .opt .od{color:var(--dim);font-size:12.5px}
+  textarea{width:100%;background:var(--app);border:1px solid var(--line);border-radius:9px;color:var(--ink);font-family:inherit;font-size:13px;padding:10px 12px;margin-top:8px;resize:vertical;min-height:64px}
+  textarea:focus{outline:none;border-color:var(--ember-edge);box-shadow:0 0 0 3px var(--ember-tint)}
+  .actionsBar{position:fixed;bottom:0;left:0;right:0;background:rgba(10,11,13,.92);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:14px 20px;display:flex;justify-content:center;gap:12px;z-index:20}
+  button.copy{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ember);background:var(--ember-tint);color:var(--ember);font-weight:600;font-size:13px;border-radius:9px;padding:9px 18px;cursor:pointer;transition:.15s;font-family:inherit}
+  button.copy:hover{background:var(--ember);color:#1a1206}
+  .out{max-width:920px;margin:14px auto 0;display:none}
+  .out textarea{min-height:160px;font-family:'IBM Plex Mono',monospace;font-size:12px}
+  .files{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--faint);line-height:1.7}
+  .tag{font-size:11px;color:var(--faint);font-family:'IBM Plex Mono',monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Accent toning plan — <span class="em">ember</span></h1>
+  <p class="sub">The accent (<code>--color-ember</code> <span class="tag">#ffae5c / #ff9438</span>) reads as "everywhere." Cause: it's used for selection, primary actions, <em>and</em> nearly every hover. When every hover glows orange, the accent stops meaning anything.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="big">~100</div><div class="lbl">ember references in TSX/TS</div></div>
+    <div class="stat"><div class="big">~50</div><div class="lbl">files touched</div></div>
+    <div class="stat"><div class="big">~50</div><div class="lbl">are hover-only states (the bloat)</div></div>
+  </div>
+  <p class="muted" style="font-size:12.5px">Token defs live in <code class="neutral">src/styles.css:24-28</code>. Tokens stay — we change <em>where</em> they apply.</p>
+
+  <h2><span class="n">1</span>The principle</h2>
+  <div class="card">
+    <p style="margin-bottom:6px"><strong>Accent should mark exactly two things:</strong> (1) the one selected/active item, and (2) the one primary action on a surface. Everything else — hover, focus elevation, secondary icons, status — uses neutrals or its own semantic color.</p>
+    <p class="muted" style="margin-bottom:0">Rule of thumb: if more than one ember thing is visible in a region at rest <em>or</em> on hover, it's too much.</p>
+  </div>
+
+  <h2><span class="n">2</span>What changes, by category</h2>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict tone">tone down</span>
+      <div class="body">
+        <div class="t">Hover affordances — the main offender</div>
+        <div class="d">Icon buttons, menu items, chips, cards all flip to ember on hover (<code>hover:text-ember</code>, <code>hover:bg-ember-tint</code>, <code>hover:border-ember-edge</code>, <code>group-hover:text-ember</code>). This is ~half of all usage and the reason it feels everywhere.</div>
+        <div class="swap">
+          <span class="chip before">hover:text-ember</span><span class="arrow">→</span><span class="chip after">hover:text-ink</span>
+          <span class="chip before">hover:bg-ember-tint</span><span class="arrow">→</span><span class="chip after">hover:bg-hover</span>
+          <span class="chip before">hover:border-ember-edge</span><span class="arrow">→</span><span class="chip after">hover:border-guide</span>
+        </div>
+        <div class="demo">
+          <div class="demoCol"><h4>Before — hover me</h4>
+            <span class="ico b">✎</span><span class="ico b">⤓</span><span class="ico b">⊕</span>
+            <div class="listItem b">▸ New script…</div>
+          </div>
+          <div class="demoCol"><h4>After — hover me</h4>
+            <span class="ico a">✎</span><span class="ico a">⤓</span><span class="ico a">⊕</span>
+            <div class="listItem a">▸ New script…</div>
+          </div>
+        </div>
+        <div class="where">Dashboard.tsx · AddMenu.tsx · NewWorktreeModal.tsx · ChecksList.tsx · ProjectItem.tsx · TabBar.tsx · SidebarSearch.tsx · …~20 files</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict tone">tone down</span>
+      <div class="body">
+        <div class="t">Selection state — keep, but use ONE signal</div>
+        <div class="d">Selected rows currently stack tint background + a <code>::before</code> rail + sometimes ember text + ember border, all at once. Pick one. Recommended: keep the left rail as the accent, make the row background neutral <code>bg-active</code>, drop the orange text.</div>
+        <div class="demo">
+          <div class="demoCol"><h4>Before</h4>
+            <div class="selRow b1">⎇ feature/auth</div>
+          </div>
+          <div class="demoCol"><h4>After</h4>
+            <div class="selRow a1">⎇ feature/auth</div>
+          </div>
+        </div>
+        <div class="where">BranchRow.tsx:192 · Dashboard.tsx:181 · CommandPalette.tsx:317 · NewWorktreeModal.tsx (segmented toggle)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict drop">fix</span>
+      <div class="body">
+        <div class="t">Delete buttons mixing ember + red</div>
+        <div class="d">Trash icons use <code>hover:bg-ember-tint hover:text-del</code> — orange wash behind red text. Should be neutral or red-tint only.</div>
+        <div class="swap">
+          <span class="chip before">hover:bg-ember-tint hover:text-del</span><span class="arrow">→</span><span class="chip after">hover:bg-hover hover:text-del</span>
+        </div>
+        <div class="where">BranchRow.tsx:239 · TabBar.tsx:146 · SessionRow.tsx:38</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict ask">reconsider</span>
+      <div class="body">
+        <div class="t">"Main / base" branch marker</div>
+        <div class="d">Main worktree icon is painted <code>text-ember</code> in the tree, tab bar, and dashboard. Persistent orange that competes with selection. Could demote to neutral (<code>text-ink-dim</code>) or a tiny pill instead of coloring the whole icon.</div>
+        <div class="where">BranchRow.tsx:207 · TabBar.tsx:76 · Dashboard.tsx:186</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict ask">reconsider</span>
+      <div class="body">
+        <div class="t">Git file-status color (modified = orange)</div>
+        <div class="d">In <code>fileStatus.ts</code>, modified/renamed/copied/typechange all map to <code>text-ember</code>. That's a <em>status</em> use of the brand accent, sitting next to add=green / del=red. Option: give it its own muted token (e.g. <code>--color-mod</code> yellow) so the brand accent isn't doing double duty.</div>
+        <div class="where">GitPanel/fileStatus.ts:21-24</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="verdict keep">keep</span>
+      <div class="body">
+        <div class="t">These earn the accent — leave them</div>
+        <div class="d">Primary action buttons (Create / Send) · focus rings &amp; focus-within glow · the Switch "on" state · drag/drop drop-indicators · the active selection rail (per category 2) · spinner dot.</div>
+        <div class="where">SendFeedbackModal.tsx · NewWorktreeModal.tsx (Create btn) · Switch.tsx · ProjectItem.tsx:115 (drop bar)</div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">3</span>Rollout</h2>
+  <div class="card">
+    <p style="margin-bottom:8px"><strong>Phase 1 — kill hover ember (biggest visual win, lowest risk).</strong> Find/replace the hover utilities across the ~20 files. Mechanical.</p>
+    <p style="margin-bottom:8px"><strong>Phase 2 — collapse selection to one signal.</strong> Touch the ~4 selection sites; verify selected state still reads clearly.</p>
+    <p style="margin-bottom:8px"><strong>Phase 3 — fix delete-button mix + decide main-marker / git-status.</strong> Depends on your answers below.</p>
+    <p class="muted" style="margin-bottom:0">After each phase: <code class="neutral">pnpm tauri dev</code>, eyeball tree / dashboard / git panel / a modal.</p>
+  </div>
+
+  <h2><span class="n">4</span>Decisions I need from you</h2>
+
+  <div class="q">
+    <div class="qt">Q1 · How aggressive on hover states?</div>
+    <div class="qh">Phase 1 scope.</div>
+    <label class="opt"><input type="radio" name="q1"><span><span class="ol">Neutral all hovers</span> <span class="od">— hover never shows ember; full calm. (recommended)</span></span></label>
+    <label class="opt"><input type="radio" name="q1"><span><span class="ol">Keep ember text on hover, drop tint/border bg</span> <span class="od">— subtle orange icon tint, no orange fills.</span></span></label>
+    <label class="opt"><input type="radio" name="q1"><span><span class="ol">Leave hovers, only fix selection</span> <span class="od">— minimal change.</span></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">Q2 · Selection treatment</div>
+    <div class="qh">Pick the single signal for the selected item.</div>
+    <label class="opt"><input type="radio" name="q2"><span><span class="ol">Rail only + neutral bg</span> <span class="od">— ember left bar, <code>bg-active</code> row, neutral text. (recommended)</span></span></label>
+    <label class="opt"><input type="radio" name="q2"><span><span class="ol">Tint bg only</span> <span class="od">— keep <code>bg-ember-tint</code>, drop the rail and ember text.</span></span></label>
+    <label class="opt"><input type="radio" name="q2"><span><span class="ol">Leave selection as-is</span> <span class="od">— only fix hovers.</span></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">Q3 · "Main / base" branch marker</div>
+    <label class="opt"><input type="radio" name="q3"><span><span class="ol">Demote to neutral</span> <span class="od">— main icon no longer orange.</span></span></label>
+    <label class="opt"><input type="radio" name="q3"><span><span class="ol">Keep orange</span> <span class="od">— it's a useful at-a-glance marker.</span></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">Q4 · Git modified-status color</div>
+    <label class="opt"><input type="radio" name="q4"><span><span class="ol">New muted yellow token</span> <span class="od">— separate <code>--color-mod</code>, free the brand accent.</span></span></label>
+    <label class="opt"><input type="radio" name="q4"><span><span class="ol">Leave as ember</span> <span class="od">— it's fine in the git panel.</span></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">Q5 · Anything else / notes</div>
+    <textarea placeholder="Specific screens that bug you, things to NOT touch, etc."></textarea>
+  </div>
+
+</div>
+
+<div class="actionsBar">
+  <button class="copy" onclick="collect()">⧉ Copy my answers</button>
+</div>
+<div class="out" id="out"><textarea id="outText" readonly></textarea></div>
+
+<script>
+  const q1=['Neutral all hovers','Keep ember text on hover, drop tint/border bg','Leave hovers, only fix selection'];
+  const q2=['Rail only + neutral bg','Tint bg only','Leave selection as-is'];
+  const q3=['Demote main marker to neutral','Keep main marker orange'];
+  const q4=['New muted yellow token for modified','Leave modified as ember'];
+  function pick(name,arr){const els=document.getElementsByName(name);for(let i=0;i<els.length;i++){if(els[i].checked)return arr[i];}return '(no answer)';}
+  function collect(){
+    const notes=document.querySelector('textarea').value.trim();
+    const t=
+`Accent toning — my answers:
+Q1 hover aggressiveness: ${pick('q1',q1)}
+Q2 selection treatment: ${pick('q2',q2)}
+Q3 main-branch marker: ${pick('q3',q3)}
+Q4 git modified color: ${pick('q4',q4)}
+Q5 notes: ${notes||'(none)'}`;
+    const out=document.getElementById('out');const ta=document.getElementById('outText');
+    ta.value=t;out.style.display='block';ta.focus();ta.select();
+    try{document.execCommand('copy');}catch(e){}
+  }
+</script>
+</body>
+</html>

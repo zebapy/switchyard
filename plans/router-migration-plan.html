@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Router migration plan — Switchyard</title>
+<style>
+  :root {
+    --bg: #0f1115; --bg2: #15181e; --card: #181c23; --line: #2a2f39;
+    --ink: #e6e8ec; --dim: #aab1bd; --faint: #6b7280;
+    --ember: #ff7849; --ember-tint: #2a1810; --ember-edge: #5a3320;
+    --green: #5fd38d; --yellow: #e7c45a; --blue: #6ea8ff; --red: #ff6b6b;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+    padding: 40px 20px 120px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 18px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 18px 0 8px; color: var(--ember); }
+  .sub { color: var(--dim); margin: 0 0 8px; }
+  code, pre { font-family: var(--mono); }
+  code { background: var(--bg2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; color: var(--ember); }
+  pre { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 12.5px; color: var(--ink); }
+  pre code { background: none; border: none; padding: 0; color: inherit; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+  .pill { display: inline-block; font-size: 11px; font-family: var(--mono); padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); margin-right: 6px; }
+  .pill.now { color: var(--yellow); border-color: var(--ember-edge); background: var(--ember-tint); }
+  .pill.rec { color: var(--green); border-color: #285437; background: #11251a; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .chk { list-style: none; padding-left: 0; }
+  .chk li { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+  .chk input { margin-top: 4px; width: 16px; height: 16px; accent-color: var(--ember); flex-shrink: 0; }
+  .chk label { cursor: pointer; }
+  .phase { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--ember); border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .phase .n { font-family: var(--mono); color: var(--ember); font-size: 12px; }
+  .phase h3 { margin-top: 2px; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td code { font-size: 12px; }
+  .tag-add { color: var(--green); } .tag-edit { color: var(--yellow); } .tag-del { color: var(--red); }
+  .note { color: var(--dim); font-size: 13.5px; }
+  .warn { border-left: 3px solid var(--yellow); }
+  .warn h3 { color: var(--yellow); }
+  .copybar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg2); border-top: 1px solid var(--line); padding: 12px 20px; display: flex; gap: 12px; align-items: center; justify-content: center; }
+  button { font: inherit; font-size: 13px; background: var(--ember-tint); color: var(--ember); border: 1px solid var(--ember-edge); border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+  button:hover { background: var(--ember); color: #0f1115; }
+  .ok { color: var(--green); font-size: 13px; }
+  a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Router migration plan</h1>
+  <p class="sub">Switchyard (Tauri + React 19 + Vite + zustand) → <strong>React Router v7, memory history</strong></p>
+
+  <h2>Why a router, and which one</h2>
+  <div class="card">
+    <p><span class="pill now">today</span> No router. Navigation is a zustand string union <code>useUiStore.mainView: 'dashboard' | 'pane' | 'settings'</code>. View switches scattered across ~8 files via <code>showPane()</code> / <code>showDashboard()</code> / <code>setSettingsOpen()</code>. Settings sections are scroll-anchors, not routes. Overlays (palette, help, modals) layered separately.</p>
+    <p><span class="pill rec">chosen</span> <strong>React Router v7</strong> with <code>createMemoryRouter</code>. Desktop app = no URL bar, so <strong>memory history</strong> (in-memory stack), never <code>BrowserRouter</code>. Gives declarative route→component map, nested routes for settings, an imperative <code>router.navigate()</code> usable outside components (keybindings), and a clean place to persist/restore the active surface.</p>
+    <p class="note">Scope guard: the router tracks <em>which surface is shown</em> — not pane trees, terminal state, or modal open/close. Those stay in the workspace/ui stores. Overlays remain zustand-driven and render on top of every route.</p>
+  </div>
+
+  <h2>Route tree</h2>
+  <pre><code>// src/router.tsx
+createMemoryRouter([
+  {
+    element: &lt;RootLayout/&gt;,        // Header + Sidebar + &lt;Outlet/&gt; + global overlays/modals
+    children: [
+      { index: true, element: &lt;Dashboard/&gt; },              // '/'
+      { path: 'work/:tabId?', element: &lt;Workspace/&gt; },      // TabBar + SplitPane
+      {
+        path: 'settings',
+        element: &lt;SettingsLayout/&gt;,                         // section nav + &lt;Outlet/&gt;
+        children: [
+          { index: true, loader: () =&gt; redirect('default-folder') },
+          { path: ':section', element: &lt;SettingsSection/&gt; },
+        ],
+      },
+    ],
+  },
+], { initialEntries: [restoredPathFromSession ?? '/'] });</code></pre>
+  <ul>
+    <li><code>RootLayout</code> = the persistent shell currently inlined in <code>App.tsx</code> (Header, resizable sidebar/ProjectTree, <code>&lt;main&gt;</code> → <code>&lt;Outlet/&gt;</code>) plus all overlays/modals so they exist on every route.</li>
+    <li><code>Workspace</code> = the <code>mainView === 'pane'</code> branch (TabBar + <code>SplitPane key={activeTab.id}</code>). Active window/tab still come from the workspace store; <code>:tabId</code> is optional sugar for restore/deep-link.</li>
+    <li>Settings nested routes are <strong>phase 4 polish</strong> — phase 1 can ship <code>/settings</code> as the single existing page.</li>
+  </ul>
+
+  <h2>The imperative-nav trick (why this stays simple)</h2>
+  <div class="card">
+    <p>Many call sites switch views from non-component code: <code>useKeybindings.ts</code> uses <code>useUiStore.getState().showPane()</code>. <code>createMemoryRouter</code> returns a <strong>router object with <code>.navigate()</code></strong>, so those sites become <code>router.navigate('/work')</code> with no hooks needed. Inside components use <code>useNavigate()</code> / <code>useLocation()</code> / <code>useMatch()</code>.</p>
+  </div>
+
+  <h2>Nav mapping</h2>
+  <table>
+    <thead><tr><th>Today</th><th>After</th></tr></thead>
+    <tbody>
+      <tr><td><code>showPane()</code></td><td><code>navigate('/work')</code></td></tr>
+      <tr><td><code>showDashboard()</code></td><td><code>navigate('/')</code></td></tr>
+      <tr><td><code>setSettingsOpen(true)</code></td><td><code>navigate('/settings')</code></td></tr>
+      <tr><td><code>setSettingsOpen(false)</code> / close</td><td><code>navigate(-1)</code></td></tr>
+      <tr><td><code>toggleSettings()</code></td><td>match <code>/settings*</code> → back, else <code>navigate('/settings')</code></td></tr>
+      <tr><td><code>mainView === 'pane'</code> (BranchRow active)</td><td><code>useMatch('/work/*')</code> / <code>useLocation()</code></td></tr>
+      <tr><td><code>mainView === 'dashboard'</code> (ProjectTree)</td><td><code>useMatch('/')</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phases — incremental, each shippable</h2>
+
+  <div class="phase">
+    <div class="n">PHASE 1</div>
+    <h3>Add dep + scaffold, behavior identical</h3>
+    <ul>
+      <li><code>pnpm add react-router</code> (v7 ships DOM bindings in the one package; React 19 compatible).</li>
+      <li>New <code>src/router.tsx</code> (<code>createMemoryRouter</code> + export router) and <code>src/components/RootLayout.tsx</code> (extract shell + overlays out of <code>App.tsx</code>; <code>&lt;main&gt;</code> renders <code>&lt;Outlet/&gt;</code>).</li>
+      <li><code>main.tsx</code>: render <code>&lt;RouterProvider router={router}/&gt;</code> instead of <code>&lt;App/&gt;</code>.</li>
+      <li>Routes <code>/</code>, <code>/work</code>, <code>/settings</code> map 1:1 to current views. No behavior change.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="n">PHASE 2</div>
+    <h3>Swap nav call sites, delete mainView</h3>
+    <ul>
+      <li>Replace all <code>showPane/showDashboard/setSettingsOpen/toggleSettings</code> calls per the mapping table (<code>router.navigate</code> outside components, <code>useNavigate</code> inside).</li>
+      <li>Active-state checks → <code>useMatch</code>/<code>useLocation</code>.</li>
+      <li>Remove <code>mainView</code> + those actions from <code>stores/ui.ts</code>. Keep overlay state (palette, help, worktree/clone modals).</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="n">PHASE 3</div>
+    <h3>Session restore through the router</h3>
+    <ul>
+      <li>Persist <code>location.pathname</code> in <code>saveSession()</code>; seed <code>createMemoryRouter(..., { initialEntries: [savedPath] })</code> so the app reopens on the same surface.</li>
+      <li>Subscribe to <code>router.subscribe</code> (or save on nav) to keep the stored path fresh. Replaces the current <code>loadSession().then(showPane)</code> dance.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="n">PHASE 4 — optional polish</div>
+    <h3>Nested settings routes</h3>
+    <ul>
+      <li><code>/settings/:section</code>; section nav uses <code>&lt;NavLink&gt;</code>; <code>useParams().section</code> drives the active/scrolled section instead of the IntersectionObserver <code>activeId</code> state. Index redirects to <code>default-folder</code>.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="n">PHASE 5</div>
+    <h3>Cleanup + verify</h3>
+    <ul>
+      <li>Delete dead store fields/types. <code>npx tsc --noEmit</code> clean. Smoke-test every nav path + session restore. Optional: bind a key to <code>navigate(-1)</code> (no browser back button in memory history).</li>
+    </ul>
+  </div>
+
+  <h2>Files touched</h2>
+  <table>
+    <thead><tr><th>Action</th><th>File</th></tr></thead>
+    <tbody>
+      <tr><td class="tag-add">add</td><td><code>src/router.tsx</code>, <code>src/components/RootLayout.tsx</code> (+ <code>SettingsLayout</code> in P4)</td></tr>
+      <tr><td class="tag-edit">edit</td><td><code>src/main.tsx</code>, <code>src/App.tsx</code> (gutted into RootLayout), <code>src/stores/ui.ts</code>, <code>src/hooks/useKeybindings.ts</code></td></tr>
+      <tr><td class="tag-edit">edit</td><td><code>Sidebar/Footer.tsx</code>, <code>Dashboard/Dashboard.tsx</code>, <code>ProjectTree/{AddMenu,SessionRow,BranchRow,ProjectTree}.tsx</code>, <code>Worktree/NewWorktreeModal.tsx</code>, <code>SettingsPage.tsx</code></td></tr>
+      <tr><td class="tag-edit">edit</td><td><code>package.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="warn" style="border-bottom-color:var(--line)">Risks &amp; guardrails</h2>
+  <div class="card warn">
+    <ul>
+      <li><strong>Memory history only.</strong> Never <code>BrowserRouter</code> — there's no URL bar; back/forward come from <code>navigate(-1/+1)</code>.</li>
+      <li><strong>Don't route overlays or pane state.</strong> Keep palette/help/modals and the pane tree in zustand. URL = surface only. Avoids scope creep.</li>
+      <li><strong>Keep <code>key={activeTab.id}</code></strong> on SplitPane — tab remount is independent of routing.</li>
+      <li>React 19 + react-router v7: supported. Strict-mode double-render is fine with the data router.</li>
+      <li>You have uncommitted WIP across many of these same files (SettingsPage, Header, ProjectTree, etc.) — land or stash that before phase 2 to avoid conflict churn.</li>
+    </ul>
+  </div>
+
+  <h2>Decisions for you (check / edit)</h2>
+  <ul class="chk">
+    <li><input type="checkbox" id="d1"><label for="d1">Encode active tab in URL (<code>/work/:tabId</code>) for deep-link/restore, or keep <code>/work</code> + store-driven tab? <em>(plan assumes optional param, store still source of truth)</em></label></li>
+    <li><input type="checkbox" id="d2"><label for="d2">Do nested settings routes (P4) now, or ship <code>/settings</code> as one page first?</label></li>
+    <li><input type="checkbox" id="d3"><label for="d3">Bind a keyboard shortcut to <code>navigate(-1)</code> for back nav?</label></li>
+    <li><input type="checkbox" id="d4"><label for="d4">Persist active surface across restart (P3), or always reopen on Dashboard?</label></li>
+    <li><input type="checkbox" id="go"><label for="go"><strong>Approve plan → start Phase 1.</strong></label></li>
+  </ul>
+
+  <h2>Notes back to Claude</h2>
+  <textarea id="notes" style="width:100%;min-height:90px;background:var(--bg2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px;font:inherit;font-size:13.5px" placeholder="Type changes / answers here…"></textarea>
+
+</div>
+
+<div class="copybar">
+  <button onclick="copyAll()">Copy decisions + notes</button>
+  <span id="ok" class="ok"></span>
+</div>
+
+<script>
+function copyAll() {
+  var ids = {d1:'Tab in URL', d2:'Nested settings now', d3:'Back-nav shortcut', d4:'Persist surface', go:'Approve → Phase 1'};
+  var lines = ['Router migration plan — decisions:'];
+  Object.keys(ids).forEach(function(k){
+    var el = document.getElementById(k);
+    lines.push('[' + (el.checked ? 'x' : ' ') + '] ' + ids[k]);
+  });
+  var notes = document.getElementById('notes').value.trim();
+  if (notes) { lines.push('', 'Notes:', notes); }
+  navigator.clipboard.writeText(lines.join('\n')).then(function(){
+    document.getElementById('ok').textContent = 'Copied — paste back to Claude';
+    setTimeout(function(){ document.getElementById('ok').textContent=''; }, 4000);
+  });
+}
+</script>
+</body>
+</html>

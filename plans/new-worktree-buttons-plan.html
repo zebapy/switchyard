@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plan — split worktree-create into two buttons</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#13161b; --panel2:#171b21; --line:#262b33; --line-soft:#1d222a;
+    --ink:#e7ebf0; --dim:#aab2bd; --faint:#7d8794; --ghost:#5b636e;
+    --ember:#f2913d; --ember-tint:rgba(242,145,61,.13); --ember-edge:rgba(242,145,61,.5);
+    --good:#5ec98a; --del:#e5736b; --code:#0e1116;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:34px 18px 80px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:21px;margin:0 0 4px;letter-spacing:-.01em}
+  h2{font-size:15px;margin:30px 0 11px;color:var(--ink);letter-spacing:.01em;display:flex;align-items:center;gap:8px}
+  h2 .n{display:grid;place-items:center;width:21px;height:21px;border-radius:6px;background:var(--ember-tint);color:var(--ember);font-size:12px;font-weight:700}
+  .sub{color:var(--faint);margin:0 0 6px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin:12px 0}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  code{background:var(--code);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;color:#d8c4a6}
+  table{width:100%;border-collapse:collapse;margin:4px 0}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{color:var(--faint);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  td.dec{color:var(--ember);font-weight:600;white-space:nowrap}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .flow{display:flex;gap:14px;flex-wrap:wrap}
+  .flow .col{flex:1;min-width:260px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:14px 15px}
+  .flow .col h3{margin:0 0 8px;font-size:13.5px;display:flex;align-items:center;gap:8px}
+  .pill{font-size:11px;border:1px solid var(--ember-edge);color:var(--ember);background:var(--ember-tint);border-radius:6px;padding:1px 7px}
+  ol,ul{margin:6px 0;padding-left:20px}
+  li{margin:4px 0;color:var(--dim)}
+  li b{color:var(--ink)}
+  .mock{background:var(--code);border:1px solid var(--line-soft);border-radius:9px;padding:13px 14px;color:#cfd6df;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre;overflow-x:auto}
+  .files td:first-child{color:#cfd6df;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap}
+  .check{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line-soft)}
+  .check:last-child{border-bottom:0}
+  .check input{margin-top:3px;width:16px;height:16px;accent-color:var(--ember);flex-shrink:0}
+  .check label{color:var(--dim)}
+  .check label b{color:var(--ink)}
+  textarea{width:100%;min-height:78px;background:var(--code);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:10px 12px;font-family:ui-monospace,monospace;font-size:12.5px;resize:vertical;margin-top:8px}
+  .btn{cursor:pointer;border:1px solid var(--ember);background:var(--ember);color:#1a1206;font-weight:700;font-size:13px;border-radius:9px;padding:9px 15px}
+  .btn.ghost{background:transparent;color:var(--dim);border-color:var(--line)}
+  .row{display:flex;gap:9px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .muted{color:var(--ghost);font-size:12.5px}
+  .ok{color:var(--good)} .warn{color:var(--ember)}
+  hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+  a{color:var(--ember)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Split worktree creation into two buttons</h1>
+  <p class="sub">switchyard · project-tree sidebar · plan from grill session</p>
+
+  <div class="panel" style="border-color:var(--ember-edge)">
+    <b>Headline:</b> The "create from" modal <b>already exists</b> (<code>NewWorktreeModal.tsx</code>). This work =
+    (1) add a fast <code>+</code> button that makes an instant random-named worktree, (2) strip the existing modal to a pure picker, (3) make it open from a <em>second</em> button, and (4) <b>turn on Linear</b> (the big piece).
+    Glossary unchanged: the artifact created is a <b>worktree</b>; the <b>Workspace</b> is what opens when it's selected.
+  </div>
+
+  <h2><span class="n">1</span>Resolved decisions</h2>
+  <div class="panel" style="padding:4px 6px">
+  <table>
+    <tr><th>Topic</th><th>Decision</th><th>Notes</th></tr>
+    <tr><td>Plan shape</td><td class="dec">Split + reuse</td><td>Reuse the existing modal, strip it down. No greenfield modal.</td></tr>
+    <tr><td>Modal fields</td><td class="dec">Removed</td><td>Drop name / branch / prompt / agent inputs. Modal = tabs + search + list only.</td></tr>
+    <tr><td>Quick <code>+</code> name</td><td class="dec">Friendly two-word</td><td><code>brave-otter</code>, <code>quiet-harbor</code>… adjective-noun, collision-checked, retry. Doubles as branch name.</td></tr>
+    <tr><td>Tabs</td><td class="dec">All four</td><td><code>Linear issue</code> · <code>GitHub issue</code> · <code>GitHub branch</code> · <code>GitHub PR</code>. Linear is leftmost / default.</td></tr>
+    <tr><td>Linear</td><td class="dec">Enable now</td><td>New Rust command + wire the tab. Centerpiece of this task.</td></tr>
+    <tr><td>Linear query</td><td class="dec">Mine + active</td><td>Assigned to me, state ≠ Done/Canceled, recent first, across teams. <b>+ toggle to show all issues.</b></td></tr>
+    <tr><td>Create flow</td><td class="dec">One-click</td><td>Click a row → worktree created → modal closes. No confirm step.</td></tr>
+    <tr><td>Buttons</td><td class="dec">Two icons</td><td>Hover-revealed pair on the project row: <code>+</code> and a second icon.</td></tr>
+    <tr><td>Not connected</td><td class="dec">Connect CTA</td><td>Tab shows a "Connect Linear / GitHub" button that runs the existing OAuth login, then loads the list.</td></tr>
+    <tr><td>On create</td><td class="dec">Auto-open + agent</td><td>Per CONTEXT.md: new worktree auto-selects, Workspace opens with a default-agent Tab. Same for both paths.</td></tr>
+  </table>
+  </div>
+
+  <h2><span class="n">2</span>The two flows</h2>
+  <div class="flow">
+    <div class="col">
+      <h3><span class="pill">+</span> Quick worktree</h3>
+      <ol>
+        <li>Hover project row → click <b><code>+</code></b>.</li>
+        <li>Frontend generates a friendly <b>adjective-noun</b> name.</li>
+        <li>Collision-check vs known worktree branches (from <code>GitInfo.worktrees</code>); retry on hit.</li>
+        <li>Call existing <code>createWorktree(repoPath, name)</code> — <b>no backend change</b>.</li>
+        <li>Auto-select → Workspace opens → default-agent Tab. No modal, ever.</li>
+      </ol>
+    </div>
+    <div class="col">
+      <h3><span class="pill">⎐+</span> Create from…</h3>
+      <ol>
+        <li>Hover project row → click <b>second icon</b> → modal opens.</li>
+        <li>Pick a tab (Linear default). If provider not connected → <b>Connect CTA</b>.</li>
+        <li>List loads (Linear: mine+active, with <b>All</b> toggle). Search filters in place.</li>
+        <li><b>Click a row</b> → worktree from that item's branch → modal closes.</li>
+        <li>Auto-select → Workspace opens → default-agent Tab.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="mock">project-name                         [ + ] [ ⎐+ ]
+                                         │     │
+            instant random worktree  ────┘     └────  opens "create from" modal
+
+
+  ┌─ Create from ─────────────────────────────────┐
+  │ [Linear issue] [GitHub issue] [branch] [PR]    │   ← Linear default
+  │ 🔎 Search…                          [ ] All    │   ← All-issues toggle (Linear)
+  │ ENG-123  Fix token expiry      zeb/eng-123-…   │   ← click = create now
+  │ ENG-118  Add retry to webhook  zeb/eng-118-…   │
+  └────────────────────────────────────────────────┘</div>
+
+  <h2><span class="n">3</span>Implementation outline</h2>
+
+  <p class="sub"><b>Backend</b> — <code>src-tauri/src/</code></p>
+  <div class="panel" style="padding:4px 6px">
+  <table class="files">
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td>linear.rs</td><td>Add <code>linear_list_issues(path, all: bool)</code> → <code>Vec&lt;GhItem&gt;</code>. GraphQL: viewer's issues, <code>state.type ∉ {completed,canceled}</code>, order by updatedAt; <code>all=true</code> drops the assignee filter. Map each issue → <code>GhItem { id: identifier (ENG-123), title, sub: state/team, branch: branchName }</code>.</td></tr>
+    <tr><td>lib.rs</td><td>Register <code>linear_list_issues</code> in the invoke handler.</td></tr>
+    <tr><td><span class="muted">projects.rs</span></td><td><span class="muted">No change — quick name is generated frontend-side and reuses <code>create_worktree</code>.</span></td></tr>
+  </table>
+  </div>
+
+  <p class="sub"><b>Frontend</b> — <code>src/</code></p>
+  <div class="panel" style="padding:4px 6px">
+  <table class="files">
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td>components/ProjectTree/ProjectItem.tsx</td><td>Replace single <code>+</code> with two hover icons. <code>+</code> → new <code>quickWorktree(path)</code>; second icon → <code>openWorktreeModal(path, baseBranch)</code>.</td></tr>
+    <tr><td>stores/projects.ts</td><td>Add <code>quickWorktree(repoPath)</code>: generate friendly name + collision-check vs <code>worktrees</code> + call <code>createWorktree</code> + auto-open Workspace/agent.</td></tr>
+    <tr><td>lib/worktreeName.ts <span class="tag">new</span></td><td>Adjective + noun word lists + <code>randomWorktreeName(taken: string[])</code>.</td></tr>
+    <tr><td>components/Worktree/NewWorktreeModal.tsx</td><td>Strip name/branch/prompt/agent fields. Enable Linear tab (default <code>src='linear'</code>). One-click row → create. Add Connect CTA per tab + Linear "All" toggle. Wire Linear list via <code>linear_list_issues</code>.</td></tr>
+    <tr><td>components/icons</td><td>Add the second-button icon (branch/list/sparkle).</td></tr>
+  </table>
+  </div>
+
+  <h2><span class="n">4</span>Confirm residual assumptions</h2>
+  <p class="sub">Defaults I'll run with unless you flip a box. These are small; checking none = proceed as written.</p>
+  <div class="panel">
+    <div class="check"><input type="checkbox" id="c1"><label for="c1"><b>Second-button icon</b> — I'll pick a git-branch-with-plus style icon. Tick if you want a specific one (sparkle / list / magic-wand).</label></div>
+    <div class="check"><input type="checkbox" id="c2"><label for="c2"><b>"All" toggle scope</b> — Linear-only. Tick if GitHub tabs also need a mine-vs-all toggle (they currently list repo-open items).</label></div>
+    <div class="check"><input type="checkbox" id="c3"><label for="c3"><b>Loss of custom prompt</b> — stripping fields removes the "start agent with this prompt" input that exists today. Tick if you want to KEEP a prompt box.</label></div>
+    <div class="check"><input type="checkbox" id="c4"><label for="c4"><b>Loss of branch override</b> — you can no longer hand-edit the branch before creating. Tick if that override should stay.</label></div>
+    <div class="check"><input type="checkbox" id="c5"><label for="c5"><b>Branch-name collision (Linear/PR)</b> — if the item's branch already has a worktree, I'll reveal that existing worktree instead of erroring. Tick if you'd rather it error.</label></div>
+    <div class="check"><input type="checkbox" id="c6"><label for="c6"><b>ADR?</b> — "worktree creation is now zero-input (quick = random, picker = one-click), dropping the old name/branch/prompt form." Tick if you want this recorded as an ADR.</label></div>
+    <textarea id="notes" placeholder="Other notes / changes…"></textarea>
+    <div class="row">
+      <button class="btn" onclick="copyOut()">Copy results</button>
+      <button class="btn ghost" onclick="document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false);document.getElementById('notes').value=''">Reset</button>
+      <span id="copied" class="ok" style="display:none">Copied ✓</span>
+    </div>
+  </div>
+
+  <hr>
+  <p class="muted">Glossary (CONTEXT.md) reviewed — no new domain term needed; Project / Workspace / Tab / worktree already cover this. No ADR offered by default (decisions are UI-level and reversible) — box 6 above flips that.</p>
+
+</div>
+<script>
+  function copyOut(){
+    const items=[["Second icon: specific","c1"],["GitHub mine/all toggle too","c2"],["Keep prompt box","c3"],["Keep branch override","c4"],["Collision should error","c5"],["Write ADR","c6"]];
+    let out="# Worktree-buttons plan — residual answers\n";
+    items.forEach(([label,id])=>{out+= (document.getElementById(id).checked?"[x] ":"[ ] ")+label+"\n";});
+    const n=document.getElementById('notes').value.trim();
+    if(n) out+="\nNotes:\n"+n+"\n";
+    navigator.clipboard.writeText(out).then(()=>{const c=document.getElementById('copied');c.style.display='inline';setTimeout(()=>c.style.display='none',1600);});
+  }
+</script>
+</body>
+</html>

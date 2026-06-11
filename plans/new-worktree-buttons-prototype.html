@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prototype — two-button worktree creation</title>
+<style>
+  :root{
+    --app:#0b0d10; --side:#101317; --panel:#13161b; --hover:#1a1f26;
+    --line:#262b33; --line-soft:#1d222a; --edge:#30343c;
+    --ink:#e7ebf0; --dim:#b3bcc7; --faint:#7d8794; --ghost:#5b636e;
+    --ember:#f2913d; --ember-strong:#f7a455; --ember-tint:rgba(242,145,61,.13); --ember-edge:rgba(242,145,61,.5);
+    --good:#5ec98a; --del:#e5736b; --code:#0e1116; --linear:#9a8cf5;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--app);color:var(--ink);font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+  /* ---------- shell ---------- */
+  .hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 15px;font-size:12px;color:var(--faint)}
+  .hint b{color:var(--ember)}
+  .app{display:flex;height:100vh}
+
+  /* ---------- sidebar ---------- */
+  .side{width:300px;flex-shrink:0;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column}
+  .side-head{padding:14px 14px 10px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line-soft)}
+  .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--ember),#c96a1f);display:grid;place-items:center;color:#1a1206;font-weight:800;font-size:13px}
+  .side-head .t{font-weight:700;letter-spacing:-.01em}
+  .side-head .sub{margin-left:auto;font-size:11px;color:var(--ghost)}
+  .tree{padding:8px 8px;overflow-y:auto;flex:1}
+
+  .proj{margin-bottom:4px}
+  .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;position:relative}
+  .row:hover{background:var(--hover)}
+  .row .chev{width:13px;color:var(--ghost);transition:transform .15s;flex-shrink:0;font-size:10px}
+  .proj.collapsed .chev{transform:rotate(-90deg)}
+  .row .ico{flex-shrink:0;color:var(--faint);display:grid;place-items:center}
+  .row .nm{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .branch{font-size:11px;color:var(--ghost);margin-left:auto}
+  .actions{display:flex;gap:3px;margin-left:auto;opacity:0;transition:opacity .12s}
+  .row:hover .actions{opacity:1}
+  .row:hover .branch{display:none}
+  .iconbtn{width:23px;height:23px;border-radius:7px;display:grid;place-items:center;color:var(--faint)}
+  .iconbtn:hover{background:var(--ember-tint);color:var(--ember)}
+  .iconbtn svg{display:block}
+
+  .kids{padding-left:14px;margin-top:2px;border-left:1px solid var(--line-soft);margin-left:14px}
+  .proj.collapsed .kids{display:none}
+  .wt{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--dim)}
+  .wt:hover{background:var(--hover)}
+  .wt.active{background:var(--ember-tint)}
+  .wt.active .wt-nm{color:var(--ember)}
+  .wt .dot{width:7px;height:7px;border-radius:50%;background:var(--edge);flex-shrink:0}
+  .wt.main .dot{background:var(--ember)}
+  .wt-nm{font-family:ui-monospace,monospace;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wt .stat{margin-left:auto;font-size:10.5px;color:var(--ghost);font-family:ui-monospace,monospace}
+  .wt .add{color:var(--good)} .wt .del{color:var(--del)}
+  @keyframes flash{0%{background:var(--ember-tint)}100%{background:transparent}}
+  .wt.fresh{animation:flash 1.4s ease-out}
+
+  /* ---------- main ---------- */
+  .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ghost);text-align:center;padding:30px;position:relative}
+  .main .big{font-size:15px;color:var(--faint);max-width:380px}
+  .main code{background:var(--code);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;color:#d8c4a6;font-family:ui-monospace,monospace;font-size:12px}
+
+  /* ---------- toast ---------- */
+  .toast{position:fixed;bottom:20px;left:316px;background:var(--panel);border:1px solid var(--ember-edge);border-radius:10px;padding:11px 15px;font-size:12.5px;color:var(--ink);box-shadow:0 14px 40px -12px rgba(0,0,0,.8);transform:translateY(20px);opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{transform:translateY(0);opacity:1}
+  .toast .mono{color:var(--ember)}
+
+  /* ---------- modal ---------- */
+  .scrim{position:fixed;inset:0;z-index:100;display:none;place-items:center}
+  .scrim.open{display:grid}
+  .backdrop{position:absolute;inset:0;background:rgba(6,7,9,.62);backdrop-filter:blur(3px);animation:fade .15s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+  .modal{position:relative;z-index:1;width:min(540px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);background:var(--side);border-radius:16px;box-shadow:0 30px 80px -22px rgba(0,0,0,.85);animation:pop .16s ease-out}
+  .m-head{display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid var(--line);padding:18px 18px 14px}
+  .m-head .ttl{font-size:16px;font-weight:700}
+  .m-head .in{margin-top:2px;font-size:13px;color:var(--faint)}
+  .m-head .in b{color:var(--dim)}
+  .m-close{margin-left:auto;width:28px;height:28px;border-radius:6px;display:grid;place-items:center;color:var(--faint)}
+  .m-close:hover{background:var(--hover);color:var(--ink)}
+
+  .tabs{display:flex;flex-wrap:wrap;gap:5px;padding:13px 18px 0}
+  .tab{border:1px solid var(--line);background:var(--app);color:var(--dim);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .tab:hover{border-color:var(--edge);color:var(--ink)}
+  .tab.on{border-color:var(--ember-edge);background:var(--ember-tint);color:var(--ember)}
+  .tab .tic{display:grid;place-items:center}
+  .tab.linear .tic{color:var(--linear)}
+  .tab.on.linear{border-color:rgba(154,140,245,.5);background:rgba(154,140,245,.13);color:#b8aef8}
+
+  .searchwrap{padding:13px 18px 8px;display:flex;gap:10px;align-items:center}
+  .search{flex:1;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--app);border-radius:9px;padding:7px 11px}
+  .search:focus-within{border-color:var(--ember-edge);box-shadow:0 0 0 3px var(--ember-tint)}
+  .search input{flex:1;background:none;border:0;outline:0;color:var(--ink);font-size:13px}
+  .search input::placeholder{color:var(--ghost)}
+  .toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--faint);white-space:nowrap;cursor:pointer;user-select:none}
+  .toggle .sw{width:32px;height:18px;border-radius:20px;background:var(--edge);position:relative;transition:.15s}
+  .toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--ink);transition:.15s}
+  .toggle.on .sw{background:var(--ember)}
+  .toggle.on .sw::after{left:16px;background:#1a1206}
+  .toggle.on{color:var(--ember)}
+
+  .list{padding:0 18px 4px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;max-height:248px;min-height:120px}
+  .item{display:flex;align-items:center;gap:10px;border:1px solid transparent;background:var(--app);border-radius:9px;padding:9px 11px;text-align:left;width:100%}
+  .item:hover{border-color:var(--ember-edge);background:var(--ember-tint)}
+  .item:hover .arrow{opacity:1}
+  .item .iic{flex-shrink:0;color:var(--faint)}
+  .item:hover .iic{color:var(--ember)}
+  .item.linear .iic{color:var(--linear)}
+  .item .id{flex-shrink:0;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--dim)}
+  .item .title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:13px}
+  .item .meta{flex-shrink:0;font-family:ui-monospace,monospace;font-size:11px;color:var(--ghost)}
+  .item .arrow{opacity:0;color:var(--ember);font-size:14px;transition:.12s}
+  .empty{padding:30px 10px;text-align:center;color:var(--ghost);font-size:13px}
+
+  /* connect CTA */
+  .connect{padding:26px 14px;text-align:center}
+  .connect p{color:var(--faint);margin:0 0 13px}
+  .connect .cbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ember);background:var(--ember-tint);color:var(--ember);border-radius:9px;padding:9px 16px;font-weight:700;font-size:13px}
+  .connect .cbtn:hover{background:var(--ember);color:#1a1206}
+
+  .m-foot{padding:11px 18px 16px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ghost);display:flex;align-items:center;gap:7px}
+  .m-foot kbd{font-family:ui-monospace,monospace;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--dim)}
+
+  .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--ember);border-radius:50%;animation:rot .7s linear infinite;margin:24px auto}
+  @keyframes rot{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="hint">Hover a <b>project</b> row → <b>+</b> makes a random worktree · <b>⎐+</b> opens "create from"</div>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="side-head">
+      <div class="logo">S</div>
+      <div class="t">switchyard</div>
+      <div class="sub">project tree</div>
+    </div>
+    <div class="tree" id="tree"></div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="big" id="mainmsg">Select a worktree, or create one.<br><br>Hover a project and click <code>+</code> for an instant worktree, or <code>⎐+</code> to create from a Linear issue, branch, or PR.</div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- MODAL -->
+<div class="scrim" id="scrim">
+  <div class="backdrop" id="backdrop"></div>
+  <div class="modal">
+    <div class="m-head">
+      <div>
+        <div class="ttl">Create worktree</div>
+        <div class="in">in <b id="m-proj">project</b></div>
+      </div>
+      <button class="m-close" id="m-close" aria-label="Close">✕</button>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="searchwrap">
+      <label class="search">
+        <span style="color:var(--faint)">🔎</span>
+        <input id="search" placeholder="Search…" autocomplete="off" />
+      </label>
+      <div class="toggle" id="alltoggle" title="Show all issues, not just mine"><span class="sw"></span>All</div>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="m-foot"><kbd>esc</kbd> to close · click a row to create from it</div>
+  </div>
+</div>
+
+<script>
+/* ---------------- icons ---------------- */
+const I = {
+  folder:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  plus:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>',
+  createFrom:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7"/><path d="M11 6h6M18.5 6l-2-2M18.5 6l-2 2"/><path d="M14 18h4"/></svg>',
+  linear:'<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 13.7a9.5 9.5 0 0 0 7.8 7.8L2.5 13.7Zm-.4-3 9.2 9.2a9.6 9.6 0 0 0 2.3-.5L2.6 8.4a9.6 9.6 0 0 0-.5 2.3Zm1.4-4.3 12.4 12.4a9.7 9.7 0 0 0 1.7-1.2L5 4.7a9.7 9.7 0 0 0-1.5 1.7ZM7 3.1 20.9 17a9.5 9.5 0 1 0-14-14Z"/></svg>',
+  issue:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></svg>',
+  branch:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M6 7.5v9M18 9.5c0 4-6 2-6 7"/></svg>',
+  pr:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V11a3 3 0 0 0-3-3H9.5M11 6 9 8l2 2"/></svg>',
+  gh:'<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48l-.01-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.93.36.31.68.92.68 1.85l-.01 2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>',
+};
+
+/* ---------------- data ---------------- */
+const ADJ = ['brave','quiet','crimson','lucky','silent','golden','rapid','frosty','amber','noble','swift','clever','mellow','cobalt','sunny','dusty','bold','witty','keen','vivid'];
+const NOUN = ['otter','harbor','finch','spruce','comet','willow','falcon','meadow','ember','pebble','canyon','badger','quartz','cypress','marlin','thistle','heron','cobble','tundra','vireo'];
+
+const projects = [
+  { name:'switchyard', branch:'main', open:true, worktrees:[
+    { name:'main', main:true, add:0, del:0 },
+    { name:'git-panel-redesign', add:142, del:31 },
+  ]},
+  { name:'faraday-api', branch:'main', open:false, worktrees:[
+    { name:'main', main:true, add:0, del:0 },
+  ]},
+];
+
+const LINEAR_MINE = [
+  { id:'ENG-241', title:'Fix token expiry off-by-one in auth middleware', branch:'zeb/eng-241-token-expiry', meta:'In Progress' },
+  { id:'ENG-238', title:'Add retry to webhook delivery', branch:'zeb/eng-238-webhook-retry', meta:'Todo' },
+  { id:'ENG-230', title:'Worktree picker: enable Linear tab', branch:'zeb/eng-230-linear-tab', meta:'In Progress' },
+];
+const LINEAR_ALL = [...LINEAR_MINE,
+  { id:'ENG-244', title:'Dashboard chart flickers on resize', branch:'mia/eng-244-chart-flicker', meta:'Todo · Mia' },
+  { id:'ENG-219', title:'Rename "session" → "workspace" in settings', branch:'sam/eng-219-rename-session', meta:'In Review · Sam' },
+  { id:'ENG-205', title:'Audit reqwest TLS config', branch:'sam/eng-205-tls-audit', meta:'Backlog · Sam' },
+];
+const GH_ISSUES = [
+  { id:'#318', title:'Crash when worktree path has spaces', branch:'318-worktree-path-spaces', meta:'open' },
+  { id:'#311', title:'Tab close should kill tmux session', branch:'311-tab-close-kills-tmux', meta:'open' },
+];
+const GH_BRANCHES = [
+  { id:'', title:'feature/diff-line-comments', branch:'feature/diff-line-comments', meta:'2d ago' },
+  { id:'', title:'fix/router-migration', branch:'fix/router-migration', meta:'5d ago' },
+];
+const GH_PRS = [
+  { id:'#322', title:'feat: add git panel + workspace diff panes', branch:'feat/git-panel', meta:'open · 11d299d' },
+];
+
+const TABS = [
+  { src:'linear', label:'Linear issue',  icon:I.linear, connected:true },
+  { src:'issue',  label:'GitHub issue',  icon:I.issue,  connected:true },
+  { src:'branch', label:'GitHub branch', icon:I.branch, connected:false }, // demo: not connected
+  { src:'pr',     label:'GitHub PR',     icon:I.pr,     connected:true },
+];
+
+/* ---------------- state ---------------- */
+let modalProjIdx = 0, curSrc = 'linear', showAll = false, ghConnected = false, loading = false;
+
+/* ---------------- sidebar render ---------------- */
+const tree = document.getElementById('tree');
+function randName(taken){
+  for(let i=0;i<50;i++){
+    const n = ADJ[(Math.random()*ADJ.length)|0] + '-' + NOUN[(Math.random()*NOUN.length)|0];
+    if(!taken.includes(n)) return n;
+  }
+  return 'worktree-' + ((Math.random()*9000+1000)|0);
+}
+function renderTree(){
+  tree.innerHTML='';
+  projects.forEach((p,pi)=>{
+    const wrap=document.createElement('div');
+    wrap.className='proj'+(p.open?'':' collapsed');
+
+    const row=document.createElement('div');
+    row.className='row';
+    row.innerHTML=`<span class="chev">▼</span><span class="ico">${I.folder}</span><span class="nm">${esc(p.name)}</span>`;
+    const actions=document.createElement('div');
+    actions.className='actions';
+    const bPlus=document.createElement('button');
+    bPlus.className='iconbtn'; bPlus.title='New worktree (random name)'; bPlus.innerHTML=I.plus;
+    bPlus.onclick=(e)=>{e.stopPropagation();quickWorktree(pi);};
+    const bFrom=document.createElement('button');
+    bFrom.className='iconbtn'; bFrom.title='Create worktree from Linear / branch / PR…'; bFrom.innerHTML=I.createFrom;
+    bFrom.onclick=(e)=>{e.stopPropagation();openModal(pi);};
+    const br=document.createElement('span'); br.className='branch'; br.textContent=p.branch;
+    actions.append(bPlus,bFrom);
+    row.append(actions,br);
+    row.onclick=()=>{p.open=!p.open;renderTree();};
+    wrap.append(row);
+
+    const kids=document.createElement('div'); kids.className='kids';
+    p.worktrees.forEach(w=>{
+      const wt=document.createElement('div');
+      wt.className='wt'+(w.main?' main':'')+(w.active?' active':'')+(w.fresh?' fresh':'');
+      w.fresh=false;
+      const stat = (w.add||w.del) ? `<span class="stat"><span class="add">+${w.add}</span> <span class="del">−${w.del}</span></span>` : '';
+      wt.innerHTML=`<span class="dot"></span><span class="wt-nm">${esc(w.name)}</span>${stat}`;
+      wt.onclick=()=>selectWt(pi,w.name);
+      kids.append(wt);
+    });
+    wrap.append(kids);
+    tree.append(wrap);
+  });
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ---------------- actions ---------------- */
+function selectWt(pi,name){
+  projects.forEach(p=>p.worktrees.forEach(w=>w.active=false));
+  const w=projects[pi].worktrees.find(x=>x.name===name); if(w)w.active=true;
+  document.getElementById('mainmsg').innerHTML=`Workspace <code>${esc(name)}</code> open in <b style="color:var(--ink)">${esc(projects[pi].name)}</b> — a Claude agent tab started automatically.`;
+  renderTree();
+}
+function addWorktree(pi,name,opts){
+  const p=projects[pi];
+  if(p.worktrees.some(w=>w.name===name)){ // collision → reveal existing
+    p.open=true; selectWt(pi,name);
+    toast(`Worktree <span class="mono">${esc(name)}</span> already exists — revealed it.`);
+    return;
+  }
+  p.worktrees.forEach(w=>w.active=false);
+  p.worktrees.push({name,add:opts?.add||0,del:opts?.del||0,active:true,fresh:true});
+  p.open=true; renderTree();
+  selectWt(pi,name);
+}
+function quickWorktree(pi){
+  const taken=projects[pi].worktrees.map(w=>w.name);
+  const name=randName(taken);
+  addWorktree(pi,name);
+  toast(`Created <span class="mono">${esc(name)}</span> · opening agent…`);
+}
+
+/* ---------------- modal ---------------- */
+const scrim=document.getElementById('scrim');
+function openModal(pi){
+  modalProjIdx=pi; curSrc='linear'; showAll=false;
+  document.getElementById('m-proj').textContent=projects[pi].name;
+  document.getElementById('search').value='';
+  document.getElementById('alltoggle').classList.remove('on');
+  scrim.classList.add('open');
+  renderTabs(); renderList();
+  setTimeout(()=>document.getElementById('search').focus(),30);
+}
+function closeModal(){scrim.classList.remove('open');}
+document.getElementById('m-close').onclick=closeModal;
+document.getElementById('backdrop').onclick=closeModal;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+const tabsEl=document.getElementById('tabs');
+function renderTabs(){
+  tabsEl.innerHTML='';
+  TABS.forEach(t=>{
+    const b=document.createElement('button');
+    b.className='tab'+(t.src==='linear'?' linear':'')+(curSrc===t.src?' on':'');
+    b.innerHTML=`<span class="tic">${t.icon}</span>${t.label}`;
+    b.onclick=()=>{curSrc=t.src;renderTabs();renderList();};
+    tabsEl.append(b);
+  });
+  // All-toggle only meaningful on Linear
+  document.getElementById('alltoggle').style.display = curSrc==='linear' ? 'flex' : 'none';
+  document.querySelector('.searchwrap').style.display = needsConnect()? 'none':'flex';
+}
+document.getElementById('alltoggle').onclick=function(){showAll=!showAll;this.classList.toggle('on',showAll);renderList();};
+document.getElementById('search').oninput=renderList;
+
+function needsConnect(){
+  const t=TABS.find(x=>x.src===curSrc);
+  if(t.src==='linear') return false;            // assume Linear connected in demo
+  return !t.connected && !ghConnected;          // github branch demo = not connected until you click connect
+}
+function dataFor(src){
+  if(src==='linear') return showAll?LINEAR_ALL:LINEAR_MINE;
+  if(src==='issue')  return GH_ISSUES;
+  if(src==='branch') return GH_BRANCHES;
+  if(src==='pr')     return GH_PRS;
+  return [];
+}
+const listEl=document.getElementById('list');
+function renderList(){
+  listEl.innerHTML='';
+  if(loading){listEl.innerHTML='<div class="spin"></div>';return;}
+  if(needsConnect()){
+    const name=curSrc==='linear'?'Linear':'GitHub';
+    listEl.innerHTML=`<div class="connect"><p>${name} not connected.</p><button class="cbtn" id="connectbtn">${name==='GitHub'?I.gh:I.linear}&nbsp; Connect ${name}</button></div>`;
+    document.getElementById('connectbtn').onclick=()=>{
+      loading=true; renderList();
+      setTimeout(()=>{ghConnected=true;loading=false;renderTabs();renderList();toast(`Connected ${name} ✓`);},900);
+    };
+    return;
+  }
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  let rows=dataFor(curSrc).filter(it=>`${it.id} ${it.title} ${it.branch}`.toLowerCase().includes(q));
+  if(!rows.length){listEl.innerHTML=`<div class="empty">No matches.</div>`;return;}
+  const isLinear=curSrc==='linear';
+  const ic = isLinear?I.linear : curSrc==='pr'?I.pr : curSrc==='branch'?I.branch : I.issue;
+  rows.forEach(it=>{
+    const b=document.createElement('button');
+    b.className='item'+(isLinear?' linear':'');
+    b.innerHTML=`<span class="iic">${ic}</span>`+
+      (it.id?`<span class="id">${esc(it.id)}</span>`:'')+
+      `<span class="title">${esc(it.title)}</span>`+
+      `<span class="meta">${esc(it.branch)}</span><span class="arrow">→</span>`;
+    b.onclick=()=>createFrom(it);
+    listEl.append(b);
+  });
+}
+function createFrom(it){
+  const last=it.branch.split('/').filter(Boolean).pop();
+  closeModal();
+  addWorktree(modalProjIdx,last,{add:0,del:0});
+  toast(`Worktree <span class="mono">${esc(last)}</span> from ${esc(it.id||it.title)} · opening agent…`);
+}
+
+/* ---------------- toast ---------------- */
+let toastTimer;
+function toast(html){
+  const el=document.getElementById('toast');
+  el.innerHTML=html; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+renderTree();
+</script>
+</body>
+</html>

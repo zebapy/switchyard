@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Switchyard — Tauri release &amp; branch workflow</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: #14171d;
+    --panel-2: #191d25;
+    --line: #262b35;
+    --ink: #e6e9ef;
+    --ink-dim: #aab2c0;
+    --ink-faint: #707888;
+    --ember: #ff7a45;
+    --ember-tint: rgba(255,122,69,0.12);
+    --ai: #c79bff;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --code-bg: #0e1116;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 24px 120px; }
+  header h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.5px; }
+  header p { color: var(--ink-dim); margin: 0 0 8px; }
+  .meta { color: var(--ink-faint); font-size: 13px; }
+  .meta code { color: var(--ember); }
+
+  nav {
+    position: sticky; top: 0; background: rgba(11,13,17,0.85); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line); margin: 28px -24px 0; padding: 12px 24px; z-index: 50;
+    display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px;
+  }
+  nav a { color: var(--ink-dim); text-decoration: none; }
+  nav a:hover { color: var(--ember); }
+
+  section { margin-top: 44px; scroll-margin-top: 64px; }
+  h2 {
+    font-size: 21px; margin: 0 0 14px; letter-spacing: -0.3px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .num {
+    font-size: 13px; color: var(--ember); background: var(--ember-tint);
+    border: 1px solid rgba(255,122,69,0.3); border-radius: 7px; padding: 2px 9px; font-weight: 600;
+  }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: var(--ink); }
+  p { margin: 10px 0; color: var(--ink-dim); }
+  strong { color: var(--ink); font-weight: 600; }
+  ul, ol { color: var(--ink-dim); padding-left: 22px; }
+  li { margin: 6px 0; }
+  a.inline { color: var(--ember); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin: 16px 0; }
+  .card.tight { padding: 14px 16px; }
+
+  .codeblock { position: relative; margin: 12px 0; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; margin: 0;
+    font: 13px/1.55 "SF Mono", ui-monospace, Menlo, Consolas, monospace; color: #d7dde7;
+  }
+  pre .c { color: var(--ink-faint); }   /* comment */
+  pre .k { color: var(--ai); }          /* keyword/cmd */
+  pre .s { color: var(--good); }        /* string/value */
+  pre .e { color: var(--ember); }       /* emphasis */
+  code.in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--ember); }
+  .copy {
+    position: absolute; top: 8px; right: 8px; background: var(--panel-2); color: var(--ink-dim);
+    border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  .copy:hover { color: var(--ember); border-color: var(--ember); }
+  .copy.done { color: var(--good); border-color: var(--good); }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; }
+  .flow .step { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; font-size: 13px; color: var(--ink); }
+  .flow .step .sub { display: block; color: var(--ink-faint); font-size: 11px; }
+  .flow .arrow { color: var(--ember); font-size: 16px; }
+
+  .callout { border-left: 3px solid var(--ember); background: var(--ember-tint); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 14px 0; }
+  .callout.warn { border-color: var(--warn); background: rgba(251,191,36,0.1); }
+  .callout.bad { border-color: var(--bad); background: rgba(248,113,113,0.1); }
+  .callout.good { border-color: var(--good); background: rgba(74,222,128,0.1); }
+  .callout .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .callout.warn .tag { color: var(--warn); }
+  .callout.bad .tag { color: var(--bad); }
+  .callout.good .tag { color: var(--good); }
+  .callout .tag.ember { color: var(--ember); }
+  .callout p { margin: 4px 0 0; color: var(--ink); }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { color: var(--ink-dim); }
+  td code { color: var(--ember); }
+
+  .check { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  .check:last-child { border-bottom: none; }
+  .check input { margin-top: 4px; width: 16px; height: 16px; accent-color: var(--ember); flex: none; }
+  .check label { color: var(--ink-dim); }
+  .check label b { color: var(--ink); }
+  .checklist-actions { margin-top: 14px; display: flex; gap: 10px; }
+  .btn { background: var(--ember); color: #1a0e08; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--line); }
+  .btn:hover { filter: brightness(1.08); }
+
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 20px; border: 1px solid var(--line); color: var(--ink-dim); }
+  .pill.green { color: var(--good); border-color: rgba(74,222,128,0.4); background: rgba(74,222,128,0.08); }
+  .pill.amber { color: var(--warn); border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); }
+  hr { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
+  .footnote { color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tauri release &amp; branch workflow</h1>
+    <p>Pragmatic, solo-developer playbook for Switchyard — versioning, branches, PRs, and cutting releases that the auto-updater can ship.</p>
+    <p class="meta">Tailored to your stack: Tauri 2 · pnpm · <code>tauri-action</code> on <code>app-v*</code> tags · universal unsigned macOS build · minisign auto-updater.</p>
+  </header>
+
+  <nav>
+    <a href="#tldr">TL;DR flow</a>
+    <a href="#version">Versioning</a>
+    <a href="#branches">Branches</a>
+    <a href="#prs">PRs &amp; CI</a>
+    <a href="#cut">Cutting a release</a>
+    <a href="#channels">Channels</a>
+    <a href="#updater">Updater traps</a>
+    <a href="#hotfix">Hotfixes</a>
+    <a href="#automate">Automate it</a>
+    <a href="#checklist">Checklist</a>
+  </nav>
+
+  <!-- TLDR -->
+  <section id="tldr">
+    <h2><span class="num">TL;DR</span> The happy path</h2>
+    <p>For a solo dev, keep it light: short-lived branches off <code class="in">main</code>, squash-merge via PR, and let a version-tag drive the release. Everyday work and release work are two separate loops.</p>
+
+    <h3>Daily loop</h3>
+    <div class="flow">
+      <span class="step">branch<span class="sub">zebapy/thing</span></span>
+      <span class="arrow">→</span>
+      <span class="step">commit<span class="sub">conventional</span></span>
+      <span class="arrow">→</span>
+      <span class="step">PR<span class="sub">CI must pass</span></span>
+      <span class="arrow">→</span>
+      <span class="step">squash-merge<span class="sub">into main</span></span>
+    </div>
+
+    <h3>Release loop (only when you want to ship)</h3>
+    <div class="flow">
+      <span class="step">bump version<span class="sub">one source</span></span>
+      <span class="arrow">→</span>
+      <span class="step">tag app-vX.Y.Z<span class="sub">push tag</span></span>
+      <span class="arrow">→</span>
+      <span class="step">CI builds<span class="sub">draft release</span></span>
+      <span class="arrow">→</span>
+      <span class="step">smoke test<span class="sub">the .dmg</span></span>
+      <span class="arrow">→</span>
+      <span class="step">publish<span class="sub">undraft</span></span>
+    </div>
+    <div class="callout good">
+      <span class="tag">why this shape</span>
+      <p><code>main</code> is always shippable. A release is just "main, frozen at a tag." Drafts mean users never get a half-baked build — the updater ignores drafts until you publish.</p>
+    </div>
+  </section>
+
+  <hr/>
+
+  <!-- VERSIONING -->
+  <section id="version">
+    <h2><span class="num">1</span> Versioning — one source of truth</h2>
+    <p>Today the version lives in <strong>three</strong> files and must agree: <code class="in">package.json</code>, <code class="in">src-tauri/tauri.conf.json</code>, <code class="in">src-tauri/Cargo.toml</code>. Three places to forget = shipped mismatches and a broken updater diff.</p>
+
+    <div class="callout bad">
+      <span class="tag">the trap</span>
+      <p>The auto-updater decides "is there an update?" by comparing the running app's version against the version in <code>latest.json</code> — which comes from <code>tauri.conf.json</code>. If you tag <code>app-v0.2.0</code> but forget to bump the config, the release is built as <code>0.1.0</code> and <strong>no one updates</strong>.</p>
+    </div>
+
+    <h3>Collapse it to one file</h3>
+    <p>Tauri 2 lets <code class="in">version</code> in <code>tauri.conf.json</code> be a <em>path</em> to a <code>package.json</code>. Point it there and the app version always tracks npm:</p>
+    <div class="codeblock">
+      <button class="copy">Copy</button>
+<pre><span class="c">// src-tauri/tauri.conf.json</span>
+{
+  <span class="k">"version"</span>: <span class="s">"../package.json"</span>,   <span class="c">// reads version from package.json</span>
+  ...
+}</pre>
+    </div>
+    <p>Now <code class="in">Cargo.toml</code>'s version is just the Rust crate version — it does <em>not</em> affect the app/updater version, so you can leave it or bump it loosely. Bump everything with one command:</p>
+    <div class="codeblock">
+      <button class="copy">Copy</button>
+<pre><span class="c"># bumps package.json, makes a commit + git tag vX.Y.Z (we override the tag name below)</span>
+<span class="k">pnpm version</span> minor <span class="c"># 0.1.0 -> 0.2.0</span></pre>
+    </div>
+    <div class="callout">
+      <span class="tag ember">note</span>
+      <p><code>pnpm version</code> creates a <code>v0.2.0</code> tag by default. You use the <code>app-v</code> prefix, so either configure <code>git config tag.prefix</code> isn't a thing — instead run <code>pnpm version --no-git-tag-version</code> and tag manually (see §4), or accept the extra tag. Cleanest: <code>--no-git-tag-version</code>, commit, then tag <code>app-vX.Y.Z</code> yourself.</p>
+    </div>
+
+    <h3>SemVer for a desktop app</h3>
+    <table>
+      <tr><th>Bump</th><th>When</th><th>Example</th></tr>
+      <tr><td><span class="pill">patch</span></td><td>Bug fixes, no behavior change users must learn</td><td>0.1.0 → 0.1.1</td></tr>
+      <tr><td><span class="pill amber">minor</span></td><td>New features, backward-compatible</td><td>0.1.1 → 0.2.0</td></tr>
+      <tr><td><span class="pill green">major</span></td><td>Breaking changes (data format, removed features). Pre-1.0 you can treat <em>minor</em> as your "breaking" lever.</td><td>0.x → 1.0.0</td></tr>
+    </table>
+    <p class="footnote">Pre-1.0 convention: stay on <code>0.x</code> until the app is stable enough that you'd promise compatibility. Bump <code>minor</code> for features, <code>patch</code> for fixes, and don't agonize.</p>
+  </section>
+
+  <hr/>
+
+  <!-- BRANCHES -->
+  <section id="branches">
+    <h2><span class="num">2</span> Branching model</h2>
+    <p>Use <strong>GitHub Flow</strong> (trunk-based), not Git Flow. Git Flow's <code>develop</code>/<code>release</code>/<code>hotfix</code> branches are overkill for one person shipping a desktop app.</p>
+
+    <table>
+      <tr><th>Branch</th><th>Role</th><th>Lifetime</th></tr>
+      <tr><td><code>main</code></td><td>Always shippable. Every commit could be released.</td><td>forever</td></tr>
+      <tr><td><code>zebapy/&lt;topic&gt;</code></td><td>One feature/fix. Branch, work, PR, merge, delete.</td><td>hours–days</td></tr>
+    </table>
+
+    <div class="callout">
+      <span class="tag ember">your convention</span>
+      <p>You already prefix branches with your GitHub handle (<code>zebapy/drag-reorder-fix</code>). Keep it — it reads well and namespaces cleanly. Use full words: <code>zebapy/git-panel-redraw</code>, not <code>zebapy/gp-fix</code>.</p>
+    </div>
+
+    <h3>Rules of thumb</h3>
+    <ul>
+      <li><strong>Short-lived.</strong> A branch open for a week drifts from <code>main</code> and merges painfully. Merge or rebase daily.</li>
+      <li><strong>One concern per branch.</strong> The <code>worktree-speedups</code> merge that rode into your last release is the smell — bundle deliberately, not accidentally.</li>
+      <li><strong>Don't commit straight to <code>main</code></strong> for anything non-trivial — even solo, the PR is your review + CI gate + changelog entry.</li>
+      <li><strong>Tags are not branches.</strong> <code>app-v0.2.0</code> points at a commit on <code>main</code>. Never branch off a tag unless you're doing a hotfix on an old release (§7).</li>
+    </ul>
+
+    <div class="callout good">
+      <span class="tag">git worktrees fit you</span>
+      <p>You're literally building a worktree app — use them. <code>git worktree add</code> per feature lets you keep <code>main</code> checked out for releases while a feature cooks elsewhere, no stash-dance.</p>
+    </div>
+  </section>
+
+  <hr/>
+
+  <!-- PRS -->
+  <section id="prs">
+    <h2><span class="num">3</span> PRs &amp; CI gates</h2>
+    <p>The PR is where quality is enforced cheaply. Add a <strong>CI workflow that runs on every PR</strong> (separate from the release workflow) so nothing merges red.</p>
+
+    <h3>Minimum PR checks (<code>.github/workflows/ci.yml</code>)</h3>
+    <div class="codeblock">
+      <button class="copy">Copy</button>
+<pre><span class="k">name</span>: CI
+<span class="k">on</span>: { pull_request: { branches: [main] } }
+<span class="k">jobs</span>:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.26.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: src-tauri -&gt; target }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check            <span class="c"># tsc --noEmit</span>
+      - run: pnpm build            <span class="c"># vite build must succeed</span>
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check</pre>
+    </div>
+    <div class="callout warn">
+      <span class="tag">cost note</span>
+      <p>A full Rust compile per PR is slow + uses macOS minutes. <code>swatinem/rust-cache</code> helps a lot. If it bites, run <code>cargo clippy</code> on a cheaper <code>ubuntu-latest</code> runner — clippy doesn't need the Tauri bundle, just the crate to type-check.</p>
+    </div>
+
+    <h3>Branch protection on <code>main</code></h3>
+    <p>Even solo, turn on: <em>require CI to pass before merge</em>, <em>require branches up to date</em>, and <em>require linear history</em> (forces squash/rebase, no merge bubbles like the one that snuck into your release). Settings → Branches → add rule for <code>main</code>.</p>
+
+    <h3>Merge strategy: squash</h3>
+    <p>Squash-merge so each PR = one clean commit on <code>main</code> with a conventional title. Keeps <code>main</code> readable and makes changelog generation trivial (§8). Delete the branch on merge.</p>
+  </section>
+
+  <hr/>
+
+  <!-- CUT -->
+  <section id="cut">
+    <h2><span class="num">4</span> Cutting a release — step by step</h2>
+    <p>This is the exact sequence. Everything after the tag push is automated by your <code>release.yml</code>.</p>
+
+    <div class="codeblock">
+      <button class="copy">Copy</button>
+<pre><span class="c"># 0. Be on a clean, up-to-date main</span>
+<span class="k">git switch</span> main &amp;&amp; <span class="k">git pull</span>
+
+<span class="c"># 1. Bump version (package.json is source of truth; no auto-tag)</span>
+<span class="k">pnpm version</span> minor --no-git-tag-version
+
+<span class="c"># 2. Commit the bump</span>
+<span class="k">git commit</span> -am <span class="s">"chore(release): v0.2.0"</span>
+
+<span class="c"># 3. Push main FIRST (so the tagged commit exists on the remote branch)</span>
+<span class="k">git push</span> origin main
+
+<span class="c"># 4. Tag that commit with your app- prefix, push the tag</span>
+<span class="k">git tag</span> app-v0.2.0
+<span class="k">git push</span> origin app-v0.2.0   <span class="c"># &lt;-- this triggers release.yml</span></pre>
+    </div>
+
+    <div class="callout bad">
+      <span class="tag">version must equal tag</span>
+      <p>The number in <code>package.json</code> (→ <code>tauri.conf.json</code>) <strong>must match</strong> the tag. Tag <code>app-v0.2.0</code> ⇄ app version <code>0.2.0</code>. Mismatch = confusing release + the updater compares the wrong number.</p>
+    </div>
+
+    <h3>After CI finishes</h3>
+    <ol>
+      <li>CI produces a <strong>draft</strong> GitHub Release with the universal <code>.dmg</code>, the <code>.app.tar.gz</code> + <code>.sig</code>, and <code>latest.json</code>.</li>
+      <li><strong>Download the <code>.dmg</code> and actually run it.</strong> Launch, click around, confirm it opens (you'll get the Gatekeeper warning since it's unsigned — that's expected).</li>
+      <li>Publish only when happy: <div class="codeblock"><button class="copy">Copy</button><pre><span class="k">gh release edit</span> app-v0.2.0 --draft=false --latest</pre></div></li>
+    </ol>
+    <div class="callout good">
+      <span class="tag">the moment users update</span>
+      <p>Publishing flips <code>releases/latest</code> to this release. Existing installs hit your updater endpoint, see <code>0.2.0 &gt; 0.1.0</code>, download, and relaunch. Until you publish, they stay on the old version. That's your safety valve.</p>
+    </div>
+  </section>
+
+  <hr/>
+
+  <!-- CHANNELS -->
+  <section id="channels">
+    <h2><span class="num">5</span> Release channels (stable vs beta)</h2>
+    <p>Optional, but the right way to test risky releases on yourself before everyone gets them.</p>
+    <table>
+      <tr><th>Channel</th><th>How</th><th>Updater endpoint</th></tr>
+      <tr><td><span class="pill green">stable</span></td><td>Published, not pre-release. <code>releases/latest</code> resolves to it.</td><td><code>.../releases/latest/download/latest.json</code></td></tr>
+      <tr><td><span class="pill amber">beta</span></td><td>Mark the GitHub release as <em>pre-release</em>. <code>releases/latest</code> skips pre-releases, so stable users are unaffected.</td><td>a separate <code>latest-beta.json</code> the beta build points at</td></tr>
+    </table>
+    <p>Simplest version: tag betas like <code>app-v0.2.0-beta.1</code>, set <code>prerelease: true</code> in the action for those tags, and run a beta build of the app whose updater endpoint reads the beta feed. For a solo project you may not need this until you have real users — <strong>draft + self-test (§4) covers most of the risk.</strong></p>
+  </section>
+
+  <hr/>
+
+  <!-- UPDATER -->
+  <section id="updater">
+    <h2><span class="num">6</span> Updater traps specific to your setup</h2>
+    <ul>
+      <li><strong>Drafts are invisible to the updater</strong> — <code>releases/latest/download/latest.json</code> only resolves on a <em>published</em> release. Good (safe), but means you must remember to publish or no one updates.</li>
+      <li><strong>Pre-releases are skipped by <code>/latest</code></strong> too. A beta won't accidentally ship to stable users.</li>
+      <li><strong>The minisign key is forever.</strong> <code>TAURI_SIGNING_PRIVATE_KEY</code> signs every update; the public key is baked into shipped apps. Lose it and you cannot push updates to existing installs — they'll reject the signature. Back it up (password manager), never rotate casually.</li>
+      <li><strong>Version only goes forward.</strong> The updater installs if <code>latest.json</code> version &gt; installed. You can't "downgrade" users via the updater — to undo a bad release, publish a <em>higher</em> version with the fix.</li>
+      <li><strong>Unsigned + updater works</strong> because the minisign signature (not Apple's) is what the updater verifies. Your ad-hoc <code>signingIdentity: "-"</code> is fine for this.</li>
+    </ul>
+    <div class="callout warn">
+      <span class="tag">bad release recovery</span>
+      <p>Shipped a broken <code>0.2.0</code>? Don't delete it (users already pulled it). Fix on <code>main</code>, cut <code>0.2.1</code> immediately. The updater pulls everyone forward. Optionally delete the broken <em>release assets</em> so new downloaders don't grab it, but the version-forward fix is the real remedy.</p>
+    </div>
+  </section>
+
+  <hr/>
+
+  <!-- HOTFIX -->
+  <section id="hotfix">
+    <h2><span class="num">7</span> Hotfixes</h2>
+    <p>Because <code>main</code> is always shippable, a hotfix is just a fast trip through the normal loop:</p>
+    <ol>
+      <li><code>zebapy/fix-crash</code> off <code>main</code> → fix → PR → squash-merge.</li>
+      <li>Bump <strong>patch</strong> (<code>0.2.0 → 0.2.1</code>), tag <code>app-v0.2.1</code>, push.</li>
+      <li>Publish the draft → updater ships it.</li>
+    </ol>
+    <p>You only need the "branch off an old tag" dance if <code>main</code> has moved on with changes you <em>don't</em> want in the hotfix. Rare for a solo dev — usually <code>main</code> is where you want the fix anyway.</p>
+  </section>
+
+  <hr/>
+
+  <!-- AUTOMATE -->
+  <section id="automate">
+    <h2><span class="num">8</span> Automate the boring parts</h2>
+    <h3>Conventional commits → changelog</h3>
+    <p>You already write <code>feat:</code> / <code>fix:</code> / <code>ci:</code> / <code>chore:</code> commits. That unlocks auto-changelogs. Two good options:</p>
+    <table>
+      <tr><th>Tool</th><th>What it does</th><th>Good when</th></tr>
+      <tr><td><code>release-please</code></td><td>Watches <code>main</code>, opens a "Release PR" that bumps the version + writes <code>CHANGELOG.md</code>. Merge it → it tags → your <code>release.yml</code> fires.</td><td>You want fully hands-off versioning &amp; changelog.</td></tr>
+      <tr><td><code>git-cliff</code></td><td>Generates a changelog from commits on demand; you still tag manually.</td><td>You want a changelog but keep manual control of when to release.</td></tr>
+    </table>
+    <div class="callout">
+      <span class="tag ember">recommendation</span>
+      <p>Start manual (§4) — it's 5 commands and you learn the moving parts. Add <code>release-please</code> once cutting releases feels like a chore. It also fixes the "match the version in 3 places" problem by owning the bump.</p>
+    </div>
+
+    <h3>Put release notes in the GitHub Release</h3>
+    <p>Right now your <code>releaseBody</code> is static text. Swap to GitHub's auto-generated notes (it lists merged PRs since the last tag) by removing <code>releaseBody</code> and adding <code>generateReleaseNotes: true</code> — or let <code>release-please</code> own it.</p>
+  </section>
+
+  <hr/>
+
+  <!-- CHECKLIST -->
+  <section id="checklist">
+    <h2><span class="num">✓</span> Copyable release checklist</h2>
+    <div class="card">
+      <div class="check"><input type="checkbox" id="c1"/><label for="c1"><b>main is green &amp; pulled</b> — CI passing, nothing uncommitted</label></div>
+      <div class="check"><input type="checkbox" id="c2"/><label for="c2"><b>Decide the bump</b> — patch / minor / major per SemVer</label></div>
+      <div class="check"><input type="checkbox" id="c3"/><label for="c3"><b>Bump version</b> — <code>pnpm version &lt;type&gt; --no-git-tag-version</code> (one source of truth)</label></div>
+      <div class="check"><input type="checkbox" id="c4"/><label for="c4"><b>Version == tag</b> — confirm app version matches the <code>app-vX.Y.Z</code> you'll tag</label></div>
+      <div class="check"><input type="checkbox" id="c5"/><label for="c5"><b>Commit + push main</b> — <code>chore(release): vX.Y.Z</code>, push branch before the tag</label></div>
+      <div class="check"><input type="checkbox" id="c6"/><label for="c6"><b>Tag + push tag</b> — <code>git tag app-vX.Y.Z &amp;&amp; git push origin app-vX.Y.Z</code></label></div>
+      <div class="check"><input type="checkbox" id="c7"/><label for="c7"><b>CI green</b> — universal build succeeds, draft release created</label></div>
+      <div class="check"><input type="checkbox" id="c8"/><label for="c8"><b>Smoke test the .dmg</b> — download, launch, click around (expect Gatekeeper warning)</label></div>
+      <div class="check"><input type="checkbox" id="c9"/><label for="c9"><b>Publish</b> — <code>gh release edit app-vX.Y.Z --draft=false --latest</code></label></div>
+      <div class="check"><input type="checkbox" id="c10"/><label for="c10"><b>Verify update</b> — open an older install, confirm it self-updates</label></div>
+      <div class="checklist-actions">
+        <button class="btn" id="copyChecklist">Copy checklist as text</button>
+        <button class="btn ghost" id="resetChecklist">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote" style="margin-top:40px">Generated for Switchyard. Reflects your current <code>release.yml</code> (universal build, draft release, minisign updater) — adjust commands if you rename the tag prefix or add channels.</p>
+</div>
+
+<script>
+  // Copy buttons for code blocks
+  document.querySelectorAll('.codeblock').forEach(function (block) {
+    var btn = block.querySelector('.copy');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var pre = block.querySelector('pre');
+      navigator.clipboard.writeText(pre.innerText).then(function () {
+        btn.textContent = 'Copied';
+        btn.classList.add('done');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1400);
+      });
+    });
+  });
+
+  // Checklist copy / reset
+  var boxes = function () { return Array.prototype.slice.call(document.querySelectorAll('.check input')); };
+  document.getElementById('copyChecklist').addEventListener('click', function () {
+    var lines = boxes().map(function (b) {
+      var text = b.nextElementSibling.innerText.replace(/\s+/g, ' ').trim();
+      return (b.checked ? '[x] ' : '[ ] ') + text;
+    });
+    var out = 'Switchyard release checklist\n' + lines.join('\n');
+    var self = this;
+    navigator.clipboard.writeText(out).then(function () {
+      self.textContent = 'Copied!';
+      setTimeout(function () { self.textContent = 'Copy checklist as text'; }, 1400);
+    });
+  });
+  document.getElementById('resetChecklist').addEventListener('click', function () {
+    boxes().forEach(function (b) { b.checked = false; });
+  });
+</script>
+</body>
+</html>

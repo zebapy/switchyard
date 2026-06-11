@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Git / GitHub Right Panel — Plan</title>
+<style>
+  :root {
+    --canvas: #101216;
+    --side: #131519;
+    --side2: #16181d;
+    --line: #24272e;
+    --active: #20242b;
+    --hover: #1d2026;
+    --ink: #e6e8ec;
+    --ink-dim: #9aa0ab;
+    --ink-faint: #646b76;
+    --ember: #ffae5c;
+    --green: #5dd49b;
+    --red: #ff6b6b;
+    --purple: #b18cff;
+    --blue: #6cb3ff;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --ui: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--ui); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 32px 120px; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+  h2 { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 48px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 16px; font-weight: 650; margin: 26px 0 8px; color: var(--ink); }
+  p { color: var(--ink-dim); margin: 8px 0; }
+  .sub { color: var(--ink-faint); font-size: 13px; margin-top: 0; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--side); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; color: var(--ember); }
+  pre { font-family: var(--mono); font-size: 12.5px; background: var(--side); border: 1px solid var(--line); border-radius: 9px; padding: 14px 16px; overflow-x: auto; color: var(--ink); line-height: 1.5; }
+  pre code { background: none; border: none; padding: 0; color: inherit; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { color: var(--ink-dim); margin: 4px 0; }
+  li strong, p strong { color: var(--ink); font-weight: 600; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; vertical-align: middle; }
+  .tag.have { background: rgba(93,212,155,0.12); color: var(--green); border: 1px solid rgba(93,212,155,0.3); }
+  .tag.miss { background: rgba(255,107,107,0.1); color: var(--red); border: 1px solid rgba(255,107,107,0.3); }
+  .tag.part { background: rgba(255,174,92,0.12); color: var(--ember); border: 1px solid rgba(255,174,92,0.3); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { background: var(--side); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .card h3 { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { color: var(--ink-dim); }
+  td code { white-space: nowrap; }
+  .pill { display:inline-block; font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--ink-faint); margin-right:4px; }
+  .phase { border-left: 3px solid var(--ember); padding-left: 16px; margin: 18px 0; }
+  .phase.p2 { border-color: var(--blue); }
+  .phase.p3 { border-color: var(--purple); }
+  .phase.p4 { border-color: var(--green); }
+  .ascii { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); white-space: pre; line-height: 1.35; }
+  .note { background: rgba(255,174,92,0.07); border: 1px solid rgba(255,174,92,0.25); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+  .note .lbl { color: var(--ember); font-weight: 650; font-size: 13px; }
+  .blocker { background: rgba(255,107,107,0.07); border: 1px solid rgba(255,107,107,0.3); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+  .blocker .lbl { color: var(--red); font-weight: 650; font-size: 13px; }
+  /* questions */
+  .q { background: var(--side); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; }
+  .q .qtitle { font-weight: 650; color: var(--ink); margin-bottom: 4px; }
+  .q .qhelp { color: var(--ink-faint); font-size: 13px; margin-bottom: 12px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; margin: 7px 0; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+  .opt:hover { background: var(--hover); }
+  .opt input { margin-top: 3px; accent-color: var(--ember); flex-shrink: 0; }
+  .opt .otext { font-size: 14px; color: var(--ink); }
+  .opt .odesc { font-size: 12.5px; color: var(--ink-faint); display: block; margin-top: 2px; }
+  .opt.rec .otext::after { content: "Recommended"; font-size: 10px; color: var(--green); border: 1px solid rgba(93,212,155,0.3); background: rgba(93,212,155,0.1); border-radius: 999px; padding: 1px 6px; margin-left: 8px; vertical-align: middle; }
+  textarea { width: 100%; background: var(--canvas); border: 1px solid var(--line); border-radius: 9px; color: var(--ink); font-family: var(--ui); font-size: 14px; padding: 10px 12px; margin-top: 8px; resize: vertical; min-height: 64px; }
+  textarea:focus, .opt:focus-within { outline: none; border-color: var(--ember); }
+  .barbtn { position: sticky; bottom: 0; }
+  .copybar { display: flex; gap: 12px; align-items: center; margin-top: 28px; padding: 16px; background: var(--side2); border: 1px solid var(--line); border-radius: 12px; }
+  button.copy { background: var(--ember); color: #1a1206; font-weight: 650; font-size: 14px; border: none; border-radius: 9px; padding: 11px 20px; cursor: pointer; }
+  button.copy:hover { filter: brightness(1.08); }
+  .copied { color: var(--green); font-size: 13px; opacity: 0; transition: opacity 0.2s; }
+  .copied.show { opacity: 1; }
+  .toc { columns: 2; column-gap: 28px; font-size: 14px; margin: 16px 0 8px; }
+  .toc a { color: var(--ink-dim); display: block; padding: 2px 0; }
+  .legend { font-size: 12.5px; color: var(--ink-faint); margin: 4px 0 0; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Git / GitHub right panel</h1>
+  <p class="sub">Implementation plan for Switchyard · drafted 2026-05-31</p>
+
+  <p>A new right-side panel that surfaces git + GitHub state for the <strong>active tab's worktree</strong>: a file diff viewer (unstaged, and vs main/master), a Create PR button, View PR on web, PR + CI status, and a checks/jobs list you can drill into.</p>
+
+  <div class="toc">
+    <a href="#scope">1 · Scope &amp; behavior</a>
+    <a href="#current">2 · What already exists</a>
+    <a href="#layout">3 · Panel layout &amp; shell wiring</a>
+    <a href="#backend">4 · Backend (Rust) work</a>
+    <a href="#frontend">5 · Frontend components</a>
+    <a href="#diff">6 · Diff viewer design</a>
+    <a href="#pr">7 · PR create + view + status</a>
+    <a href="#checks">8 · Checks / jobs drill-in</a>
+    <a href="#phasing">9 · Phasing</a>
+    <a href="#questions">10 · Decisions I need from you</a>
+  </div>
+
+  <div class="blocker">
+    <span class="lbl">⚠ Blocker to confirm first</span>
+    <p style="margin:6px 0 0"><code>CLIENT_ID</code> in <code>src-tauri/src/github.rs:16</code> is still <code>"REPLACE_WITH_GITHUB_OAUTH_APP_CLIENT_ID"</code>. Every PR/checks feature depends on a working OAuth token in the keychain. If the device-flow login has never succeeded against a real OAuth app, all GitHub features are inert. <strong>Need to confirm a real OAuth App client id (with Device Flow enabled) exists / is configured.</strong> Git-only features (diff viewer, status) do not need this.</p>
+  </div>
+
+  <!-- ───────────────────────────── SCOPE ───────────────────────────── -->
+  <h2 id="scope">1 · Scope &amp; behavior</h2>
+  <p>The panel is <strong>contextual to the active tab</strong>. Each tab is bound to a worktree (a path + branch). When you switch tabs, the panel re-targets that worktree. When the active surface is the dashboard or settings, the panel hides or shows an empty state.</p>
+  <ul>
+    <li><strong>Toggle:</strong> an icon button in the <code>TabBar</code> right cluster + a keybinding (joins the existing <code>useKeybindings</code> set). Open/collapsed state + width persist in the session, mirroring the left sidebar.</li>
+    <li><strong>Target path:</strong> derived from the active tab's worktree (workspace store → active window/tab → pane <code>cwd</code>). All backend calls take this <code>path</code>, exactly like <code>get_git_info(path)</code> / <code>get_pr_info(path)</code> today.</li>
+    <li><strong>Sections (top → bottom):</strong> (a) branch + PR header, (b) changed-files list with diff viewer, (c) PR actions, (d) checks/jobs list.</li>
+  </ul>
+
+  <!-- ───────────────────────────── CURRENT ───────────────────────────── -->
+  <h2 id="current">2 · What already exists</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Git (<code>src-tauri/src/projects.rs</code>)</h3>
+      <p style="margin-top:4px"><span class="tag have">have</span> <code>get_git_info(path)</code> → branch + worktrees + last-commit + <em>total</em> added/deleted line counts (git2 <code>diff_tree_to_workdir_with_index</code>).</p>
+      <p><span class="tag have">have</span> clone / create / worktree add+delete.</p>
+      <p><span class="tag miss">missing</span> per-file status (staged vs unstaged).</p>
+      <p><span class="tag miss">missing</span> file-level diff / patch text.</p>
+      <p><span class="tag miss">missing</span> diff vs main/master (only HEAD→workdir today).</p>
+    </div>
+    <div class="card">
+      <h3>GitHub (<code>src-tauri/src/github.rs</code>)</h3>
+      <p style="margin-top:4px"><span class="tag have">have</span> OAuth device-flow, token in OS keychain, raw <code>reqwest</code> REST (no <code>gh</code> CLI).</p>
+      <p><span class="tag have">have</span> <code>get_pr_info(path)</code> → number, state, rolled-up <code>ci_status</code>, html_url.</p>
+      <p><span class="tag have">have</span> <code>compute_ci()</code> already fetches <code>check-runs</code> + commit <code>status</code> (rollup only).</p>
+      <p><span class="tag have">have</span> <code>repo_slug()</code> parses owner/repo from origin.</p>
+      <p><span class="tag miss">missing</span> create PR, push branch, list individual checks, drill into logs, open-in-web wiring.</p>
+      <p><span class="tag part">partial</span> <code>GithubSettings.tsx</code> exists but is <strong>not wired into the Settings page</strong>.</p>
+    </div>
+  </div>
+  <p class="legend">Big win: <code>compute_ci()</code> already calls the exact endpoints the checks list needs — we extend it to return the per-run array instead of collapsing to one string.</p>
+
+  <!-- ───────────────────────────── LAYOUT ───────────────────────────── -->
+  <h2 id="layout">3 · Panel layout &amp; shell wiring</h2>
+  <p>App shell is a flex row in <code>src/App.tsx:158</code>: <code>sidebar | resizer | main</code>. No layout library — manual mouse-drag resize (copy the existing sidebar resizer at <code>App.tsx:122-147</code>). Add a fourth slot after <code>&lt;main&gt;</code>:</p>
+  <div class="ascii">┌──────────┬─┬───────────────────────────────┬─┬─────────────────┐
+│ Sidebar  │║│  TabBar                       │║│  GIT PANEL      │
+│          │║│  ┌─────────────────────────┐  │║│  branch ▸ PR    │
+│ Project  │║│  │                         │  │║│  ───────────    │
+│  Tree    │║│  │   SplitPane (panes)     │  │║│  ▸ Changed (3)  │
+│          │║│  │                         │  │║│   M file.rs     │
+│          │║│  │                         │  │║│   A new.tsx     │
+│          │║│  └─────────────────────────┘  │║│  ───────────    │
+│          │║│                               │║│  [Create PR]    │
+│          │║│                               │║│  ───────────    │
+│          │║│                               │║│  ✓ build  ◌ test│
+└──────────┴─┴───────────────────────────────┴─┴─────────────────┘
+   resize handles ↑ (reuse sidebar drag logic)</div>
+  <h3>State changes</h3>
+  <ul>
+    <li><code>src/stores/ui.ts</code> — add <code>gitPanelOpen: boolean</code>, <code>gitPanelTab: 'changes' | 'pr'</code> (or single scroll view), <code>toggleGitPanel()</code>.</li>
+    <li><code>src/stores/workspace.ts</code> — add <code>gitPanelWidth: number</code> (clamp ~280–640) + include in <code>saveSession</code>/<code>loadSession</code>, same as <code>sidebarWidth</code>.</li>
+    <li>Reuse design tokens: <code>border-l border-line</code>, <code>bg-side</code>, <code>text-ink</code> / <code>text-ink-dim</code>, <code>font-mono</code> for paths.</li>
+  </ul>
+
+  <!-- ───────────────────────────── BACKEND ───────────────────────────── -->
+  <h2 id="backend">4 · Backend (Rust) work</h2>
+  <p class="sub">New <code>#[tauri::command]</code> fns. All commands auto-allowlist once registered in <code>lib.rs</code> (capabilities file needs no per-command entry). Opening URLs already works via the <code>opener</code> plugin.</p>
+
+  <h3>Git — new file <code>src-tauri/src/git_diff.rs</code> (or extend <code>projects.rs</code>)</h3>
+  <table>
+    <tr><th>Command</th><th>Signature</th><th>Impl</th></tr>
+    <tr><td><code>git_status_files</code></td><td><code>(path) -&gt; Vec&lt;FileStatus&gt;</code></td><td>git2 <code>repo.statuses()</code> → per-file {path, index_status, worktree_status, is_staged}. Mirrors <code>git status --porcelain</code>.</td></tr>
+    <tr><td><code>git_diff_file</code></td><td><code>(path, file, source) -&gt; FileDiff</code></td><td>Unified patch for one file. <code>source</code> ∈ <code>unstaged | staged | vs_base</code>. git2 diff with single-path filter → emit hunks.</td></tr>
+    <tr><td><code>git_diff_base_files</code></td><td><code>(path, base?) -&gt; Vec&lt;FileStatus&gt;</code></td><td>Files changed vs <code>merge-base(HEAD, base)</code>. <code>base</code> auto-detected (main→master→origin/HEAD).</td></tr>
+    <tr><td><code>git_default_branch</code></td><td><code>(path) -&gt; String</code></td><td>Resolve main vs master vs origin/HEAD symref. Cache per repo.</td></tr>
+  </table>
+  <pre><code>#[derive(Serialize)]
+pub struct FileStatus {
+  pub path: String,
+  pub status: String,   // "M" | "A" | "D" | "R" | "?" | "C"
+  pub staged: bool,
+  pub added: i64,
+  pub deleted: i64,
+}
+#[derive(Serialize)]
+pub struct FileDiff {
+  pub path: String,
+  pub hunks: Vec&lt;Hunk&gt;,   // or raw unified text — see Q6
+  pub binary: bool,
+}</code></pre>
+  <p class="sub">Note: git2's diff line callbacks give origin (<code>+</code>/<code>-</code>/context) + content per line — enough to build a structured hunk model, or just concatenate to a unified-diff string and parse client-side.</p>
+
+  <h3>GitHub — extend <code>src-tauri/src/github.rs</code></h3>
+  <table>
+    <tr><th>Command</th><th>Signature</th><th>Impl</th></tr>
+    <tr><td><code>github_push_branch</code></td><td><code>(path) -&gt; Result&lt;()&gt;</code></td><td>Push current branch to <code>origin</code> w/ upstream. <em>See Q4 for mechanism.</em></td></tr>
+    <tr><td><code>github_create_pr</code></td><td><code>(path, title, body, base, draft) -&gt; PrInfo</code></td><td><code>POST /repos/{o}/{r}/pulls</code>. Push first if branch absent on remote.</td></tr>
+    <tr><td><code>github_pr_checks</code></td><td><code>(path) -&gt; Vec&lt;CheckRun&gt;</code></td><td>Refactor <code>compute_ci</code>: return per-run array (name, status, conclusion, html_url, details_url, started/completed).</td></tr>
+    <tr><td><code>github_check_logs</code></td><td><code>(path, run_id) -&gt; String</code></td><td><em>Optional / Q5.</em> Download Actions job logs via API, or skip and open <code>details_url</code> in browser.</td></tr>
+    <tr><td><code>open_url</code></td><td>existing opener</td><td>For "View PR on web" + per-check "open on GitHub".</td></tr>
+  </table>
+  <pre><code>#[derive(Serialize)]
+pub struct CheckRun {
+  pub name: String,
+  pub status: String,        // queued | in_progress | completed
+  pub conclusion: Option&lt;String&gt;, // success | failure | neutral | skipped | ...
+  pub html_url: String,
+  pub started_at: Option&lt;String&gt;,
+  pub completed_at: Option&lt;String&gt;,
+}</code></pre>
+
+  <!-- ───────────────────────────── FRONTEND ───────────────────────────── -->
+  <h2 id="frontend">5 · Frontend components</h2>
+  <p class="sub">New dir <code>src/components/GitPanel/</code>. Data via a small zustand slice or extend <code>stores/projects.ts</code> (already holds <code>gitInfo</code> + <code>prInfo</code> Maps keyed by path).</p>
+  <pre><code>GitPanel/
+  GitPanel.tsx        // shell: resizer + &lt;aside&gt;, picks target path, empty states
+  PanelHeader.tsx     // branch name, ahead/behind, PR badge, refresh btn
+  ChangedFiles.tsx    // segmented: [ Unstaged | Staged | vs main ]; file rows
+  FileRow.tsx         // status glyph (M/A/D), path (mono), +adds/-dels
+  DiffView.tsx        // renders selected file's patch (see §6)
+  PrSection.tsx       // Create PR btn / CreatePrForm / View-on-web / state badge
+  ChecksList.tsx      // per-check rows w/ status icon, click → drill-in
+  CheckDetail.tsx     // log viewer or "open on GitHub" (see §8)
+  useGitPanelData.ts  // polling + invoke wrappers</code></pre>
+  <ul>
+    <li>Reuse PR badge visual language from <code>ProjectTree/BranchRow.tsx</code> (green=open, purple=merged, red=closed; ✓ ✗ ◌ for CI).</li>
+    <li>Icons: extend <code>src/components/icons.tsx</code> (git-branch, diff, pull-request, check, x, dot).</li>
+  </ul>
+
+  <!-- ───────────────────────────── DIFF ───────────────────────────── -->
+  <h2 id="diff">6 · Diff viewer design</h2>
+  <p>Two inputs to the same viewer: <strong>(a)</strong> working-tree changes (unstaged + staged), <strong>(b)</strong> diff vs the base branch (merge-base of HEAD vs main/master). A segmented control at the top of the changed-files list switches source; clicking a file loads its patch into <code>DiffView</code>.</p>
+  <p>Rendering options are the main open decision — see <a href="#questions">Q6</a>. The app already runs <strong>lazygit in a pane</strong>, so a heavy in-app diff UI may be redundant; a lightweight custom renderer keeps the panel consistent with the existing dark, mono aesthetic and avoids a big dependency.</p>
+
+  <!-- ───────────────────────────── PR ───────────────────────────── -->
+  <h2 id="pr">7 · PR create + view + status</h2>
+  <ul>
+    <li><strong>No PR yet</strong> → show <em>Create PR</em>. Opens a small inline form (title prefilled from last commit / branch name, body, base branch dropdown defaulting to detected default, draft checkbox). Submit: push branch (if needed) → <code>POST pulls</code> → refresh <code>prInfo</code>.</li>
+    <li><strong>PR exists</strong> → show <code>#123</code> + state badge + <em>View on web</em> (opener) + CI rollup. Reuse existing <code>get_pr_info</code>.</li>
+    <li><strong>Status placement:</strong> in <code>PanelHeader</code> (compact badge) and expanded in <code>PrSection</code>.</li>
+  </ul>
+  <div class="note"><span class="lbl">Forms</span><p style="margin:6px 0 0">Per your conventions: submit on <code>onSubmit</code> (Enter or Save), show all field errors inline near the field, not a top toast.</p></div>
+
+  <!-- ───────────────────────────── CHECKS ───────────────────────────── -->
+  <h2 id="checks">8 · Checks / jobs drill-in</h2>
+  <ul>
+    <li><code>ChecksList</code> renders each <code>CheckRun</code>: status icon + name + duration + "open on GitHub". Grouped by conclusion or listed flat.</li>
+    <li><strong>Drill-in (Q5):</strong> simplest = click opens the check's <code>html_url</code> in the browser. Richer = <code>CheckDetail</code> fetches the job log via the Actions API and shows it in a mono scroll view inside the panel (more work: log download endpoint returns a redirect to a zip/stream; needs parsing).</li>
+    <li>Auto-refresh while any run is <code>in_progress</code> (poll ~10s); stop when all settled.</li>
+  </ul>
+
+  <!-- ───────────────────────────── PHASING ───────────────────────────── -->
+  <h2 id="phasing">9 · Phasing</h2>
+  <div class="phase">
+    <h3>Phase 1 — Panel shell + status (git-only, no API blockers)</h3>
+    <p>Right panel slot in <code>App.tsx</code>, ui/workspace state, resizer, toggle + keybinding, persistence. Header showing branch + existing total +/- counts. Empty states. <em>Ships value without touching GitHub.</em></p>
+  </div>
+  <div class="phase p2">
+    <h3>Phase 2 — Diff viewer</h3>
+    <p><code>git_status_files</code> + <code>git_diff_file</code> + <code>git_default_branch</code> + <code>git_diff_base_files</code>. ChangedFiles list w/ Unstaged·Staged·vs-main segments. DiffView renders selected file.</p>
+  </div>
+  <div class="phase p3">
+    <h3>Phase 3 — PR status + view + create</h3>
+    <p>Wire <code>GithubSettings</code> into Settings page first. PanelHeader PR badge + View-on-web (reuse <code>get_pr_info</code>). Then <code>github_push_branch</code> + <code>github_create_pr</code> + CreatePrForm. <em>Needs the OAuth blocker resolved.</em></p>
+  </div>
+  <div class="phase p4">
+    <h3>Phase 4 — Checks list + drill-in</h3>
+    <p>Refactor <code>compute_ci</code> → <code>github_pr_checks</code> (per-run). ChecksList + open-on-web. Optional CheckDetail in-app log viewer. Polling while running.</p>
+  </div>
+
+  <hr />
+
+  <!-- ───────────────────────────── QUESTIONS ───────────────────────────── -->
+  <h2 id="questions">10 · Decisions I need from you</h2>
+  <p class="sub">Pick options below, add notes, then hit <em>Copy answers</em> at the bottom and paste back to me. Defaults are marked <span style="color:var(--green)">Recommended</span> — if you skip a question I'll go with those.</p>
+
+  <form id="qform">
+
+    <div class="q">
+      <div class="qtitle">Q0 · GitHub OAuth blocker</div>
+      <div class="qhelp">All PR/checks features need a working token. Is a real OAuth App client id configured?</div>
+      <label class="opt rec"><input type="radio" name="q0" value="have-clientid"><span class="otext">Yes — real client id exists / I'll provide it</span></label>
+      <label class="opt"><input type="radio" name="q0" value="need-setup"><span class="otext">No — need to create the OAuth App<span class="odesc">Phases 1–2 (git-only) proceed; gate 3–4 on this.</span></span></label>
+      <label class="opt"><input type="radio" name="q0" value="git-only"><span class="otext">Skip GitHub entirely for now — git diff/status panel only</span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q1 · Panel target scope</div>
+      <div class="qhelp">What worktree does the panel reflect?</div>
+      <label class="opt rec"><input type="radio" name="q1" value="active-tab"><span class="otext">Active tab's worktree<span class="odesc">Re-targets when you switch tabs. Matches existing per-path data model.</span></span></label>
+      <label class="opt"><input type="radio" name="q1" value="active-pane"><span class="otext">Active pane's cwd<span class="odesc">Finer-grained; a tab can hold multiple panes with different cwds.</span></span></label>
+      <label class="opt"><input type="radio" name="q1" value="selected-tree"><span class="otext">Whatever is selected in the project tree<span class="odesc">Decouples panel from the workspace; can inspect repos you haven't opened.</span></span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q2 · Diff sources at launch</div>
+      <div class="qhelp">Which diff views do you want first?</div>
+      <label class="opt rec"><input type="radio" name="q2" value="both"><span class="otext">Both: working tree (unstaged/staged) AND vs main/master<span class="odesc">More backend work but covers the full ask.</span></span></label>
+      <label class="opt"><input type="radio" name="q2" value="worktree-first"><span class="otext">Working-tree changes first, vs-main later</span></label>
+      <label class="opt"><input type="radio" name="q2" value="vsmain-first"><span class="otext">vs main/master first (review-before-PR), working tree later</span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q3 · PR creation mechanism</div>
+      <div class="qhelp">How should "Create PR" actually push + open the PR?</div>
+      <label class="opt rec"><input type="radio" name="q3" value="api"><span class="otext">In-app form → REST API (consistent with current no-CLI approach)<span class="odesc">Needs branch push (Q4) + POST pulls. Most control over UX.</span></span></label>
+      <label class="opt"><input type="radio" name="q3" value="gh-cli"><span class="otext">Shell out to <code>gh pr create</code><span class="odesc">Less code, but adds a <code>gh</code> install dependency the app currently avoids.</span></span></label>
+      <label class="opt"><input type="radio" name="q3" value="web"><span class="otext">Just open GitHub's "compare" page in the browser<span class="odesc">Zero backend; you finish the PR on the web. Simplest MVP.</span></span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q4 · Branch push mechanism (if Q3 = API)</div>
+      <div class="qhelp">How to push the branch before creating the PR?</div>
+      <label class="opt rec"><input type="radio" name="q4" value="system-git"><span class="otext">Shell out to system <code>git push</code><span class="odesc">Uses your existing SSH keys / credential helper. Same approach as current <code>clone</code>.</span></span></label>
+      <label class="opt"><input type="radio" name="q4" value="git2-token"><span class="otext">git2 push w/ OAuth token over HTTPS<span class="odesc">No external git needed, but token must have push scope + HTTPS remote.</span></span></label>
+      <label class="opt"><input type="radio" name="q4" value="assume-pushed"><span class="otext">Assume branch already pushed; don't auto-push<span class="odesc">Create-PR fails clearly if remote branch missing.</span></span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q5 · Checks drill-in depth</div>
+      <div class="qhelp">When I click a failing check, what happens?</div>
+      <label class="opt rec"><input type="radio" name="q5" value="open-web"><span class="otext">Open the check/run on GitHub in the browser<span class="odesc">Simplest, reliable. Logs render in GitHub's UI.</span></span></label>
+      <label class="opt"><input type="radio" name="q5" value="inapp-logs"><span class="otext">Show the job log inside the panel<span class="odesc">Richer, but needs the Actions log-download endpoint + zip/stream parsing.</span></span></label>
+      <label class="opt"><input type="radio" name="q5" value="both"><span class="otext">In-app log preview + "open on GitHub" link</span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q6 · Diff rendering</div>
+      <div class="qhelp">How should the diff itself look?</div>
+      <label class="opt rec"><input type="radio" name="q6" value="custom"><span class="otext">Lightweight custom renderer (mono, +/- line coloring)<span class="odesc">Matches app theme, no big dep. lazygit pane already covers power-user needs.</span></span></label>
+      <label class="opt"><input type="radio" name="q6" value="library"><span class="otext">Use a diff library (react-diff-view / diff2html)<span class="odesc">Side-by-side, syntax highlight out of the box; adds a dependency.</span></span></label>
+      <label class="opt"><input type="radio" name="q6" value="monaco"><span class="otext">Monaco diff editor<span class="odesc">Heaviest; great fidelity; large bundle.</span></span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q7 · Refresh / polling</div>
+      <div class="qhelp">How fresh should PR + check status be?</div>
+      <label class="opt rec"><input type="radio" name="q7" value="smart-poll"><span class="otext">Manual refresh + auto-poll only while checks are running<span class="odesc">~10s while in_progress, stop when settled. Cheap on API quota.</span></span></label>
+      <label class="opt"><input type="radio" name="q7" value="manual"><span class="otext">Manual refresh button only</span></label>
+      <label class="opt"><input type="radio" name="q7" value="always-poll"><span class="otext">Always poll on an interval while panel open</span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q8 · Build order</div>
+      <div class="qhelp">Should I start building, or just keep this as a plan?</div>
+      <label class="opt rec"><input type="radio" name="q8" value="phase1"><span class="otext">Build Phase 1 (panel shell + status) now</span></label>
+      <label class="opt"><input type="radio" name="q8" value="phase12"><span class="otext">Build Phases 1+2 (shell + diff viewer)</span></label>
+      <label class="opt"><input type="radio" name="q8" value="all"><span class="otext">Build everything end-to-end</span></label>
+      <label class="opt"><input type="radio" name="q8" value="plan-only"><span class="otext">Just the plan for now — don't build yet</span></label>
+    </div>
+
+    <div class="q">
+      <div class="qtitle">Q9 · Anything else</div>
+      <div class="qhelp">Other requirements, constraints, or things I missed (commit/stage buttons? stash? blame? branch switcher?).</div>
+      <textarea name="q9" placeholder="Free text…"></textarea>
+    </div>
+
+    <div class="copybar barbtn">
+      <button type="button" class="copy" onclick="copyAnswers()">Copy answers</button>
+      <span class="copied" id="copied">✓ Copied — paste back to Claude</span>
+    </div>
+  </form>
+
+</div>
+
+<script>
+  function labelFor(name, value) {
+    var el = document.querySelector('input[name="'+name+'"][value="'+CSS.escape(value)+'"]');
+    if (!el) return value;
+    var t = el.closest('.opt').querySelector('.otext');
+    // strip nested description text
+    var clone = t.cloneNode(true);
+    var d = clone.querySelector('.odesc'); if (d) d.remove();
+    return clone.textContent.trim();
+  }
+  function copyAnswers() {
+    var titles = {};
+    document.querySelectorAll('.q').forEach(function(q){
+      var t = q.querySelector('.qtitle');
+      var input = q.querySelector('input, textarea');
+      if (input) titles[input.name] = t.textContent.trim();
+    });
+    var lines = ['Git/GitHub right panel — answers:', ''];
+    var names = ['q0','q1','q2','q3','q4','q5','q6','q7','q8'];
+    names.forEach(function(n){
+      var sel = document.querySelector('input[name="'+n+'"]:checked');
+      lines.push((titles[n]||n) + ': ' + (sel ? labelFor(n, sel.value) : '(no answer → use recommended)'));
+    });
+    var notes = document.querySelector('textarea[name="q9"]').value.trim();
+    lines.push((titles['q9']||'Q9') + ': ' + (notes || '(none)'));
+    var text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(function(){
+      var c = document.getElementById('copied'); c.classList.add('show');
+      setTimeout(function(){ c.classList.remove('show'); }, 2500);
+    });
+  }
+</script>
+</body>
+</html>

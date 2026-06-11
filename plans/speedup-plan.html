@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Switchyard — speed-up plan</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel2: #1d212a;
+    --border: #2a2f3a;
+    --text: #e4e7ec;
+    --muted: #9aa3b2;
+    --accent: #7aa2f7;
+    --high: #f7768e;
+    --med: #e0af68;
+    --low: #9ece6a;
+    --code: #1a1d24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; font-size: 15px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(15,17,21,0.95); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 32px; }
+  .intro {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 22px; margin: 28px 0;
+  }
+  .intro h2 { margin: 0 0 10px; font-size: 16px; }
+  .intro ol { margin: 0; padding-left: 20px; }
+  .intro li { margin: 6px 0; }
+  .tier { margin: 36px 0 12px; display: flex; align-items: center; gap: 10px; }
+  .tier h2 { margin: 0; font-size: 17px; }
+  .pill {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 3px 9px; border-radius: 20px; text-transform: uppercase;
+  }
+  .pill.high { background: rgba(247,118,142,0.15); color: var(--high); border: 1px solid rgba(247,118,142,0.4); }
+  .pill.med  { background: rgba(224,175,104,0.15); color: var(--med); border: 1px solid rgba(224,175,104,0.4); }
+  .pill.low  { background: rgba(158,206,106,0.15); color: var(--low); border: 1px solid rgba(158,206,106,0.4); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin: 12px 0;
+    transition: border-color 0.15s;
+  }
+  .card.checked { opacity: 0.55; border-color: var(--low); }
+  .card-head { display: flex; align-items: flex-start; gap: 12px; }
+  .card-head input[type=checkbox] {
+    width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0; cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .card-title { font-weight: 600; font-size: 15px; flex: 1; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 6px;
+    background: var(--panel2); color: var(--muted); border: 1px solid var(--border);
+  }
+  .tag.area { color: var(--accent); }
+  .body { margin: 12px 0 0 30px; }
+  .body p { margin: 6px 0; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+  code, .loc {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: 12.5px;
+    color: #c0caf5;
+  }
+  .loc { color: var(--accent); }
+  .fix { background: var(--panel2); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 8px 0; }
+  textarea {
+    width: 100%; min-height: 70px; margin-top: 8px;
+    background: var(--code); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px; font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  .actions {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(15,17,21,0.96); backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border); padding: 14px 32px;
+    display: flex; gap: 12px; align-items: center; justify-content: center;
+  }
+  button {
+    background: var(--accent); color: #0f1115; border: none;
+    padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  .count { color: var(--muted); font-size: 13px; }
+  .note { color: var(--muted); font-size: 13px; margin: 6px 0 0 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Switchyard — speed-up plan</h1>
+  <p>20 findings across frontend, Rust backend, build/startup. Verified against code. Check items to mark done, add notes, copy results back.</p>
+</header>
+
+<div class="wrap">
+
+<div class="intro">
+  <h2>Where the felt slowness lives — fix these 4 first</h2>
+  <ol>
+    <li><strong>Tab switch kills &amp; respawns every terminal/agent</strong> — <span class="loc">WorkspaceRoute.tsx:27</span> keys <code>SplitPane</code> on <code>activeTab.id</code>, so switching tabs unmounts the pane tree → <code>pty_kill</code> → lost scrollback + dead agents. <em>Single biggest UX win.</em></li>
+    <li><strong>Agent-status ticks re-render the whole pane tree</strong> — <code>SplitPane</code> subscribes to entire <code>panes</code>/<code>windows</code> Maps; nothing is <code>React.memo</code>'d anywhere in the app.</li>
+    <li><strong>Blanket 15s poll over ALL projects × worktrees</strong> — <span class="loc">ProjectTree.tsx:53</span> refreshes git + PR + per-worktree diff-stats for every project regardless of visibility/focus; each cycle reopens git repos, builds a fresh <code>reqwest::Client</code>, and storms Map-replacement re-renders.</li>
+    <li><strong>shiki shipped as full bundle</strong> — <span class="loc">highlight.ts:2</span> imports barrel <code>shiki</code> → ~300 grammar chunks / ~10 MB emitted, oniguruma WASM eager in the 1.5 MB main chunk. App uses 1 theme.</li>
+  </ol>
+</div>
+
+<!-- ============ FRONTEND ============ -->
+<div class="tier"><h2>Frontend — React</h2></div>
+
+<div class="card" data-id="fe1">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Tab switch destroys &amp; respawns terminals/agents</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">frontend</span><span class="tag">lifecycle</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">src/routes/WorkspaceRoute.tsx:27</span> — <code>&lt;SplitPane key={activeTab.id} /&gt;</code>. On tab/window switch React unmounts the pane tree; <code>useTerminal.ts:420</code> cleanup runs <code>terminal.dispose()</code> + <code>invoke('pty_kill')</code>.</p>
+    <p><span class="label">Cost</span> slow tab switches, lost scrollback, killed running agents.</p>
+    <div class="fix"><span class="label">Fix</span> Keep all of a window's tabs mounted; toggle with CSS <code>display:none</code>. Render <code>win.tabs.map(...)</code> in absolutely-positioned containers; call <code>fit()</code>/<code>focus()</code> when a tab becomes visible.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe2">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">SplitPane subscribes to entire panes/windows Maps</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">frontend</span><span class="tag">zustand</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">src/components/Workspace/SplitPane.tsx:13</span> — reads <code>s.panes</code>, <code>s.windows</code>, <code>s.activeWindowId</code> whole. Any pane mutation (<code>setAgentStatus</code> etc.) replaces the Map → all SplitPane nodes re-render. Agent streaming fires these constantly.</p>
+    <div class="fix"><span class="label">Fix</span> Leaf selects one pane: <code>useWorkspaceStore(s =&gt; s.panes.get(tree.paneId))</code>. Select <code>activePaneId</code> directly, not via the whole windows Map.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe3">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">PaneContainer / TerminalPane not memoized</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">frontend</span><span class="tag">memo</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">PaneContainer.tsx:17</span>, <span class="loc">TerminalPane.tsx:17</span> — no <code>React.memo</code> anywhere in the codebase. With finding #2, every agent tick re-renders the whole pane subtree.</p>
+    <div class="fix"><span class="label">Fix</span> Wrap both in <code>React.memo</code>. (Heavy spawn effect won't re-fire — deps are stable — but reconciliation churn goes away.)</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe4">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">15s poll fans out to git + PR + per-worktree diff-stats for every project</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">frontend</span><span class="tag">polling</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">ProjectTree.tsx:53</span> → <code>refreshGitInfo</code>/<code>refreshPrInfo</code> per project; <code>projects.ts:178</code> fans out <code>get_worktree_diff_stats</code> per worktree. Each <code>refreshWorktreeDiffStats</code> replaces the <code>gitInfo</code> Map → re-render storm across Dashboard, ProjectItem, TabBar, CommandPalette, BranchRow.</p>
+    <div class="fix"><span class="label">Fix</span> Batch diff-stat results into one <code>set</code> per project; gate PR refresh behind expanded/visible state; pause polling when window unfocused (<code>onFocusChanged</code> already wired in RootLayout). Longer interval (60s) for non-focused projects.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe5">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">CommandPalette recomputes command list + refreshes git while CLOSED</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">frontend</span><span class="tag">memo</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">CommandPalette.tsx:39-256</span> — subscribes to panes/windows/gitInfo/projects/agents; <code>commands</code>/<code>locateCommands</code>/<code>groups</code> memos recompute on every change even though the <code>isOpen</code> early-return is at line 283 (after all hooks). Open-effect also refreshes all projects' git info.</p>
+    <div class="fix"><span class="label">Fix</span> Guard memo bodies with <code>if (!isOpen) return []</code>, or split into <code>{isOpen &amp;&amp; &lt;CommandPaletteBody/&gt;}</code> so it only mounts when open.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe6">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">shiki re-tokenizes per content change; no shared highlighter</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">frontend</span><span class="tag">shiki</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">highlight.ts:101</span> — <code>codeToTokens</code> in effect keyed on <code>[content, lang]</code>; no singleton highlighter, engine+grammar+theme load lazily on first call → first highlight stalls. 200KB cap is good.</p>
+    <div class="fix"><span class="label">Fix</span> One shared <code>createHighlighterCore</code> singleton with only <code>vesper</code> theme + lazy langs; preload engine at idle. (See build finding #16 — same root.)</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe7">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">FileTree renders every tracked path unvirtualized</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">frontend</span><span class="tag">virtualization</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">FileTree.tsx:24-65,130</span> — <code>git_list_tree</code> returns every tracked+untracked path (can be thousands); expanding a big repo paints thousands of DOM nodes. Tree-building is memoized; the cost is render volume.</p>
+    <div class="fix"><span class="label">Fix</span> Flatten to a visible-row array driven by <code>expanded</code>, windowed-render with <code>@tanstack/react-virtual</code>.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe8">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">DiffView: full-table DOM scan + per-pointer-move JS on large diffs</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">frontend</span><span class="tag">diff2html</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">DiffView.tsx:24</span> (render memoized on <code>[diff]</code>, good) but <span class="loc">DiffCommentOverlay.tsx:67-89,165-199</span> does <code>querySelectorAll('tr')</code> over the whole injected table on markup change + <code>mouseover</code> delegation running <code>closest()</code> every pointer move. No virtualization for multi-thousand-line diffs.</p>
+    <div class="fix"><span class="label">Fix</span> Cap rendered diff size with a "too large" fallback; replace <code>mouseover</code> hover affordance with CSS <code>:hover</code>; debounce/defer <code>collectLines</code>.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe9">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Dashboard recomputes over all panes/worktrees per pane tick; BranchCards unmemoized</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">frontend</span><span class="tag">memo</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">Dashboard.tsx:51-57</span> counts depend on <code>[topProjects, gitInfo, panes]</code> → iterates all panes+worktrees each agent tick. <code>BranchCard</code> gets whole <code>panes</code> Map, not memoized; <code>worktreesFor</code> re-sorts arrays each render. Only mounted on <code>/</code>.</p>
+    <div class="fix"><span class="label">Fix</span> Memoize <code>BranchCard</code>; pass only per-tab summary it needs.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe10">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Branch lookup scans whole gitInfo Map every render (GitPanel / TabBar)</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">frontend</span><span class="tag">memo</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">GitPanel.tsx:21-29</span>, <span class="loc">TabBar.tsx:37,49-53</span> — both linearly scan all projects' worktrees unmemoized; TabBar also selects whole <code>panes</code> Map so it re-scans on every pane change.</p>
+    <div class="fix"><span class="label">Fix</span> Memoize branch lookup on <code>[gitInfo, path]</code>; in TabBar derive only per-tab data instead of selecting the whole Map.</div>
+  </div>
+</div>
+
+<div class="card" data-id="fe11">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">New TextEncoder/TextDecoder allocated per keystroke / output chunk</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">frontend</span><span class="tag">terminal</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">useTerminal.ts:354,332,230</span> (<code>new TextEncoder()</code> per keypress) and <span class="loc">:379</span> (<code>TextDecoder</code> per agent output chunk — more impactful under heavy streaming).</p>
+    <div class="fix"><span class="label">Fix</span> Hoist module-level <code>const encoder = new TextEncoder()</code> / <code>decoder</code> and reuse.</div>
+  </div>
+</div>
+
+<!-- ============ BACKEND ============ -->
+<div class="tier"><h2>Backend — Rust / Tauri</h2></div>
+
+<div class="card" data-id="be1">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">async GitHub/Linear commands do blocking git2 + keychain on the async runtime</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">backend</span><span class="tag">blocking</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">github.rs:346</span> (<code>get_pr_info</code>), <span class="loc">:178</span>, <span class="loc">:605</span>, <span class="loc">linear.rs:133,151</span>. Real <code>async fn</code> commands call sync <code>git2::Repository::open</code> (<code>repo_slug</code>/<code>current_branch</code>) + debug-mode <code>fs::read_to_string</code> while holding a Mutex (<code>token_store.rs:72</code>) — all on Tokio workers. 15s poll × N projects multiplies it.</p>
+    <div class="fix"><span class="label">Fix</span> Wrap sync git2 work in <code>tokio::task::spawn_blocking</code>; precompute owner/repo/branch once at top of each command.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be2">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Repo reopened 2× (get_pr_info) / 3× (github_pr_checks) per call</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">backend</span><span class="tag">git2</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">github.rs:350-355</span>, <span class="loc">:607-623</span> — each helper independently <code>Repository::open</code>s (walks FS, parses config/refs). Pure waste at 15s cadence.</p>
+    <div class="fix"><span class="label">Fix</span> Open once, derive <code>(owner,repo)</code> + <code>branch</code> + <code>head_sha</code> from one handle, drop before awaits.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be3">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Fresh reqwest::Client built on every API call (no connection/TLS reuse)</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">backend</span><span class="tag">network</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">github.rs:96,188,256,357,467,502,544,608,660</span>; <span class="loc">linear.rs:104,135,159</span> — <code>reqwest::Client::new()</code> per call builds a fresh pool + TLS config, discarded after one request → new handshake every poll.</p>
+    <div class="fix"><span class="label">Fix</span> One lazy shared client: <code>static CLIENT: LazyLock&lt;Client&gt;</code>, reuse everywhere.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be4">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">pty_write holds the global instances Mutex across blocking write_all + flush</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">backend</span><span class="tag">lock</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">pty.rs:406-416</span> — locks the single <code>Mutex&lt;HashMap&gt;</code> shared by all panes, then does I/O while holding it. A backpressured write blocks every other pane's write/resize/kill.</p>
+    <div class="fix"><span class="label">Fix</span> Per-pane writer behind its own Mutex (or mpsc to a per-pane writer task); hold global lock only long enough to clone an <code>Arc</code>.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be5">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">PTY reader emits a base64 event per read() — no batching</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">backend</span><span class="tag">ipc</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">pty.rs:367-400</span> — 64KiB buffer is good, but bursty output emits a separate base64-in-JSON event per read (+33% size, alloc+encode each). High emit frequency is a known Tauri IPC bottleneck.</p>
+    <div class="fix"><span class="label">Fix</span> Coalesce reads in a ~5-16ms flush window (or until buffer full), emit once; consider raw bytes via channel instead of base64 JSON.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be6">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">get_git_info opens each worktree's repo serially (N+1)</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">backend</span><span class="tag">git2</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">projects.rs:324-352</span> — K serial <code>Repository::open</code> + head/commit-time reads per project, every 15s. Runs on Tauri's blocking pool (not async-blocking) but still redundant.</p>
+    <div class="fix"><span class="label">Fix</span> Parallelize independent opens (rayon/threads), or cache keyed on <code>.git/HEAD</code>+index mtime and recompute only on change. Root cost is the blind 15s blanket poll (see fe4).</div>
+  </div>
+</div>
+
+<div class="card" data-id="be7">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">compute_ci awaits two independent CI calls sequentially</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">backend</span><span class="tag">network</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">github.rs:403-446</span> — check-runs then commit-status awaited one after the other though independent.</p>
+    <div class="fix"><span class="label">Fix</span> <code>tokio::join!</code> the two <code>api_get</code> calls. Halves CI latency, runs every 15s/project.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be8">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">tmux -V subprocess spawned on every spawn / list / kill</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">backend</span><span class="tag">subprocess</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">pty.rs:103-109</span>, called at <span class="loc">:131,:166,:274</span>. <code>list_tmux_sessions</code> is in the 15s refresh → an extra <code>tmux -V</code> fork every 15s.</p>
+    <div class="fix"><span class="label">Fix</span> Cache once per process (<code>OnceCell&lt;bool&gt;</code>) — binary won't appear/disappear mid-session.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be9">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Every settings mutation does full read-parse-serialize-write; no cache</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">backend</span><span class="tag">io</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">projects.rs:681-700</span> used by ~10 setters; <code>pty_spawn</code> also calls <code>load_settings()</code> per spawn (<code>pty.rs:238</code>). <code>reorder_projects</code> during drag hammers it.</p>
+    <div class="fix"><span class="label">Fix</span> Keep settings in <code>Mutex&lt;AppSettings&gt;</code> app state, write-through to disk off-thread.</div>
+  </div>
+</div>
+
+<div class="card" data-id="be10">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">discover_scripts re-stats ancestors per manifest; single-threaded walk</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">backend</span><span class="tag">io</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">projects.rs:861-939</span> — <code>find_marker_upward</code> per manifest re-stats shared ancestors in monorepos; <code>WalkBuilder::build()</code> not parallel. User-triggered, not polled.</p>
+    <div class="fix"><span class="label">Fix</span> Memoize lockfile lookups per dir; use <code>build_parallel()</code>.</div>
+  </div>
+</div>
+
+<!-- ============ BUILD / STARTUP ============ -->
+<div class="tier"><h2>Build &amp; startup</h2></div>
+<p class="note">Verified from committed <code>dist/</code>: main chunk <strong>1.5 MB raw / ~444 KB gzip</strong>, ~302 JS chunks / ~11 MB total (mostly shiki grammars). Zero lazy loading in <code>src</code>. No <code>build</code> section in vite.config. Tauri loads from local disk → dominant cost is JS parse/eval, not transfer — but the monolith hurts both.</p>
+
+<div class="card" data-id="bd1">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">shiki imported as full barrel bundle (~10 MB grammars, eager WASM)</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">build</span><span class="tag">shiki</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">highlight.ts:2</span> <code>import { codeToTokens } from 'shiki'</code>. Registers ~290 langs / ~60 themes → ~300 grammar chunks emitted (emacs-lisp 764KB, cpp 612KB…); oniguruma engine baked into eager <code>index.js</code>. App uses only <code>vesper</code> + ~60 langs.</p>
+    <div class="fix"><span class="label">Fix</span> Singleton <code>createHighlighterCore</code> from <code>shiki/core</code> + lazy <code>import('@shikijs/langs/...')</code>, only <code>vesper</code> theme. Put <code>highlight.ts</code> behind a dynamic import so engine+WASM stay out of first paint. <em>Biggest startup + build-size + dev-transform win.</em></div>
+  </div>
+</div>
+
+<div class="card" data-id="bd2">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">No code-splitting — everything in one 1.5 MB eager chunk</div>
+      <div class="tags"><span class="pill high">high</span><span class="tag area">build</span><span class="tag">code-split</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">router.tsx:1-5</span> imports Dashboard/WorkspaceRoute/SettingsPage statically; <span class="loc">RootLayout.tsx:8-23</span> eagerly pulls GitPanel, CommandPalette, all modals, ScriptPalette. xterm (97 refs), cmdk (30), react-markdown/micromark all in eager bundle.</p>
+    <div class="fix"><span class="label">Fix</span> <code>React.lazy</code> routes + heavy pane components (TerminalPane/xterm, DiffView/diff2html, MarkdownView, CommandPalette/cmdk, modals) wrapped in <code>&lt;Suspense&gt;</code>. None render on the Dashboard landing route.</div>
+  </div>
+</div>
+
+<div class="card" data-id="bd3">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Dead Google Fonts request in index.html (render-blocking, leaks to Google)</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">build</span><span class="tag">fonts</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">index.html:8-13</span> — preconnect + stylesheet for JetBrains Mono &amp; Space Grotesk, neither used (UI=Hanken Grotesk Variable, mono=IBM Plex Mono, both self-hosted via fontsource). Two preconnects + blocking external CSS on every cold start of a desktop app.</p>
+    <div class="fix"><span class="label">Fix</span> Delete lines 8–13 of <code>index.html</code>. One-line instant win.</div>
+  </div>
+</div>
+
+<div class="card" data-id="bd4">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">No manualChunks / vendor splitting / build.target in vite.config</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">build</span><span class="tag">vite</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">vite.config.ts:9-36</span> — no <code>build</code> key. react/react-dom/router/zustand/base-ui all in one chunk; no chunk-size warning (1.5 MB built silently).</p>
+    <div class="fix"><span class="label">Fix</span> Add <code>build.rollupOptions.output.manualChunks</code> (vendor-react, xterm, diff2html, react-markdown groups), <code>chunkSizeWarningLimit</code>, <code>build.target: 'esnext'</code> (match Tauri webview, avoid over-transpile).</div>
+  </div>
+</div>
+
+<div class="card" data-id="bd5">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">fontsource pulls all 8 subsets (cyrillic/vietnamese/italic) — app is English-only</div>
+      <div class="tags"><span class="pill med">med</span><span class="tag area">build</span><span class="tag">fonts</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">main.tsx:4</span> bare <code>@fontsource-variable/hanken-grotesk</code> → 18 woff2 emitted (cyrillic-ext, vietnamese, latin-ext, latin × normal/italic).</p>
+    <div class="fix"><span class="label">Fix</span> Import only <code>.../hanken-grotesk/latin.css</code>, drop italic; for mono import specific latin subset, confirm 400/500/600 all used.</div>
+  </div>
+</div>
+
+<div class="card" data-id="bd6">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">optimizeDeps hints absent — dev cold-start / mid-session reloads</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">build</span><span class="tag">vite</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">vite.config.ts</span> — heavy deps pre-bundled lazily on first dev request → stalls when a pane first opens (worse after lazy-loading them).</p>
+    <div class="fix"><span class="label">Fix</span> <code>optimizeDeps.include: ['diff2html','react-markdown','remark-gfm','@xterm/xterm','@xterm/addon-fit','@xterm/addon-webgl']</code>.</div>
+  </div>
+</div>
+
+<div class="card" data-id="bd7">
+  <div class="card-head">
+    <input type="checkbox">
+    <div>
+      <div class="card-title">Build runs full tsc serially before vite (noEmit already true)</div>
+      <div class="tags"><span class="pill low">low</span><span class="tag area">build</span><span class="tag">ci</span></div>
+    </div>
+  </div>
+  <div class="body">
+    <p><span class="label">Where</span> <span class="loc">package.json:9</span> <code>"build": "tsc && vite build"</code> — <code>tsc</code> is a pure type-check gate (tsconfig <code>noEmit:true</code>); vite re-parses via esbuild anyway.</p>
+    <div class="fix"><span class="label">Fix</span> Use <code>tsc --noEmit</code>; run it parallel to / separate from vite build in CI rather than serially gating local builds.</div>
+  </div>
+</div>
+
+<!-- ============ NOTES ============ -->
+<div class="tier"><h2>Notes — already good (verified, no change)</h2></div>
+<div class="card" data-id="ok1">
+  <div class="body" style="margin-left:0">
+    <p>• <code>useTerminal</code> ANSI regex reused with reset; spawn deps stable; xterm WebGL+DOM fallback created once per mount — streaming path well built. Problem is lifecycle (fe1), not the render loop.</p>
+    <p>• <code>projects.rs</code> git commands use <code>#[tauri::command(async)]</code> on non-async fns → run on Tauri blocking pool, don't block the async runtime (cost is redundant work, be6, not thread-blocking).</p>
+    <p>• <code>github.rs:43</code> TOKEN_CACHE avoids repeated keychain reads (intentional). <code>linear.rs</code> blocking callback correctly offloaded via spawn_blocking. PTY 64KiB buffer deliberate.</p>
+    <p>• shiki langs/themes already code-split by Vite per-chunk; only the engine + full registry are eager — bd1 stops emitting unused ones. No prod sourcemaps. vite watcher correctly ignores src-tauri/.claude.</p>
+  </div>
+</div>
+
+</div>
+
+<div class="actions">
+  <span class="count" id="count">0 / 20 done</span>
+  <button class="ghost" onclick="copyResults()">Copy results to clipboard</button>
+</div>
+
+<script>
+  const boxes = Array.from(document.querySelectorAll('.card input[type=checkbox]'));
+  function update() {
+    const done = boxes.filter(b => b.checked).length;
+    document.getElementById('count').textContent = done + ' / ' + boxes.length + ' done';
+  }
+  boxes.forEach(b => b.addEventListener('change', () => {
+    b.closest('.card').classList.toggle('checked', b.checked);
+    update();
+  }));
+
+  // add a notes textarea to each finding card
+  document.querySelectorAll('.card[data-id]').forEach(card => {
+    if (card.dataset.id.startsWith('ok')) return;
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes / decision (optional)…';
+    ta.className = 'notes';
+    card.querySelector('.body')?.appendChild(ta);
+  });
+
+  function copyResults() {
+    let out = 'Switchyard speed-up plan — status\\n\\n';
+    document.querySelectorAll('.card[data-id]').forEach(card => {
+      const id = card.dataset.id;
+      if (id.startsWith('ok')) return;
+      const box = card.querySelector('input[type=checkbox]');
+      const title = card.querySelector('.card-title')?.textContent ?? '';
+      const impact = card.querySelector('.pill')?.textContent.toUpperCase() ?? '';
+      const notes = card.querySelector('textarea.notes')?.value.trim() ?? '';
+      out += '[' + (box.checked ? 'x' : ' ') + '] (' + impact + ') ' + id + ' — ' + title;
+      if (notes) out += '\\n    note: ' + notes;
+      out += '\\n';
+    });
+    navigator.clipboard.writeText(out).then(() => {
+      const btn = event.target;
+      const old = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = old, 1500);
+    });
+  }
+  update();
+</script>
+</body>
+</html>

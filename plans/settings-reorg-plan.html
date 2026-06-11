@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings reorganization — proposal</title>
+<style>
+  :root {
+    --canvas: #14120e;
+    --app: #1c1a15;
+    --panel: #211e18;
+    --line: #312d25;
+    --line-soft: #28251f;
+    --ink: #ece7dd;
+    --ink-dim: #b7b0a3;
+    --ink-faint: #837c6f;
+    --ink-ghost: #5c564c;
+    --ember: #f0853d;
+    --ember-tint: rgba(240, 133, 61, 0.12);
+    --ember-edge: rgba(240, 133, 61, 0.4);
+    --del: #f0758a;
+    --ok: #7fd18a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 12px; color: var(--ink); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  .sub { color: var(--ink-faint); margin: 0 0 24px; font-size: 13px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  /* sidebar mock */
+  .mock {
+    background: var(--app);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 8px;
+    width: 240px;
+  }
+  .mock-title { font-size: 13px; font-weight: 700; color: #fff; padding: 6px 10px 8px; }
+  .nav-item {
+    display: block; padding: 6px 10px; border-radius: 7px;
+    font-size: 13px; color: var(--ink-dim); margin: 1px 0;
+  }
+  .nav-item.active { background: var(--ember-tint); color: var(--ink); }
+  .group-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--ink-ghost);
+    padding: 14px 10px 4px;
+  }
+  .group-label:first-of-type { padding-top: 4px; }
+  .panel {
+    background: var(--app); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .flat-tag, .grouped-tag { font-size: 12px; color: var(--ink-faint); margin: 0 0 10px; }
+  .rename { color: var(--ember); }
+  .note { color: var(--ink-faint); font-size: 12px; }
+
+  /* questions */
+  .q {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; margin: 12px 0;
+  }
+  .q h3 { margin: 0 0 4px; font-size: 14px; }
+  .q p { margin: 0 0 10px; color: var(--ink-faint); font-size: 13px; }
+  label.opt {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+    margin: 6px 0; cursor: pointer; background: var(--app);
+  }
+  label.opt:hover { border-color: var(--ember-edge); }
+  label.opt input { margin-top: 3px; accent-color: var(--ember); }
+  .opt b { font-weight: 600; }
+  .opt .desc { color: var(--ink-faint); font-size: 12px; display: block; }
+  textarea {
+    width: 100%; background: var(--app); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--ink); padding: 10px; font: inherit;
+    font-size: 13px; resize: vertical; min-height: 60px; margin-top: 6px;
+  }
+  .copybar { margin: 28px 0 8px; }
+  button {
+    background: var(--ember); color: #1a1206; border: 0; border-radius: 8px;
+    padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  #out {
+    width: 100%; margin-top: 12px; min-height: 120px;
+    background: #0f0d0a; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--ink-dim); font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 12px;
+  }
+  .legend { font-size: 12px; color: var(--ink-faint); margin: 6px 0 0; }
+  .legend .rename { font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Settings reorganization</h1>
+  <p class="sub">11 flat sections → 5 logical groups. Sidebar gets group headers; page gets matching section dividers. Review, tweak the questions, copy results back.</p>
+
+  <h2>Before → After</h2>
+  <div class="cols">
+    <div class="panel">
+      <p class="flat-tag">NOW — flat list, no grouping</p>
+      <div class="mock">
+        <div class="mock-title">Settings</div>
+        <span class="nav-item active">Default Folder</span>
+        <span class="nav-item">Added Projects</span>
+        <span class="nav-item">Worktrees</span>
+        <span class="nav-item">Worktree prompt</span>
+        <span class="nav-item">Agents</span>
+        <span class="nav-item">Terminal</span>
+        <span class="nav-item">Notifications</span>
+        <span class="nav-item">Linear</span>
+        <span class="nav-item">GitHub</span>
+        <span class="nav-item">Pull requests</span>
+        <span class="nav-item">Settings file</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <p class="grouped-tag">PROPOSED — grouped + sentence-case + shorter labels</p>
+      <div class="mock">
+        <div class="mock-title">Settings</div>
+
+        <div class="group-label">Projects</div>
+        <span class="nav-item active">Default folder</span>
+        <span class="nav-item">Added projects</span>
+
+        <div class="group-label">Worktrees</div>
+        <span class="nav-item">Location <span class="note">(was "Worktrees")</span></span>
+        <span class="nav-item">Prompt <span class="note">(was "Worktree prompt")</span></span>
+
+        <div class="group-label">Environment</div>
+        <span class="nav-item">Agents</span>
+        <span class="nav-item">Terminal</span>
+
+        <div class="group-label">Integrations</div>
+        <span class="nav-item">Linear</span>
+        <span class="nav-item">GitHub</span>
+        <span class="nav-item">Pull requests</span>
+
+        <div class="group-label">General</div>
+        <span class="nav-item">Notifications</span>
+        <span class="nav-item">Settings file</span>
+      </div>
+      <p class="legend"><span class="rename">Orange notes</span> = relabeled. Group headers are non-clickable; clicking an item still scrolls the page to it (same IntersectionObserver behavior).</p>
+    </div>
+  </div>
+
+  <h2>Why these groups</h2>
+  <ul class="note" style="line-height:1.7">
+    <li><b>Projects</b> — where projects come from (default scan folder + manually added folders).</li>
+    <li><b>Worktrees</b> — everything about worktree creation: where they land + the issue prompt seeded into them.</li>
+    <li><b>Environment</b> — the runtime surface inside a worktree: AI agents + terminal.</li>
+    <li><b>Integrations</b> — external services. Pull requests sits under here since it's GitHub-coupled.</li>
+    <li><b>General</b> — app-wide misc: notifications + the raw settings file.</li>
+  </ul>
+
+  <h2>Decisions — check / edit, then copy</h2>
+
+  <div class="q">
+    <h3>1. Group set</h3>
+    <p>The 5 groups above, or a variant?</p>
+    <label class="opt"><input type="radio" name="groups" value="5-as-proposed" checked><span><b>Use the 5 as proposed</b><span class="desc">Projects · Worktrees · Environment · Integrations · General</span></span></label>
+    <label class="opt"><input type="radio" name="groups" value="merge-env-into-general"><span><b>Drop "Environment", fold Agents+Terminal into "General"</b><span class="desc">4 groups, flatter</span></span></label>
+    <label class="opt"><input type="radio" name="groups" value="other"><span><b>Other</b><span class="desc">describe below</span></span></label>
+    <textarea name="groups-note" placeholder="Other grouping idea / rename a group (e.g. Environment → Tools, General → App)…"></textarea>
+  </div>
+
+  <div class="q">
+    <h3>2. Label renames</h3>
+    <p>Pick which relabels to apply.</p>
+    <label class="opt"><input type="checkbox" name="rename" value="worktrees-location" checked><span><b>"Worktrees" → "Location"</b><span class="desc">redundant once nested under the Worktrees group</span></span></label>
+    <label class="opt"><input type="checkbox" name="rename" value="worktree-prompt" checked><span><b>"Worktree prompt" → "Prompt"</b></span></label>
+    <label class="opt"><input type="checkbox" name="rename" value="sentence-case" checked><span><b>Sentence-case all labels</b><span class="desc">"Default Folder"→"Default folder", "Added Projects"→"Added projects"</span></span></label>
+  </div>
+
+  <div class="q">
+    <h3>3. Pull requests placement</h3>
+    <label class="opt"><input type="radio" name="pr" value="integrations" checked><span><b>Under Integrations</b><span class="desc">next to GitHub (PR template is GitHub-coupled)</span></span></label>
+    <label class="opt"><input type="radio" name="pr" value="own-github-subsection"><span><b>Visually nest under GitHub</b><span class="desc">indented child of GitHub</span></span></label>
+  </div>
+
+  <div class="q">
+    <h3>4. Notifications placement</h3>
+    <label class="opt"><input type="radio" name="notif" value="general" checked><span><b>General</b></span></label>
+    <label class="opt"><input type="radio" name="notif" value="environment"><span><b>Environment</b><span class="desc">grouped with Agents/Terminal (notifs fire on agent activity)</span></span></label>
+  </div>
+
+  <div class="q">
+    <h3>5. Collapsible groups?</h3>
+    <label class="opt"><input type="radio" name="collapse" value="no" checked><span><b>No — always-expanded headers</b><span class="desc">simplest; just non-clickable labels</span></span></label>
+    <label class="opt"><input type="radio" name="collapse" value="yes"><span><b>Yes — collapsible group headers</b><span class="desc">more code; persist open/closed in ui store</span></span></label>
+  </div>
+
+  <div class="q">
+    <h3>6. Scope</h3>
+    <label class="opt"><input type="radio" name="scope" value="now" checked><span><b>Build it now</b><span class="desc">refactor settingsSections.ts → groups, update SettingsNav + SettingsPage dividers</span></span></label>
+    <label class="opt"><input type="radio" name="scope" value="proposal-only"><span><b>Proposal only</b><span class="desc">just wanted the structure; I'll implement later</span></span></label>
+    <textarea name="extra" placeholder="Anything else…"></textarea>
+  </div>
+
+  <div class="copybar">
+    <button onclick="collect()">Copy my answers</button>
+    <span id="status" class="note" style="margin-left:10px"></span>
+  </div>
+  <textarea id="out" readonly placeholder="Answers appear here…"></textarea>
+</div>
+
+<script>
+  function collect() {
+    const lines = ['Settings reorg — answers', ''];
+    const radio = (n) => (document.querySelector(`input[name="${n}"]:checked`) || {}).value || '(none)';
+    lines.push('1. Group set: ' + radio('groups'));
+    const gn = document.querySelector('[name="groups-note"]').value.trim();
+    if (gn) lines.push('   note: ' + gn);
+    const renames = [...document.querySelectorAll('input[name="rename"]:checked')].map(c => c.value);
+    lines.push('2. Renames: ' + (renames.join(', ') || '(none)'));
+    lines.push('3. Pull requests: ' + radio('pr'));
+    lines.push('4. Notifications: ' + radio('notif'));
+    lines.push('5. Collapsible groups: ' + radio('collapse'));
+    lines.push('6. Scope: ' + radio('scope'));
+    const extra = document.querySelector('[name="extra"]').value.trim();
+    if (extra) lines.push('   extra: ' + extra);
+    const out = document.getElementById('out');
+    out.value = lines.join('\n');
+    navigator.clipboard && navigator.clipboard.writeText(out.value);
+    document.getElementById('status').textContent = 'Copied to clipboard ✓';
+  }
+</script>
+</body>
+</html>

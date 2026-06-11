@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Switchyard — GitHub distribution setup</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950;
+    --amber: #d29922; --red: #f85149; --code-bg: #0b0f14;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 40px 20px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; margin: 22px 0 8px; color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  p { margin: 8px 0; }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font: 13px/1.5 "IBM Plex Mono", ui-monospace, Menlo, monospace; color: #ffa657; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; position: relative; margin: 10px 0; }
+  pre code { background: none; padding: 0; color: var(--text); white-space: pre; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .note { border-left: 3px solid var(--accent); background: var(--panel2); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+  .warn { border-left: 3px solid var(--amber); }
+  .danger { border-left: 3px solid var(--red); }
+  .ok { border-left: 3px solid var(--green); }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .check { list-style: none; padding-left: 0; }
+  .check li { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0; }
+  .check input { margin-top: 5px; width: 16px; height: 16px; accent-color: var(--green); flex-shrink: 0; }
+  .copy-btn { position: absolute; top: 8px; right: 8px; background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .pill.new { color: var(--green); border-color: var(--green); }
+  .pill.edit { color: var(--amber); border-color: var(--amber); }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; font-size: 14px; }
+  th { background: var(--panel2); }
+  .kbd { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  .fname { color: #ffa657; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Distribute Switchyard via GitHub Releases</h1>
+  <p class="sub">macOS (Apple Silicon + Intel) · unsigned · with built-in auto-updater · <code>tauri-action</code></p>
+
+  <div class="note ok">
+    <strong>Already done for you</strong> — merge is resolved, so the code edits are now applied:
+    <ul style="margin-top:6px">
+      <li>Updater signing keypair generated → <span class="fname">~/.tauri/switchyard_updater.key</span> (+ <span class="fname">.pub</span>). Outside the repo, never committed.</li>
+      <li>Release workflow → <span class="fname">.github/workflows/release.yml</span> (matrix: arm64 + Intel).</li>
+      <li><strong>All §2 tracked-file edits applied</strong>: <code>tauri.conf.json</code> (updater block + real pubkey + ad-hoc signing + updater artifacts + pnpm commands), <code>Cargo.toml</code>, <code>lib.rs</code>, <code>capabilities/default.json</code>, <code>package.json</code>.</li>
+      <li><strong>§3 in-app update check wired</strong>: <span class="fname">src/lib/updater.ts</span> + called from <code>RootLayout</code> on mount.</li>
+      <li>Verified: <code>cargo check</code> passes (both plugins compile); <code>pnpm install</code> done. §2/§3 below are kept as reference.</li>
+    </ul>
+  </div>
+
+  <div class="note danger">
+    <strong>⚠️ Unrelated build break to fix (blocks CI)</strong>
+    <p><code>showPane</code> was removed from the UI store during your merge but is still called in <code>CommandPalette.tsx</code>, <code>ScriptPalette.tsx</code>, and <code>ProjectItem.tsx</code>. <code>pnpm build</code> fails until you fix these (likely <code>navigate('/')</code> after the router migration). Not a distribution issue — but the release workflow runs <code>pnpm build</code>, so it must compile before you tag.</p>
+  </div>
+
+  <h2>How it works (30-second version)</h2>
+  <div class="card">
+    <p>Push a git tag like <code>app-v0.1.0</code> → GitHub Actions builds a <code>.dmg</code> for each Mac architecture → creates a <strong>draft</strong> GitHub Release with the installers + a <code>latest.json</code> manifest. You review and publish. The app reads that <code>latest.json</code> on launch and self-updates.</p>
+    <p>The updater is signed with a <strong>minisign</strong> key (the one just generated) — totally separate from Apple code signing. That's why auto-update works even though the app is unsigned.</p>
+  </div>
+
+  <h2>1 · Add GitHub secrets</h2>
+  <p>Fastest with the <code>gh</code> CLI (keeps the private key out of your clipboard/terminal history):</p>
+  <pre><code>gh secret set TAURI_SIGNING_PRIVATE_KEY &lt; ~/.tauri/switchyard_updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""</code></pre>
+  <p>Or in the web UI: <em>repo → Settings → Secrets and variables → Actions → New repository secret</em>. Paste the full contents of the <code>.key</code> file into <code>TAURI_SIGNING_PRIVATE_KEY</code>; leave the password secret empty (the key has no password).</p>
+  <div class="note danger"><strong>Back up</strong> <span class="fname">~/.tauri/switchyard_updater.key</span> somewhere safe (password manager). Lose it and you can never ship an update your installed apps will accept — users would have to reinstall manually.</div>
+
+  <h2>2 · Tracked-file edits <span class="pill">apply after merge is resolved</span></h2>
+
+  <h3><span class="fname">src-tauri/tauri.conf.json</span> <span class="pill edit">edit</span></h3>
+  <p>Add a <code>plugins.updater</code> block, turn on updater artifacts, and switch macOS signing to ad-hoc (the current <code>"Switchyard Dev"</code> identity doesn't exist on CI runners, so the build would fail).</p>
+  <pre><code>{
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "icon": [ ... keep your existing icons ... ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/zebapy/switchyard/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5N0RCNzdEMjg0OUY4NUEKUldSYStFa29mYmQ5T1NORDlHMU42NEFERE1EdkVEMEFCSklpeUpabW9aRnJkQldaWDdENGdHVFEK"
+    }
+  }
+}</code></pre>
+  <p class="sub">Merge <code>createUpdaterArtifacts</code> + <code>signingIdentity</code> into your existing <code>bundle</code> object; add <code>plugins</code> as a new top-level key. The <code>pubkey</code> above is your real generated key — already filled in.</p>
+
+  <h3><span class="fname">src-tauri/Cargo.toml</span> <span class="pill edit">edit</span></h3>
+  <p>Under <code>[dependencies]</code>, next to the other <code>tauri-plugin-*</code> lines:</p>
+  <pre><code>tauri-plugin-updater = "2"
+tauri-plugin-process = "2"</code></pre>
+
+  <h3><span class="fname">src-tauri/src/lib.rs</span> <span class="pill edit">edit</span></h3>
+  <p>Register both plugins on the builder (near the existing <code>.plugin(...)</code> calls around line 16):</p>
+  <pre><code>.plugin(tauri_plugin_updater::Builder::new().build())
+.plugin(tauri_plugin_process::init())</code></pre>
+
+  <h3><span class="fname">src-tauri/capabilities/default.json</span> <span class="pill edit">edit</span></h3>
+  <p>Add to the <code>permissions</code> array:</p>
+  <pre><code>"updater:default",
+"process:allow-restart"</code></pre>
+
+  <h3><span class="fname">package.json</span> <span class="pill edit">edit</span></h3>
+  <p>Add to <code>dependencies</code> (then <code>pnpm install</code>):</p>
+  <pre><code>"@tauri-apps/plugin-updater": "^2",
+"@tauri-apps/plugin-process": "^2"</code></pre>
+  <div class="note warn">Optional but recommended: in <span class="fname">tauri.conf.json</span> change <code>beforeBuildCommand</code> / <code>beforeDevCommand</code> from <code>npm run …</code> to <code>pnpm …</code> for consistency with your pnpm setup.</div>
+
+  <h2>3 · Wire up the in-app update check</h2>
+  <p>New file <span class="fname">src/lib/updater.ts</span> <span class="pill new">new</span> — no try/catch, errors propagate to your app boundary:</p>
+  <pre><code>import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+
+export async function checkForUpdates() {
+  const update = await check();
+  if (!update) return;
+  // optionally confirm with the user here before installing
+  await update.downloadAndInstall();
+  await relaunch();
+}</code></pre>
+  <p>Call it once after the app mounts (e.g. in <span class="fname">App.tsx</span> inside a <code>useEffect</code>). Add a real "check for updates" confirmation/UI later; this is the minimum.</p>
+
+  <h2>4 · Cut a release</h2>
+  <ul class="check">
+    <li><input type="checkbox" /> Bump the version in <strong>all three</strong>: <code>package.json</code>, <code>src-tauri/tauri.conf.json</code>, <code>src-tauri/Cargo.toml</code> (they must match — the updater compares the app's <code>tauri.conf.json</code> version against <code>latest.json</code>).</li>
+    <li><input type="checkbox" /> Commit, then tag and push:</li>
+  </ul>
+  <pre><code>git tag app-v0.1.1
+git push origin app-v0.1.1</code></pre>
+  <ul class="check">
+    <li><input type="checkbox" /> Watch the <strong>Actions</strong> tab — both arch jobs build and attach to one draft release.</li>
+    <li><input type="checkbox" /> Open the draft release, sanity-check the <code>.dmg</code> assets + <code>latest.json</code>, then <strong>Publish</strong>. (Updater ignores drafts — it only sees published, non-prerelease.)</li>
+  </ul>
+
+  <h2>5 · What your users experience (unsigned)</h2>
+  <table>
+    <tr><th>Step</th><th>Detail</th></tr>
+    <tr><td>Download</td><td>Grab the <code>.dmg</code> from the Releases page (arm64 vs Intel).</td></tr>
+    <tr><td>First open</td><td>Gatekeeper blocks unsigned apps: <em>"Switchyard is damaged / cannot be opened."</em></td></tr>
+    <tr><td>Bypass</td><td>Right-click the app → <strong>Open</strong> → <strong>Open anyway</strong> in System Settings → Privacy &amp; Security. Or run once:<br><code>xattr -dr com.apple.quarantine /Applications/Switchyard.app</code></td></tr>
+    <tr><td>Updates</td><td>After that, the in-app updater handles new versions silently — no Gatekeeper friction on updates.</td></tr>
+  </table>
+  <div class="note">Want zero warnings for users? That's the <strong>signed + notarized</strong> path: Apple Developer Program ($99/yr), add <code>APPLE_CERTIFICATE</code>, <code>APPLE_CERTIFICATE_PASSWORD</code>, <code>APPLE_ID</code>, <code>APPLE_PASSWORD</code> (app-specific), <code>APPLE_TEAM_ID</code> as secrets, and the same workflow notarizes automatically. You can switch to this later without changing the release flow.</div>
+
+  <h2>Summary checklist</h2>
+  <ul class="check">
+    <li><input type="checkbox" /> Resolve + commit the in-progress merge</li>
+    <li><input type="checkbox" /> Add the 2 GitHub secrets (§1)</li>
+    <li><input type="checkbox" /> Back up the private key file</li>
+    <li><input type="checkbox" /> Apply tracked-file edits (§2)</li>
+    <li><input type="checkbox" /> Add the in-app update check (§3)</li>
+    <li><input type="checkbox" /> <code>pnpm install</code> + <code>pnpm tauri build</code> locally to verify it compiles</li>
+    <li><input type="checkbox" /> Bump versions, tag <code>app-v…</code>, push, publish the draft (§4)</li>
+  </ul>
+</div>
+
+<script>
+  document.querySelectorAll("pre").forEach(function (pre) {
+    var btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = "copy";
+    btn.addEventListener("click", function () {
+      var code = pre.querySelector("code");
+      navigator.clipboard.writeText(code.innerText).then(function () {
+        btn.textContent = "copied!";
+        setTimeout(function () { btn.textContent = "copy"; }, 1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+</script>
+</body>
+</html>

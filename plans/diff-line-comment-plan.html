@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plan — Comment on diff line → new /grill-with-docs chat</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #141414;
+    --panel-2: #1c1c1c;
+    --line: #2a2a2a;
+    --ink: #e6e6e6;
+    --ink-dim: #b3b3b3;
+    --ink-faint: #7a7a7a;
+    --accent: #d97757;
+    --accent-2: #6ea8fe;
+    --add: #2ea043;
+    --del: #f85149;
+    --code-bg: #111;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 30px 0 10px; color: var(--ink); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 13px; margin: 18px 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+  p { color: var(--ink-dim); }
+  .sub { color: var(--ink-faint); margin-top: 0; }
+  code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-family: "JetBrains Mono", Menlo, monospace; font-size: 12.5px; color: #e8c9b8; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow:auto; font-family: "JetBrains Mono", Menlo, monospace; font-size: 12.5px; color: var(--ink); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+  .muted { color: var(--ink-faint); font-size: 12.5px; }
+  ul { padding-left: 20px; } li { margin: 4px 0; color: var(--ink-dim); }
+  .step { display:flex; gap:12px; margin: 10px 0; }
+  .step .n { flex:0 0 26px; height:26px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); color:var(--accent); display:grid; place-items:center; font-weight:600; font-size:12px; }
+  .opt { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--line); border-radius:8px; margin:8px 0; background:var(--panel-2); cursor:pointer; }
+  .opt:hover { border-color:#3a3a3a; }
+  .opt input { margin-top:3px; }
+  .opt .label { font-weight:600; color:var(--ink); }
+  .opt .desc { color:var(--ink-faint); font-size:12.5px; margin-top:2px; }
+  .rec { color:var(--add); font-size:11px; border:1px solid var(--add); border-radius:4px; padding:0 5px; margin-left:6px; vertical-align:1px; }
+  .q { background: var(--panel); border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:8px; padding:14px 16px; margin:16px 0; }
+  .q > .qt { font-weight:600; margin-bottom:6px; }
+  textarea { width:100%; background:var(--code-bg); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-family:"JetBrains Mono",Menlo,monospace; font-size:12.5px; resize:vertical; }
+  input[type=text] { background:var(--code-bg); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:13px; min-width:220px; }
+  .mock { border:1px solid var(--line); border-radius:8px; overflow:hidden; font-family:"JetBrains Mono",Menlo,monospace; font-size:12px; }
+  .mock .row { display:flex; align-items:center; padding:2px 0; position:relative; }
+  .mock .ln { width:46px; text-align:right; padding-right:10px; color:var(--ink-faint); user-select:none; }
+  .mock .ctn { flex:1; white-space:pre; }
+  .mock .row.add { background:rgba(46,160,67,.12); } .mock .row.add .ctn { color:#9fe0ab; }
+  .mock .row.del { background:rgba(248,81,73,.12); } .mock .row.del .ctn { color:#f3a8a3; }
+  .mock .row.hov { background:#1a1a1a; }
+  .mock .cbtn { position:absolute; right:8px; background:var(--accent); color:#1a0f0a; border:none; border-radius:5px; font-size:11px; padding:1px 8px; cursor:pointer; font-weight:600; }
+  .composer { border:1px solid var(--accent); border-radius:8px; margin:6px 8px 6px 56px; padding:8px; background:#161210; }
+  .composer .meta { color:var(--ink-faint); font-size:11px; margin-bottom:6px; }
+  .composer .send { background:var(--accent); color:#1a0f0a; border:none; border-radius:5px; padding:4px 10px; font-weight:600; cursor:pointer; margin-top:6px; }
+  table.files { width:100%; border-collapse:collapse; margin-top:8px; }
+  table.files td { border:1px solid var(--line); padding:7px 10px; vertical-align:top; }
+  table.files td:first-child { color:#e8c9b8; font-family:"JetBrains Mono",Menlo,monospace; font-size:12px; white-space:nowrap; }
+  .copybar { position:fixed; bottom:0; left:0; right:0; background:#111; border-top:1px solid var(--line); padding:12px 20px; display:flex; justify-content:center; gap:12px; }
+  .copybar button { background:var(--accent); color:#1a0f0a; border:none; border-radius:8px; padding:10px 18px; font-weight:700; cursor:pointer; font-size:14px; }
+  .copybar button.alt { background:var(--panel-2); color:var(--ink); border:1px solid var(--line); }
+  .flag { color:var(--del); }
+  .ok { color:var(--add); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Comment on a diff line → send to a new <code>/grill-with-docs</code> chat</h1>
+  <p class="sub">Plan for review. Tick the options you want, fill the text boxes, then hit <b>Copy answers</b> at the bottom and paste back to me.</p>
+
+  <div class="panel">
+    <b>Goal</b>
+    <p style="margin:6px 0 0">In a Diff pane, hover a line → click a comment affordance → type a note → it spins up a <b>new agent chat</b> seeded with a <code>/grill-with-docs</code> prompt that references <code>file:line</code>, the line's content, and your comment.</p>
+  </div>
+
+  <h2>How it would work (UX)</h2>
+  <div class="step"><div class="n">1</div><div>Hover any line in the diff. A small <b>Comment</b> button appears at the right edge of that row.</div></div>
+  <div class="step"><div class="n">2</div><div>Click it → an inline composer opens under the line with a textarea + <b>Send to new chat</b>.</div></div>
+  <div class="step"><div class="n">3</div><div>On send: open a new <b>Claude</b> agent tab in the project, then type the prompt into it and (optionally) submit.</div></div>
+  <div class="step"><div class="n">4</div><div>Focus jumps to the new chat. The agent runs <code>/grill-with-docs</code> with the file/line/comment as context.</div></div>
+
+  <h3>Visual mock</h3>
+  <div class="mock">
+    <div class="row"><span class="ln">40</span><span class="ctn">  return useFileDiff(cwd, file, source);</span></div>
+    <div class="row del"><span class="ln">41</span><span class="ctn">- const source = paneInfo.diffSource ?? 'unstaged';</span></div>
+    <div class="row add hov"><span class="ln">41</span><span class="ctn">+ const source = (paneInfo.diffSource ?? 'unstaged') as DiffSource;</span><button class="cbtn">💬 Comment</button></div>
+    <div class="composer">
+      <div class="meta">DiffPane.tsx:41 &nbsp;•&nbsp; <span class="ok">+ const source = (paneInfo.diffSource ?? 'unstaged') as DiffSource;</span></div>
+      <textarea rows="2" placeholder="Why the cast here instead of validating the value?">Why cast instead of validating? Could this hide a bad persisted value?</textarea>
+      <button class="send">Send to new chat ↵</button>
+    </div>
+    <div class="row"><span class="ln">42</span><span class="ctn">  const { diff, loading } = useFileDiff(cwd, file, source);</span></div>
+  </div>
+
+  <h2>Technical approach (verified against the code)</h2>
+  <div class="panel">
+    <p style="margin:0 0 8px"><b class="ok">Good news — there's already an "initial prompt" channel.</b> <code>addTab(..., {kind:'Agent', command, agent})</code> passes <code>command</code> straight to the Rust spawn, which launches the agent as <code>{agent} {shell_quote(command)}</code> (<code>pty.rs:254</code>). So we can seed the grill prompt at launch with <b>no pty timing hacks</b>.</p>
+    <ul>
+      <li><b>New chat (preferred):</b> <code>addTab(repo, label, {kind:'Agent', agent:'claude', cwd:repo, command: grillPrompt})</code> — same path <code>AddMenu.tsx:69</code> uses, plus the existing <code>command</code> arg.</li>
+      <li><span class="flag">Caveat:</span> this passes the prompt as a launch <b>argument</b> (<code>claude "/grill-with-docs …"</code>). Need to confirm Claude runs a <b>slash command</b> when given as the initial arg. If it doesn't (treats it as plain text), fall back to typing it into the TUI via <code>invoke('pty_write', {id, data})</code> (the call <code>TerminalPane.tsx</code> uses) once the pane's first output arrives. See D4.</li>
+      <li><b>Line data:</b> the Diff pane knows the file (<code>paneInfo.diffFile</code>) + source. The line number + content come from the diff2html row (<code>.d2h-code-linenumber</code> text and <code>.d2h-code-line-ctn</code>).</li>
+    </ul>
+  </div>
+
+  <h2>Decisions I need from you</h2>
+
+  <div class="q">
+    <div class="qt">D1 — How to make diff lines interactive</div>
+    <p class="muted" style="margin:0 0 8px">Today <code>DiffView</code> renders diff2html HTML via <code>dangerouslySetInnerHTML</code>.</p>
+    <label class="opt"><input type="radio" name="d1" value="overlay" checked><span><span class="label">Overlay on existing diff2html</span><span class="rec">recommended</span><div class="desc">Keep diff2html's rendering & styling. Add a hover/click layer on the wrapper (React events bubble from the injected DOM) + a floating composer. Smallest change, keeps syntax styling.</div></span></label>
+    <label class="opt"><input type="radio" name="d1" value="custom"><span><span class="label">Rewrite renderer with diff2html <code>parse()</code></span><div class="desc">Render our own React rows from structured data — cleanest per-line React, no DOM scraping, but re-implements diff styling/highlighting. Bigger lift.</div></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">D2 — Which agent does the new chat use?</div>
+    <label class="opt"><input type="radio" name="d2" value="claude" checked><span><span class="label">Always Claude</span><span class="rec">recommended</span><div class="desc"><code>/grill-with-docs</code> is a Claude skill, so Claude makes sense.</div></span></label>
+    <label class="opt"><input type="radio" name="d2" value="picker"><span><span class="label">Let me pick per-comment</span><div class="desc">Small agent dropdown in the composer (Claude / Codex / Gemini).</div></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">D3 — Where does the new chat open?</div>
+    <label class="opt"><input type="radio" name="d3" value="tab" checked><span><span class="label">New tab</span><span class="rec">recommended</span><div class="desc">Opens a fresh tab and focuses it.</div></span></label>
+    <label class="opt"><input type="radio" name="d3" value="split"><span><span class="label">Split beside the diff</span><div class="desc">Keeps the diff visible next to the chat.</div></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">D4 — How is the prompt delivered to the new chat?</div>
+    <label class="opt"><input type="radio" name="d4" value="launcharg" checked><span><span class="label">Launch arg</span><span class="rec">try first — simplest</span><div class="desc"><code>claude "/grill-with-docs …"</code> via the existing <code>command</code> field. No timing. Works <i>if</i> Claude executes a slash command given as the initial arg — I'll verify; if not, fall back below.</div></span></label>
+    <label class="opt"><input type="radio" name="d4" value="type-submit"><span><span class="label">Type into TUI + press enter</span><div class="desc">pty_write the text after the pane boots, then Enter. Guaranteed to behave like you typing <code>/grill-with-docs</code>. Needs the boot-timing + bracketed-paste handling.</div></span></label>
+    <label class="opt"><input type="radio" name="d4" value="type-stage"><span><span class="label">Type into TUI, leave for me to send</span><div class="desc">Same as above but no auto-Enter — you review/tweak then hit enter yourself. Safest.</div></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">D5 — Line scope</div>
+    <label class="opt"><input type="radio" name="d5" value="single" checked><span><span class="label">Single line</span><span class="rec">start here</span><div class="desc">Comment targets one line. Matches your ask.</div></span></label>
+    <label class="opt"><input type="radio" name="d5" value="range"><span><span class="label">Single line now, drag-select range later</span><div class="desc">Build single-line first; add multi-line selection as a follow-up.</div></span></label>
+  </div>
+
+  <div class="q">
+    <div class="qt">D6 — Prompt template (edit freely)</div>
+    <p class="muted" style="margin:0 0 8px">This is what gets typed into the new chat. <code>{…}</code> are filled in at send time.</p>
+    <textarea id="tmpl" rows="8">/grill-with-docs
+
+File: {file}:{line} ({source} diff)
+Selected line:
+{lineContent}
+
+My comment: {comment}
+
+Grill me on this — challenge the change against the project's docs/domain model.</textarea>
+    <p class="muted">Note: multi-line text will be sent via <b>bracketed paste</b> so newlines don't submit early in the Claude TUI; a final Enter submits (per D4).</p>
+  </div>
+
+  <div class="q">
+    <div class="qt">D7 — Anything else? (free text)</div>
+    <textarea id="notes" rows="3" placeholder="e.g. keyboard shortcut to comment, include surrounding hunk, reuse one 'grill' chat instead of new tab each time, naming of the tab, etc."></textarea>
+  </div>
+
+  <h2>Files I'd touch</h2>
+  <table class="files">
+    <tr><td>src/components/GitPanel/DiffView.tsx</td><td>Add the hover affordance + inline composer (or new sibling component <code>DiffCommentLayer.tsx</code>). Extract file/line/content on send.</td></tr>
+    <tr><td>src/stores/workspace.ts</td><td>New action e.g. <code>openAgentChatWithPrompt({projectPath, cwd, prompt, agent, submit})</code> that returns the paneId and writes the prompt once the pty is ready.</td></tr>
+    <tr><td>src/components/Workspace/DiffPane.tsx</td><td>Pass <code>cwd</code>/<code>diffFile</code>/<code>diffSource</code> down so the composer can build the prompt.</td></tr>
+    <tr><td>src/lib/* (new small util)</td><td><code>writePromptToPane(paneId, text, {submit})</code> — bracketed-paste encode + optional Enter; waits for first output.</td></tr>
+  </table>
+
+  <h2>Open risks</h2>
+  <ul>
+    <li><b>Boot timing:</b> if we write before <code>claude</code> is ready, input is lost. Mitigation: wait for first output chunk, then write (with a fallback delay). Could still be flaky on slow starts — acceptable for v1?</li>
+    <li><b>Overlay fragility (if D1=overlay):</b> reading <code>.line-num2</code>/<code>.d2h-code-line-ctn</code> depends on diff2html's DOM staying stable. Pinned by the lib version; low risk.</li>
+    <li><b>Escaping:</b> your comment + line content are sent as plain typed text into the TUI (not a shell), so no shell-injection surface; bracketed paste keeps it literal.</li>
+  </ul>
+
+</div>
+
+<div class="copybar">
+  <button onclick="copyAnswers()">📋 Copy answers</button>
+  <button class="alt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+</div>
+
+<script>
+function pick(name){ const el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:'(none)'; }
+function copyAnswers(){
+  const out = [
+    'Diff-line-comment plan — answers',
+    'D1 interactive approach: ' + pick('d1'),
+    'D2 agent: ' + pick('d2'),
+    'D3 open as: ' + pick('d3'),
+    'D4 submit: ' + pick('d4'),
+    'D5 scope: ' + pick('d5'),
+    'D6 prompt template:\n' + document.getElementById('tmpl').value,
+    'D7 notes: ' + (document.getElementById('notes').value || '(none)')
+  ].join('\n');
+  navigator.clipboard.writeText(out).then(()=>{
+    const b=event.target; const t=b.textContent; b.textContent='✓ Copied'; setTimeout(()=>b.textContent=t,1500);
+  });
+}
+</script>
+</body>
+</html>
