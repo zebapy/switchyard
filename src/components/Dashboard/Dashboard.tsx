@@ -88,7 +88,7 @@ export function Dashboard() {
           <Menu.Trigger
             title="New project"
             aria-label="New project"
-            className="flex flex-none items-center gap-1.5 rounded-[9px] border border-line bg-side px-[12px] py-[9px] text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember data-[popup-open]:border-ember-edge data-[popup-open]:bg-ember-tint data-[popup-open]:text-ember"
+            className="flex flex-none items-center gap-1.5 rounded-[9px] border border-line bg-side px-[12px] py-[9px] text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink data-[popup-open]:border-ember-edge data-[popup-open]:bg-ember-tint data-[popup-open]:text-ember"
           >
             <FolderPlusIcon size={16} />
             <ChevronIcon size={10} className="rotate-90 text-ink-faint" />
@@ -125,7 +125,7 @@ export function Dashboard() {
                 {project.is_git && (
                   <button
                     onClick={() => openWorktreeModal(project.path, worktrees.find((w) => w.is_main)?.branch ?? null)}
-                    className="ml-auto flex items-center gap-1.5 rounded-[7px] border border-dashed border-line px-[9px] py-[5px] text-xs text-ink-faint transition hover:border-ember-edge hover:text-ember"
+                    className="ml-auto flex items-center gap-1.5 rounded-[7px] border border-dashed border-line px-[9px] py-[5px] text-xs text-ink-faint transition hover:border-guide hover:text-ink"
                   >
                     <PlusIcon size={11} /> worktree
                   </button>
@@ -178,12 +178,12 @@ const BranchCard = memo(function BranchCard({ worktree, wtPath, tabs, onSelect }
       className={
         'group relative cursor-pointer overflow-hidden rounded-[13px] border bg-linear-to-b from-side2 to-side p-[14px_15px_13px] transition hover:-translate-y-0.5 hover:border-[#30343c] hover:shadow-[0_16px_34px_-22px_rgba(0,0,0,0.9)] ' +
         (isBase
-          ? "border-ember-edge before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-ember-strong before:content-['']"
+          ? "border-line before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-ember-strong before:content-['']"
           : 'border-line')
       }
     >
       <div className="mb-[11px] flex items-center gap-2">
-        <span className={`grid shrink-0 place-items-center ${isBase ? 'text-ember' : 'text-ink-faint'}`}>
+        <span className={`grid shrink-0 place-items-center ${isBase ? 'text-ink-dim' : 'text-ink-faint'}`}>
           {isBase ? <BaseBranchIcon size={14} /> : <WorktreeIcon size={14} />}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium text-ink">{name}</span>

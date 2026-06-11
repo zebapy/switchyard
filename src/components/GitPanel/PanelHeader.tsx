@@ -43,11 +43,15 @@ export function PanelHeader({
   const canCreatePr = path !== null && !hasOpenPr;
 
   return (
-    <div className="flex flex-none items-center gap-2 border-b border-line px-3 py-2">
-      <span className="grid place-items-center text-ink-faint">
+    <div data-tauri-drag-region className="flex flex-none items-center gap-2 border-b border-line px-3 py-2">
+      <span data-tauri-drag-region className="grid place-items-center text-ink-faint">
         <GitBranchIcon size={13} />
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink-dim" title={branch ?? undefined}>
+      <span
+        data-tauri-drag-region
+        className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink-dim"
+        title={branch ?? undefined}
+      >
         {branch ?? 'No branch'}
       </span>
 

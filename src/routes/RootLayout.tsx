@@ -6,6 +6,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useUiStore } from '../stores/ui';
 import { TopBar } from '../components/TopBar';
+import { SidebarNav } from '../components/Sidebar/SidebarNav';
 import { SidebarSearch } from '../components/Sidebar/SidebarSearch';
 import { ProjectTree } from '../components/ProjectTree/ProjectTree';
 import { SettingsNav } from '../components/Sidebar/SettingsNav';
@@ -167,7 +168,7 @@ export function RootLayout() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <TopBar />
+      {sidebarCollapsed && <TopBar />}
 
       <div className="flex min-h-0 flex-1">
         {!sidebarCollapsed && (
@@ -176,6 +177,7 @@ export function RootLayout() {
               style={{ width: sidebarWidth }}
               className="relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side"
             >
+              <SidebarNav />
               <SidebarSearch />
               {inSettings ? <SettingsNav /> : <ProjectTree />}
             </aside>

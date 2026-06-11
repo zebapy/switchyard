@@ -1,4 +1,4 @@
-export type PaneKind = 'Agent' | 'Shell' | 'Lazygit' | 'Custom' | 'Diff' | 'File';
+export type PaneKind = 'Agent' | 'Shell' | 'Lazygit' | 'Custom' | 'Diff' | 'DiffAll' | 'File';
 
 export type AgentStatus = 'working' | 'waiting' | 'idle';
 

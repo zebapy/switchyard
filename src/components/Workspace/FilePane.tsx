@@ -104,7 +104,7 @@ export function FilePane({ paneInfo }: FilePaneProps) {
           type="button"
           onClick={openInEditor}
           disabled={!file}
-          className="inline-flex flex-none items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition hover:border-ember-edge hover:text-ember disabled:opacity-40"
+          className="inline-flex flex-none items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition hover:border-guide hover:text-ink disabled:opacity-40"
         >
           <ExternalLinkIcon size={12} /> Open in editor
         </button>

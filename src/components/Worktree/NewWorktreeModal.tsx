@@ -230,15 +230,15 @@ export function NewWorktreeModal() {
                   type="button"
                   disabled={busy}
                   onClick={() => void createFrom(it)}
-                  className="group flex w-full items-center gap-2.5 rounded-[9px] border border-transparent bg-app px-[11px] py-[9px] text-left transition hover:border-ember-edge hover:bg-ember-tint disabled:opacity-50"
+                  className="group flex w-full items-center gap-2.5 rounded-[9px] border border-transparent bg-app px-[11px] py-[9px] text-left transition hover:border-guide hover:bg-hover disabled:opacity-50"
                 >
-                  <span className="grid shrink-0 place-items-center text-ink-faint group-hover:text-ember">
+                  <span className="grid shrink-0 place-items-center text-ink-faint group-hover:text-ink">
                     {src === 'pr' ? <PrIcon size={13} /> : src === 'branch' ? <GitBranchIcon size={13} /> : isLinear ? <LinearIcon size={13} /> : <IssueIcon size={13} />}
                   </span>
-                  {it.id && <span className="shrink-0 font-mono text-xs text-ink-dim group-hover:text-ember">{it.id}</span>}
+                  {it.id && <span className="shrink-0 font-mono text-xs text-ink-dim group-hover:text-ink">{it.id}</span>}
                   <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{it.title}</span>
                   {it.sub && <span className="shrink-0 font-mono text-[11.5px] text-ink-ghost">{it.sub}</span>}
-                  <span className="shrink-0 text-ember opacity-0 transition group-hover:opacity-100">→</span>
+                  <span className="shrink-0 text-ink-dim opacity-0 transition group-hover:opacity-100">→</span>
                 </button>
               ))}
             </div>

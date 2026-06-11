@@ -53,7 +53,7 @@ function CheckDetail({ path, check }: { path: string; check: CheckRun }) {
           <button
             type="button"
             onClick={loadLog}
-            className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-dim transition hover:border-ember-edge hover:text-ember"
+            className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-dim transition hover:border-guide hover:text-ink"
           >
             {loading ? 'Loading…' : 'View log'}
           </button>
@@ -63,7 +63,7 @@ function CheckDetail({ path, check }: { path: string; check: CheckRun }) {
           <button
             type="button"
             onClick={() => openUrl(check.html_url).catch(() => null)}
-            className="inline-flex items-center gap-1 text-[11px] text-ink-faint transition hover:text-ember"
+            className="inline-flex items-center gap-1 text-[11px] text-ink-faint transition hover:text-ink"
           >
             <ExternalLinkIcon size={11} /> Open on GitHub
           </button>

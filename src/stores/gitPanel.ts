@@ -14,8 +14,10 @@ const DEFAULT_WIDTH = 380;
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 760;
 
-/** How the changed-files list is laid out. */
-export type FileView = 'tree' | 'list';
+/** How the changed-files area is laid out.
+ *  - `tree` / `list`: the file list (click a row to open its diff in a tab)
+ *  - `inline`: every file's diff stacked inline, PR-style, no clicking needed */
+export type FileView = 'tree' | 'list' | 'inline';
 
 /** Which top-level section of the Git panel is showing. */
 export type PanelTab = 'files' | 'changes' | 'review';
@@ -36,7 +38,9 @@ function readWidth(): number {
 }
 
 function readFileView(): FileView {
-  return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'tree';
+  const stored = localStorage.getItem(VIEW_KEY);
+  if (stored === 'list' || stored === 'inline') return stored;
+  return 'tree';
 }
 
 function readTab(): PanelTab {

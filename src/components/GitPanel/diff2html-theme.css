@@ -62,3 +62,19 @@
 .d2h-comment-selected td {
   background-color: var(--color-ember-tint) !important;
 }
+
+/*
+ * Stacked "inline diffs" view (AllDiffsView / FileDiffSection). Each file gets
+ * its own collapsible card with our own header, so diff2html's per-file header
+ * and outer chrome are redundant — strip them and let the diff sit flush inside
+ * the card. Only applies under `.sy-stacked-diff`, never the single-file pane.
+ */
+.sy-stacked-diff .d2h-wrapper,
+.sy-stacked-diff .d2h-file-wrapper {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.sy-stacked-diff .d2h-file-header {
+  display: none;
+}

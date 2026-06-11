@@ -6,7 +6,7 @@ import { useUiStore } from '../stores/ui';
 const h3Class = 'mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-ink-ghost';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const btnClass =
-  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember disabled:cursor-default disabled:opacity-50';
+  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-50';
 
 export function GithubSettings() {
   const openGithubConnect = useUiStore((s) => s.openGithubConnect);

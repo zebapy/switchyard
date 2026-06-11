@@ -50,6 +50,23 @@ function openDiffInTab(repoPath: string, file: string, source: DiffSource): void
   });
 }
 
+/** Open every changed file's diff stacked in one workspace tab, reusing a match. */
+function openAllDiffsInTab(repoPath: string, source: DiffSource): void {
+  const store = useWorkspaceStore.getState();
+  for (const pane of store.panes.values()) {
+    if (pane.kind === 'DiffAll' && pane.cwd === repoPath && pane.diffSource === source) {
+      store.focusPane(pane.id);
+      return;
+    }
+  }
+  store.addTab(repoPath, 'All changes', {
+    kind: 'DiffAll',
+    cwd: repoPath,
+    diffSource: source,
+    label: 'All changes',
+  });
+}
+
 /** Open the file's contents as a workspace viewer tab, reusing a matching tab. */
 function openFileInTab(repoPath: string, file: string): void {
   const store = useWorkspaceStore.getState();
@@ -166,6 +183,7 @@ export function GitPanel() {
           <>
             <div className="flex min-h-0 flex-1 flex-col">
               <ChangedFiles
+                path={path}
                 source={source}
                 onSourceChange={setSource}
                 defaultBranch={defaultBranch}
@@ -175,6 +193,7 @@ export function GitPanel() {
                 onSelectFile={handleSelectFile}
                 fileView={fileView}
                 onFileViewChange={setFileView}
+                onOpenAllInTab={() => openAllDiffsInTab(path, source)}
               />
             </div>
 

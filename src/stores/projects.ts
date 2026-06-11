@@ -39,6 +39,8 @@ interface ProjectsState {
   pins: Set<string>;
   gitInfo: Map<string, GitInfo>;
   prInfo: Map<string, PrInfo | null>;
+  /** Git hosting provider per project path ("github" | "gitlab" | "bitbucket" | null), drives the repo icon. */
+  gitHosts: Map<string, string | null>;
   scanRoot: string;
   addedProjects: string[];
   useTmux: boolean;
@@ -58,6 +60,8 @@ interface ProjectsState {
   // Actions
   loadSettings: () => Promise<void>;
   loadAddedProjects: () => void;
+  /** Fetch the git host for any added project not yet known, to pick its repo icon. */
+  loadGitHosts: () => Promise<void>;
   loadPins: () => Promise<void>;
   togglePin: (projectPath: string) => Promise<void>;
   refreshGitInfo: (projectPath: string) => Promise<void>;
@@ -105,6 +109,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   pins: new Set(),
   gitInfo: new Map(),
   prInfo: new Map(),
+  gitHosts: new Map(),
   scanRoot: '',
   addedProjects: [],
   useTmux: true,
@@ -145,6 +150,24 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       worktree_parent: null,
     }));
     set({ projects });
+    void get().loadGitHosts();
+  },
+
+  loadGitHosts: async () => {
+    const { addedProjects, gitHosts } = get();
+    const missing = addedProjects.filter((path) => !gitHosts.has(path));
+    if (missing.length === 0) return;
+    const entries = await Promise.all(
+      missing.map(
+        async (path) =>
+          [path, await invoke<string | null>('get_git_host', { path }).catch(() => null)] as const,
+      ),
+    );
+    set((state) => {
+      const next = new Map(state.gitHosts);
+      for (const [path, host] of entries) next.set(path, host);
+      return { gitHosts: next };
+    });
   },
 
   loadPins: async () => {

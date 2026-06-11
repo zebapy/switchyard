@@ -165,6 +165,45 @@ export function AgentGlyph({ name = '', command = '', size, className }: AgentGl
   return <AiIcon size={size} className={className} />;
 }
 
+// ── git hosting provider marks (official single-colour logos, inherit currentColor) ─
+export function GitHubIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill>
+      <path d="M8 .2a8 8 0 00-2.53 15.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 008 .2z" />
+    </Svg>
+  );
+}
+
+export function GitLabIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill viewBox="0 0 24 24">
+      <path d="M23.6 9.59l-.03-.09L20.3.98a.85.85 0 00-.34-.4.87.87 0 00-1 .05.87.87 0 00-.29.44l-2.2 6.75H7.54L5.33 1.07a.86.86 0 00-.29-.44.87.87 0 00-1-.05.86.86 0 00-.34.4L.43 9.5l-.03.09a6.07 6.07 0 002.01 7.01l.01.01.03.02 4.98 3.73 2.46 1.86 1.5 1.13a1.01 1.01 0 001.22 0l1.5-1.13 2.46-1.86 5.01-3.75.01-.01a6.07 6.07 0 002.01-7z" />
+    </Svg>
+  );
+}
+
+export function BitbucketIcon({ size = 15, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} fill viewBox="0 0 24 24">
+      <path d="M.78 1.21a.77.77 0 00-.77.9l3.26 19.8c.08.5.52.87 1.02.88H19.95a.77.77 0 00.77-.65l3.27-20.03a.77.77 0 00-.77-.9zM14.52 15.53H9.52L8.17 8.47h7.56z" />
+    </Svg>
+  );
+}
+
+interface GitHostIconProps extends IconProps {
+  /** Provider key from the backend: "github" | "gitlab" | "bitbucket", or null. */
+  host?: string | null;
+}
+
+/** Show a project's git hosting provider mark based on where its remote lives;
+ *  falls back to the generic repo icon for unknown/self-hosted hosts. */
+export function GitHostIcon({ host, size = 15, className }: GitHostIconProps) {
+  if (host === 'github') return <GitHubIcon size={size} className={className} />;
+  if (host === 'gitlab') return <GitLabIcon size={size} className={className} />;
+  if (host === 'bitbucket') return <BitbucketIcon size={size} className={className} />;
+  return <RepoIcon size={size} className={className} />;
+}
+
 export function SplitIcon({ size = 14, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.4}>
@@ -314,6 +353,17 @@ export function TreeIcon({ size = 14, className }: IconProps) {
     <Svg size={size} className={className} strokeWidth={1.5}>
       <path d="M3 3.5v9M3 6h3.5M3 9.5h3.5" />
       <path d="M7 4.5h6.5M7 6h4M7 9h6.5M7 10.5h4" strokeWidth={1.3} />
+    </Svg>
+  );
+}
+
+/** Stacked diff rows — the "inline / unified diffs" view toggle. */
+export function RowsIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.4}>
+      <rect x="2.5" y="2.6" width="11" height="4" rx="1" />
+      <rect x="2.5" y="9.4" width="11" height="4" rx="1" />
+      <path d="M4.6 4.6h4.2M4.6 11.4h4.2" strokeWidth={1.2} />
     </Svg>
   );
 }

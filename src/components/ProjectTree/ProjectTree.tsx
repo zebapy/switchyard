@@ -184,7 +184,7 @@ export function ProjectTree() {
             (isDashboard ? 'bg-ember-tint text-ink' : 'text-ink-dim hover:bg-hover hover:text-ink')
           }
         >
-          <span className={`grid place-items-center ${isDashboard ? 'text-ember' : 'text-ink-faint'}`}>
+          <span className={`grid place-items-center ${isDashboard ? 'text-ink' : 'text-ink-faint'}`}>
             <DashboardIcon size={15} />
           </span>
           Dashboard

@@ -60,10 +60,10 @@ export function AddMenu({ windowPath, label, scriptsProjectPath, compact }: AddM
         </Menu.Trigger>
       ) : (
         <Menu.Trigger
-          className="group relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-[13px] text-ink-ghost transition-colors hover:bg-hover hover:text-ember before:absolute before:-left-[11px] before:top-1/2 before:h-px before:w-[11px] before:bg-guide before:content-['']"
+          className="group relative flex w-full items-center gap-2 rounded-[7px] py-[5px] pl-1.5 pr-2 text-[13px] text-ink-ghost transition-colors hover:bg-hover hover:text-ink before:absolute before:-left-[11px] before:top-1/2 before:h-px before:w-[11px] before:bg-guide before:content-['']"
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="grid size-4 place-items-center rounded-[5px] border border-dashed border-line group-hover:border-ember-edge">
+          <span className="grid size-4 place-items-center rounded-[5px] border border-dashed border-line group-hover:border-guide">
             <PlusIcon size={9} />
           </span>
           New tab

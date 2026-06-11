@@ -20,7 +20,7 @@ const sectionClass = 'mb-[18px] border-b border-line pb-4 last:mb-0 last:border-
 const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const btnClass =
-  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember disabled:cursor-default disabled:opacity-50';
+  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-50';
 
 export function LinearSettings() {
   const [connected, setConnected] = useState(false);

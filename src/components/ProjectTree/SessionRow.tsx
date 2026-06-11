@@ -35,7 +35,7 @@ function CloseTabButton({ onClose }: { onClose: () => void }) {
       tabIndex={-1}
       aria-label="Close session"
       onClick={(e) => { e.stopPropagation(); onClose(); }}
-      className="grid size-4 shrink-0 place-items-center rounded text-ink-faint opacity-0 transition hover:bg-ember-tint hover:text-del group-hover:opacity-100"
+      className="grid size-4 shrink-0 place-items-center rounded text-ink-faint opacity-0 transition hover:bg-hover hover:text-del group-hover:opacity-100"
     >
       <CloseIcon size={11} />
     </span>

@@ -12,7 +12,7 @@ interface DeviceCode {
 
 const btnClass =
   'rounded-[9px] border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition ' +
-  'hover:border-ember-edge hover:bg-ember-tint hover:text-ember disabled:opacity-50';
+  'hover:border-guide hover:bg-hover hover:text-ink disabled:opacity-50';
 
 /**
  * The single GitHub device-flow connect surface. Settings, "Send feedback" and

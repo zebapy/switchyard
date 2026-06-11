@@ -2,7 +2,7 @@ import { useProjectsStore } from '../stores/projects';
 
 const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
-const wtOptionClass = 'flex cursor-pointer items-start gap-2.5 rounded-[9px] border border-line bg-app px-2.5 py-2 transition hover:border-ember-edge';
+const wtOptionClass = 'flex cursor-pointer items-start gap-2.5 rounded-[9px] border border-line bg-app px-2.5 py-2 transition hover:border-guide';
 const wtOptionSelectedClass = 'flex cursor-pointer items-start gap-2.5 rounded-[9px] border border-ember-edge bg-ember-tint px-2.5 py-2 transition';
 
 export function WorktreeLocationSettings() {

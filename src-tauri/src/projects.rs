@@ -584,6 +584,55 @@ pub fn clone_repo(url: String, parent_dir: String) -> Result<ProjectInfo, String
     })
 }
 
+/// Extract the host portion of a git remote URL. Handles HTTPS
+/// (`https://host/owner/repo`), `ssh://git@host/owner/repo`, and scp-like
+/// (`git@host:owner/repo`) forms. Returns None when no host can be parsed.
+fn remote_host(url: &str) -> Option<String> {
+    let url = url.trim();
+    if let Some(after_scheme) = url.split("://").nth(1) {
+        // Drop an optional `user@`, then take up to the first `/` or `:`.
+        let after_user = after_scheme.rsplit('@').next().unwrap_or(after_scheme);
+        let host = after_user.split(['/', ':']).next()?;
+        return (!host.is_empty()).then(|| host.to_string());
+    }
+    // scp-like: git@host:owner/repo
+    let after_user = url.split('@').nth(1)?;
+    let host = after_user.split(':').next()?;
+    (!host.is_empty()).then(|| host.to_string())
+}
+
+/// Identify the git hosting provider from a remote URL, e.g. "github",
+/// "gitlab", "bitbucket". Matches on the host so self-hosted instances
+/// (`gitlab.mycorp.com`) are recognized too. Returns None for unrecognized
+/// hosts so the UI falls back to a generic repo icon.
+fn git_host_from_url(url: &str) -> Option<String> {
+    let host = remote_host(url)?.to_lowercase();
+    let provider = if host.contains("github") {
+        "github"
+    } else if host.contains("gitlab") {
+        "gitlab"
+    } else if host.contains("bitbucket") {
+        "bitbucket"
+    } else {
+        return None;
+    };
+    Some(provider.to_string())
+}
+
+/// Detect the git hosting provider for the repo at `path` from its `origin`
+/// remote. Returns None when there's no repo, no `origin`, or the host is
+/// unrecognized — a missing remote is not an error, just "no host icon".
+#[tauri::command(async)]
+pub fn get_git_host(path: String) -> Result<Option<String>, String> {
+    let Ok(repo) = git2::Repository::discover(&path) else {
+        return Ok(None);
+    };
+    let Ok(remote) = repo.find_remote("origin") else {
+        return Ok(None);
+    };
+    Ok(remote.url().and_then(git_host_from_url))
+}
+
 #[tauri::command(async)]
 pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
@@ -1128,4 +1177,53 @@ pub fn set_project_sort(
     settings.project_sort.insert(project_path, sort);
     save_settings(&settings)?;
     Ok(settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{git_host_from_url, remote_host};
+
+    #[test]
+    fn parses_host_from_url_forms() {
+        assert_eq!(
+            remote_host("https://github.com/owner/repo.git").as_deref(),
+            Some("github.com")
+        );
+        assert_eq!(
+            remote_host("https://git@gitlab.com/owner/repo.git").as_deref(),
+            Some("gitlab.com")
+        );
+        assert_eq!(
+            remote_host("ssh://git@bitbucket.org/owner/repo.git").as_deref(),
+            Some("bitbucket.org")
+        );
+        assert_eq!(
+            remote_host("git@github.com:owner/repo.git").as_deref(),
+            Some("github.com")
+        );
+        assert_eq!(remote_host("not a url"), None);
+    }
+
+    #[test]
+    fn detects_known_providers_and_falls_through() {
+        assert_eq!(
+            git_host_from_url("git@github.com:o/r.git").as_deref(),
+            Some("github")
+        );
+        assert_eq!(
+            git_host_from_url("https://gitlab.com/o/r.git").as_deref(),
+            Some("gitlab")
+        );
+        assert_eq!(
+            git_host_from_url("https://bitbucket.org/o/r.git").as_deref(),
+            Some("bitbucket")
+        );
+        // Self-hosted instance still matches on the host substring.
+        assert_eq!(
+            git_host_from_url("https://gitlab.mycorp.com/o/r.git").as_deref(),
+            Some("gitlab")
+        );
+        // Unknown host → no icon.
+        assert_eq!(git_host_from_url("https://git.example.com/o/r.git"), None);
+    }
 }

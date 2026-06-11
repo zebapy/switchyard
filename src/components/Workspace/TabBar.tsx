@@ -73,7 +73,7 @@ export function TabBar() {
           {branch && (
             <>
               <span className="text-ink-ghost">/</span>
-              <span className={`inline-flex ${isMainWt ? 'text-ember' : 'text-ink-faint'}`}>
+              <span className={`inline-flex ${isMainWt ? 'text-ink-dim' : 'text-ink-faint'}`}>
                 {isMainWt ? <BaseBranchIcon size={13} /> : <WorktreeIcon size={13} />}
               </span>
               <BranchMenu path={win.projectPath} branch={branch} />
@@ -143,7 +143,7 @@ export function TabBar() {
               tabIndex={-1}
               aria-label="Close tab"
               onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
-              className="grid size-4 shrink-0 place-items-center rounded text-ink-faint opacity-0 transition hover:bg-ember-tint hover:text-del group-hover:opacity-100"
+              className="grid size-4 shrink-0 place-items-center rounded text-ink-faint opacity-0 transition hover:bg-hover hover:text-del group-hover:opacity-100"
             >
               <CloseIcon size={11} />
             </span>

@@ -10,6 +10,7 @@ const TerminalPane = lazy(() =>
   import('../Terminal/TerminalPane').then((m) => ({ default: m.TerminalPane })),
 );
 const DiffPane = lazy(() => import('./DiffPane').then((m) => ({ default: m.DiffPane })));
+const AllDiffsPane = lazy(() => import('./AllDiffsPane').then((m) => ({ default: m.AllDiffsPane })));
 const FilePane = lazy(() => import('./FilePane').then((m) => ({ default: m.FilePane })));
 
 interface PaneContainerProps {
@@ -29,12 +30,15 @@ export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }:
 
   const isAi = paneInfo.kind === 'Agent' && !paneInfo.agentExited;
   const isDiff = paneInfo.kind === 'Diff';
+  const isDiffAll = paneInfo.kind === 'DiffAll';
   const isFile = paneInfo.kind === 'File';
-  const title = isDiff
-    ? basename(paneInfo.diffFile ?? paneInfo.cwd)
-    : isFile
-      ? basename(paneInfo.filePath ?? paneInfo.cwd)
-      : paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
+  const title = isDiffAll
+    ? 'All changes'
+    : isDiff
+      ? basename(paneInfo.diffFile ?? paneInfo.cwd)
+      : isFile
+        ? basename(paneInfo.filePath ?? paneInfo.cwd)
+        : paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
 
   const actBtn = 'grid size-[26px] place-items-center rounded-md text-ink-faint hover:bg-hover hover:text-ink';
 
@@ -43,7 +47,7 @@ export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }:
       <div className="flex flex-none items-center gap-2 border-b border-line bg-side px-3.5 py-[11px]">
         <div className="flex min-w-0 items-center gap-[7px] text-[13px] text-ink-dim">
           <span className={`inline-flex ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
-            {isDiff || isFile ? <CodeIcon size={13} /> : isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
+            {isDiff || isDiffAll || isFile ? <CodeIcon size={13} /> : isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
           </span>
           <span className="truncate font-semibold text-ink">{title}</span>
         </div>
@@ -63,6 +67,8 @@ export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }:
         <Suspense fallback={null}>
           {isDiff ? (
             <DiffPane paneInfo={paneInfo} />
+          ) : isDiffAll ? (
+            <AllDiffsPane paneInfo={paneInfo} />
           ) : isFile ? (
             <FilePane paneInfo={paneInfo} />
           ) : (

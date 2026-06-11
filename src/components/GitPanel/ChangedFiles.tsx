@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { DiffSource, FileStatus } from '../../types/gitpanel';
 import type { FileView } from '../../stores/gitPanel';
-import { ChevronIcon, FolderIcon, ListIcon, TreeIcon } from '../icons';
+import { ChevronIcon, ExternalLinkIcon, FolderIcon, ListIcon, RowsIcon, TreeIcon } from '../icons';
+import { STATUS_COLOR, STATUS_SHORT, basename, dirname } from './fileStatus';
+import { AllDiffsView } from './AllDiffsView';
 
 interface ChangedFilesProps {
+  /** Repo root — needed by the inline view to fetch each file's diff. */
+  path: string;
   source: DiffSource;
   onSourceChange: (source: DiffSource) => void;
   defaultBranch: string | null;
@@ -14,38 +18,8 @@ interface ChangedFilesProps {
   onSelectFile: (path: string) => void;
   fileView: FileView;
   onFileViewChange: (view: FileView) => void;
-}
-
-const SHORT: Record<string, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-  untracked: 'U',
-  typechange: 'T',
-  conflicted: '!',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  added: 'text-green',
-  untracked: 'text-green',
-  deleted: 'text-del',
-  conflicted: 'text-del',
-  modified: 'text-ember',
-  renamed: 'text-ember',
-  copied: 'text-ember',
-  typechange: 'text-ember',
-};
-
-function basename(path: string): string {
-  return path.replace(/\/+$/, '').split('/').pop() ?? path;
-}
-
-function dirname(path: string): string {
-  const parts = path.replace(/\/+$/, '').split('/');
-  parts.pop();
-  return parts.join('/');
+  /** Open every changed file's diff stacked in one full-width workspace tab. */
+  onOpenAllInTab: () => void;
 }
 
 interface SegmentProps {
@@ -92,7 +66,7 @@ function FileRow({ file, selected, onSelect, indent, showDir }: FileRowProps) {
       }
     >
       <span className={`w-3 flex-none text-center font-mono text-[11px] ${STATUS_COLOR[file.status] ?? 'text-ink-faint'}`}>
-        {SHORT[file.status] ?? '?'}
+        {STATUS_SHORT[file.status] ?? '?'}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono">
         {basename(file.path)}
@@ -245,11 +219,13 @@ function ViewToggle({ fileView, onFileViewChange }: ViewToggleProps) {
     <div className="flex flex-none items-center gap-0.5">
       {btn('tree', 'Tree view', <TreeIcon size={13} />)}
       {btn('list', 'List view', <ListIcon size={13} />)}
+      {btn('inline', 'Inline diffs', <RowsIcon size={13} />)}
     </div>
   );
 }
 
 export function ChangedFiles({
+  path,
   source,
   onSourceChange,
   defaultBranch,
@@ -260,6 +236,7 @@ export function ChangedFiles({
   onSelectFile,
   fileView,
   onFileViewChange,
+  onOpenAllInTab,
 }: ChangedFilesProps) {
   const tree = useMemo(() => (fileView === 'tree' ? buildTree(files) : []), [files, fileView]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -274,7 +251,7 @@ export function ChangedFiles({
   };
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-none items-center gap-1.5 px-2 pt-2">
         <div className="flex flex-1 gap-1">
           <Segment active={source === 'unstaged'} onClick={() => onSourceChange('unstaged')}>
@@ -288,8 +265,27 @@ export function ChangedFiles({
           </Segment>
         </div>
         <ViewToggle fileView={fileView} onFileViewChange={onFileViewChange} />
+        <button
+          type="button"
+          onClick={onOpenAllInTab}
+          title="Open all changes in a tab"
+          aria-label="Open all changes in a tab"
+          className="grid size-[22px] flex-none place-items-center rounded text-ink-faint transition-colors hover:bg-hover hover:text-ink"
+        >
+          <ExternalLinkIcon size={13} />
+        </button>
       </div>
 
+      {fileView === 'inline' ? (
+        <AllDiffsView
+          path={path}
+          source={source}
+          files={files}
+          loading={loading}
+          error={error}
+          onOpenFileInTab={onSelectFile}
+        />
+      ) : (
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
         {error && <p className="px-1 py-2 text-[12px] text-del">{error}</p>}
         {!error && loading && files.length === 0 && (
@@ -322,6 +318,7 @@ export function ChangedFiles({
           />
         )}
       </div>
+      )}
     </div>
   );
 }

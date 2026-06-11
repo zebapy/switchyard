@@ -6,6 +6,7 @@ import { useProjectsStore } from '../../stores/projects';
 import { goToWorkspace } from '../../router';
 import { SessionRow } from './SessionRow';
 import { AddMenu } from './AddMenu';
+import { ArchiveConfirmDialog } from './ArchiveConfirmDialog';
 import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon, ArchiveIcon } from '../icons';
 import type { WorktreeInfo, PrInfo, WorktreeArchiveStatus } from '../../types/project';
 
@@ -95,7 +96,6 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const addTab = useWorkspaceStore((s) => s.addTab);
-  const deleteWorktree = useProjectsStore((s) => s.deleteWorktree);
   const archiveWorktree = useProjectsStore((s) => s.archiveWorktree);
   const getWorktreeArchiveStatus = useProjectsStore((s) => s.getWorktreeArchiveStatus);
   const expandProject = useProjectsStore((s) => s.expandProject);
@@ -106,6 +106,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const [archiveStatus, setArchiveStatus] = useState<WorktreeArchiveStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const inWorkspace = useLocation().pathname.startsWith('/workspace');
   const isWindowActive = activeWindowId === path && inWorkspace;
@@ -141,15 +142,10 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
     setOpen((v) => !v);
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    deleteWorktree(projectPath, basename(path)).catch(() => null);
-  };
-
-  // Fetch fresh archive eligibility each time the menu opens — dirty counts and
-  // lock state can change between opens. The base worktree never queries.
-  const handleMenuOpenChange = (menuOpen: boolean) => {
-    if (!menuOpen || isMain) return;
+  // Fetch fresh archive eligibility — dirty counts and lock state can change
+  // between opens. The base worktree never queries.
+  const fetchArchiveStatus = () => {
+    if (isMain) return;
     setArchiveError(null);
     setArchiveStatus(null);
     setStatusLoading(true);
@@ -159,18 +155,26 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
       .finally(() => setStatusLoading(false));
   };
 
-  const handleArchive = () => {
-    const dirtyLines =
-      (archiveStatus?.uncommitted_added ?? 0) + (archiveStatus?.uncommitted_deleted ?? 0);
-    const warning =
-      dirtyLines > 0
-        ? `\n\n${dirtyLines} uncommitted line${dirtyLines === 1 ? '' : 's'} will be discarded.`
-        : '';
-    const ok = confirm(
-      `Archive worktree "${branchName}"?\n\n` +
-        `This removes its working directory. The branch and its commits stay in the repo.${warning}`,
-    );
-    if (!ok) return;
+  const handleMenuOpenChange = (menuOpen: boolean) => {
+    if (!menuOpen) return;
+    fetchArchiveStatus();
+  };
+
+  // The row's X is the same archive action as the context menu — confirm first,
+  // refreshing the dirty-line count so the discard warning is accurate.
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    fetchArchiveStatus();
+    setConfirmArchive(true);
+  };
+
+  const dirtyLines =
+    (archiveStatus?.uncommitted_added ?? 0) + (archiveStatus?.uncommitted_deleted ?? 0);
+
+  const handleArchive = () => setConfirmArchive(true);
+
+  const runArchive = () => {
+    setConfirmArchive(false);
     archiveWorktree(projectPath, basename(path)).catch((e) => setArchiveError(String(e)));
   };
 
@@ -185,7 +189,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
               className={
                 'group relative flex w-full items-center gap-[7px] rounded-lg px-2 py-1.5 text-left transition-colors ' +
                 (isWindowActive
-                  ? "bg-ember-tint before:absolute before:-left-2.5 before:top-1/2 before:h-[15px] before:w-[3px] before:-translate-y-1/2 before:rounded-[3px] before:bg-ember-strong before:content-['']"
+                  ? "bg-active before:absolute before:-left-2.5 before:top-1/2 before:h-[15px] before:w-[3px] before:-translate-y-1/2 before:rounded-[3px] before:bg-ember-strong before:content-['']"
                   : 'hover:bg-hover')
               }
             />
@@ -200,7 +204,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
         >
           <ChevronIcon size={11} />
         </span>
-        <span className={`grid place-items-center ${isMain ? 'text-ember' : 'text-ink-faint'}`}>
+        <span className={`grid place-items-center ${isMain ? 'text-ink-dim' : 'text-ink-faint'}`}>
           {isMain ? <BaseBranchIcon size={14} /> : <WorktreeIcon size={14} />}
         </span>
         <span className={`min-w-0 flex-1 truncate font-mono text-[13px] font-medium tracking-[-0.2px] ${isWindowActive ? 'text-ink' : 'text-ink-dim'}`}>
@@ -231,8 +235,8 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
               role="button"
               tabIndex={-1}
               onClick={handleDelete}
-              title="Delete worktree"
-              className="grid size-[18px] cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-ember-tint hover:text-del"
+              title="Archive worktree"
+              className="grid size-[18px] cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-del"
             >
               <CloseIcon size={11} />
             </span>
@@ -254,6 +258,14 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
       </ContextMenu.Root>
+
+      <ArchiveConfirmDialog
+        isOpen={confirmArchive}
+        branchName={branchName}
+        dirtyLines={dirtyLines}
+        onCancel={() => setConfirmArchive(false)}
+        onConfirm={runArchive}
+      />
 
       <div className={`grid transition-[grid-template-rows] duration-[260ms] ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden">

@@ -173,7 +173,7 @@ export function AgentSettings() {
           </div>
           <button
             type="submit"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink"
           >
             <PlusIcon size={12} /> Add agent
           </button>

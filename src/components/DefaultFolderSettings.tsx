@@ -6,7 +6,7 @@ const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const rowClass = 'flex items-center gap-3 rounded-[9px] border border-line bg-app px-2.5 py-2';
 const valClass = 'flex-1 truncate font-mono text-xs text-ink-dim';
-const btnClass = 'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember';
+const btnClass = 'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink';
 
 export function DefaultFolderSettings() {
   const scanRoot = useProjectsStore((s) => s.scanRoot);

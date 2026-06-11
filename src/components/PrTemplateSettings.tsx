@@ -8,7 +8,7 @@ import {
 const h3Class = 'mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-ink-ghost';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const btnClass =
-  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember disabled:cursor-default disabled:opacity-50';
+  'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-50';
 const codeClass = 'rounded border border-line-soft bg-side px-1 py-0.5 font-mono text-[11px] text-ember';
 
 /** Editor for the prompt sent to a new agent chat when creating a pull request. */

@@ -84,6 +84,7 @@ pub fn run() {
             // Project commands
             projects::scan_projects,
             projects::get_git_info,
+            projects::get_git_host,
             projects::get_worktree_diff_stats,
             projects::get_pinned_projects,
             projects::toggle_pin,

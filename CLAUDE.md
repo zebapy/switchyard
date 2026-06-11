@@ -1,5 +1,9 @@
 # Switchyard
 
+## Development
+
+When the user asks to "boot", "run", "run dev", or "start the app", run `pnpm tauri dev` (the full desktop app), not `pnpm dev` (vite frontend only).
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/). Every commit subject is prefixed with a type so changes can be grouped and versioned:

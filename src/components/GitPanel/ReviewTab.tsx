@@ -30,7 +30,7 @@ export function ReviewTab({ prInfo }: ReviewTabProps) {
       <button
         type="button"
         onClick={() => openUrl(prInfo.url).catch(() => null)}
-        className="inline-flex items-center gap-1.5 self-start rounded-lg border border-line bg-app px-2.5 py-1.5 text-xs text-ink-dim transition hover:border-ember-edge hover:bg-ember-tint hover:text-ember"
+        className="inline-flex items-center gap-1.5 self-start rounded-lg border border-line bg-app px-2.5 py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink"
       >
         <ExternalLinkIcon size={13} /> View PR on web
       </button>
