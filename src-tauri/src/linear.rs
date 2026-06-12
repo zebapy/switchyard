@@ -128,10 +128,10 @@ pub async fn linear_login(app: AppHandle) -> Result<(), String> {
         format!("token exchange failed: {res}")
     })?;
     store_token(token).map_err(|e| {
-        eprintln!("[linear] keychain write failed: {e}");
+        eprintln!("[linear] token store write failed: {e}");
         e
     })?;
-    eprintln!("[linear] token stored in keychain");
+    eprintln!("[linear] token stored");
     Ok(())
 }
 
