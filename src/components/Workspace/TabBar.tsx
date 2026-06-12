@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
+import { useUiStore } from '../../stores/ui';
 import { AddMenu } from '../ProjectTree/AddMenu';
 import { BranchMenu } from '../GitPanel/BranchMenu';
 import { OpenInMenu } from './OpenInMenu';
@@ -22,6 +23,14 @@ function isRunning(pane: PaneInfo | undefined): boolean {
   return !!pane && pane.kind === 'Agent' && (pane.agentStatus === 'working' || pane.agentStatus === 'waiting');
 }
 
+/** ⌘N hint for the tab at `index`: ⌘1…8 map to the first eight tabs and ⌘9
+ *  always jumps to the last — matching the keybindings in useKeybindings. */
+function tabSwitchHint(index: number, total: number): string | null {
+  if (index < 8) return `⌘${index + 1}`;
+  if (index === total - 1) return '⌘9';
+  return null;
+}
+
 /**
  * Per-Workspace tab strip across the top of the main content area. Mirrors the
  * sidebar's session list as horizontal tabs for the active Workspace. One entry
@@ -37,6 +46,7 @@ export function TabBar() {
   const gitInfo = useProjectsStore((s) => s.gitInfo);
   const gitPanelOpen = useGitPanelStore((s) => s.open);
   const toggleGitPanel = useGitPanelStore((s) => s.toggle);
+  const metaHeld = useUiStore((s) => s.metaHeld);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
   const win = activeWindowId ? windows.get(activeWindowId) ?? null : null;
@@ -99,7 +109,7 @@ export function TabBar() {
 
       {/* Bottom row: the tab strip. */}
       <div data-tauri-drag-region className="scroll-thin flex min-w-0 items-center gap-1 overflow-x-auto px-2 py-1.5">
-      {win.tabs.map((tab) => {
+      {win.tabs.map((tab, index) => {
         const leaves = leafIds(tab.paneTree);
         const isSplit = leaves.length > 1;
         const primary = panes.get(leaves[0]);
@@ -107,6 +117,7 @@ export function TabBar() {
         const running = leaves.some((id) => isRunning(panes.get(id)));
         const active = win.activeTabId === tab.id;
         const label = isSplit ? tab.label : primary?.customName ?? primary?.title ?? tab.label;
+        const switchHint = metaHeld ? tabSwitchHint(index, win.tabs.length) : null;
 
         if (editingTabId === tab.id) {
           return (
@@ -138,6 +149,11 @@ export function TabBar() {
             </span>
             <span className="min-w-0 flex-1 truncate text-left">{label}</span>
             {running && <span className="size-1.5 shrink-0 rounded-full bg-green animate-pulse-dot" title="running" />}
+            {switchHint && (
+              <kbd className="shrink-0 rounded border border-line bg-app px-1 py-px font-mono text-[11px] leading-none text-ember">
+                {switchHint}
+              </kbd>
+            )}
             <span
               role="button"
               tabIndex={-1}

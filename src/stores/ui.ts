@@ -47,6 +47,14 @@ interface UiState {
   openScriptPalette: (args: OpenScriptPaletteArgs) => void;
   closeScriptPalette: () => void;
 
+  /** True while the Option/Alt key is held — drives the ⌥N project-switch hints in the tree. */
+  altHeld: boolean;
+  setAltHeld: (v: boolean) => void;
+
+  /** True while the Command/Meta key is held — drives the ⌘N tab-switch hints in the tab strip. */
+  metaHeld: boolean;
+  setMetaHeld: (v: boolean) => void;
+
   // Overlays
   paletteOpen: boolean;
   helpOpen: boolean;
@@ -82,6 +90,12 @@ export const useUiStore = create<UiState>((set) => ({
     set({ scriptPalette: { open: true, projectPath, windowPath, label } }),
   closeScriptPalette: () =>
     set({ scriptPalette: { open: false, projectPath: null, windowPath: null, label: null } }),
+
+  altHeld: false,
+  setAltHeld: (v) => set((s) => (s.altHeld === v ? s : { altHeld: v })),
+
+  metaHeld: false,
+  setMetaHeld: (v) => set((s) => (s.metaHeld === v ? s : { metaHeld: v })),
 
   paletteOpen: false,
   helpOpen: false,

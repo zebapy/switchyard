@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useProjectsStore } from '../stores/projects';
 import { useGitPanelStore } from '../stores/gitPanel';
+import { useUiStore } from '../stores/ui';
 import { goToWorkspace } from '../router';
 
 interface UseKeybindingsOptions {
@@ -52,6 +53,25 @@ function detachActivePane() {
 function closeActiveTab() {
   const { state, win } = activePane();
   if (win?.activeTabId) state.removeTab(win.activeTabId);
+}
+
+/** Switch to the Nth top-level project (1-based) — same as clicking its base
+ *  branch in the sidebar: reveal its window if open, else start the default
+ *  agent there. Worktree children are excluded so numbering matches the tree. */
+function switchToProjectByIndex(n: number) {
+  const navList = useProjectsStore.getState().projects.filter((p) => !p.worktree_parent);
+  const project = navList[n - 1];
+  if (!project) return;
+  const ws = useWorkspaceStore.getState();
+  const win = ws.windows.get(project.path);
+  if (win && win.tabs.length > 0) {
+    ws.switchWindow(project.path);
+    ws.setActiveTab(win.activeTabId ?? win.tabs[0].id);
+  } else {
+    const agent = useProjectsStore.getState().agents[0]?.command;
+    ws.addTab(project.path, project.name, { kind: 'Agent', cwd: project.path, agent });
+  }
+  goToWorkspace();
 }
 
 export function useKeybindings({
@@ -120,6 +140,14 @@ export function useKeybindings({
       }
 
       // ---- Windows ----
+
+      // ⌥1..9: switch to the Nth top-level project. macOS turns Option+digit into a
+      // special glyph in e.key (⌥1 → "¡"), so match e.code instead.
+      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
+        e.preventDefault();
+        switchToProjectByIndex(Number(e.code.slice(5)));
+        return;
+      }
 
       // Ctrl+Shift+`: previous window
       if (e.ctrlKey && e.shiftKey && (e.key === '`' || e.key === '~')) {
@@ -232,4 +260,27 @@ export function useKeybindings({
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
   }, [onTogglePalette, onFocusTree, onToggleHelp, onToggleSettings, onQuit]);
+
+  // Mirror the Option/Alt and Command/Meta held state into the UI store so the
+  // project tree can show ⌥N switch hints and the tab strip can show ⌘N hints.
+  // Reset on blur so a hint can't stick if focus is lost mid-hold (keyup never fires).
+  useEffect(() => {
+    const { setAltHeld, setMetaHeld } = useUiStore.getState();
+    const onKey = (e: KeyboardEvent) => {
+      setAltHeld(e.altKey);
+      setMetaHeld(e.metaKey);
+    };
+    const onBlur = () => {
+      setAltHeld(false);
+      setMetaHeld(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKey, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKey, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 }

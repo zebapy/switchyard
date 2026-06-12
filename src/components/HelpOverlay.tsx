@@ -23,6 +23,7 @@ const KEYBINDINGS = [
     { key: 'q / Esc', desc: 'Blur / clear filter' },
   ]},
   { section: 'Windows', bindings: [
+    { key: '⌥1…9', desc: 'Switch to project by number' },
     { key: 'Ctrl+`', desc: 'Next window' },
     { key: 'Ctrl+Shift+`', desc: 'Previous window' },
   ]},

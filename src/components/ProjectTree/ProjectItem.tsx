@@ -60,6 +60,10 @@ export function ProjectItem({
   const addTab = useWorkspaceStore((s) => s.addTab);
   const pendingWorktrees = useProjectsStore((s) => s.pendingWorktrees);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
+  const altHeld = useUiStore((s) => s.altHeld);
+
+  // ⌥1…9 switch to a project by position; show the hint only on rows that have one.
+  const switchHint = altHeld && index !== undefined && index < 9 ? `⌥${index + 1}` : null;
 
   const pending = useMemo(
     () => pendingWorktrees.filter((p) => p.projectPath === project.path),
@@ -137,6 +141,11 @@ export function ProjectItem({
           <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[-0.1px] text-ink">
             {project.name}
           </span>
+          {switchHint && (
+            <kbd className="shrink-0 rounded border border-line bg-app px-1 py-px font-mono text-[11px] leading-none text-ember">
+              {switchHint}
+            </kbd>
+          )}
           {project.is_git && (
             <span className="flex shrink-0 items-center gap-0.5">
               <span
