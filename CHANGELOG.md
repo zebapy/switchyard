@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-17
+
 ### Changed
 
 - The stacked "all changed files" diff (vs base branch, plus the inline and full-width tab views) now lazy-mounts each file: only sections near the viewport render their diff2html table and comment overlay, while offscreen files collapse to a measured-height placeholder. A large "vs base" diff no longer keeps every file's rendered diff in the DOM at once, fixing the scroll/render lag on big changes.
