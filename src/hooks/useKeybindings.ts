@@ -141,10 +141,14 @@ export function useKeybindings({
 
       // ---- Windows ----
 
-      // ⌥1..9: switch to the Nth top-level project. macOS turns Option+digit into a
-      // special glyph in e.key (⌥1 → "¡"), so match e.code instead.
+      // ⌥1..9: switch to the Nth top-level project. Option (not Control) because
+      // macOS reserves ⌃1..9 for Mission Control "switch to Desktop N" — the OS
+      // eats those before the app ever sees them. Match e.code so the special
+      // glyphs Option produces (¡™£…) don't matter; stopPropagation so the
+      // keystroke doesn't also leak an Esc-sequence into a focused terminal.
       if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
         e.preventDefault();
+        e.stopPropagation();
         switchToProjectByIndex(Number(e.code.slice(5)));
         return;
       }

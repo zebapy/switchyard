@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { ContextMenu } from '@base-ui-components/react/context-menu';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -92,6 +92,8 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const isMain = worktree.is_main;
   const win = useWorkspaceStore((s) => s.windows.get(path));
   const activeWindowId = useWorkspaceStore((s) => s.activeWindowId);
+  const revealNonce = useWorkspaceStore((s) => s.revealNonce);
+  const rowRef = useRef<HTMLDivElement>(null);
   const panes = useWorkspaceStore((s) => s.panes);
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
@@ -111,15 +113,21 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const inWorkspace = useLocation().pathname.startsWith('/workspace');
   const isWindowActive = activeWindowId === path && inWorkspace;
 
-  // When this branch's window becomes the active workspace (Cmd+1-9, window
-  // cycling, focusing a pane, session restore), reveal it in the sidebar: open
-  // the session list and expand the parent project. Deps only on the active
-  // window, so a manual collapse sticks until the next activation.
+  // Whenever a tab in this branch's window is focused or navigated to — the
+  // window becoming active (Cmd+1-9, window cycling, focusing a pane, session
+  // restore), the active tab changing within an already-active window, or an
+  // explicit reveal request (dashboard tile / session row click, which bumps
+  // revealNonce so re-selecting the same tab still fires) — reveal it in the
+  // sidebar: open the session list, expand the parent project, and scroll the
+  // row into view. Keying on the active tab too means focusing a tab re-reveals
+  // it even after a manual collapse.
+  const activeTabId = win?.activeTabId;
   useEffect(() => {
     if (activeWindowId !== path) return;
     setOpen(true);
     expandProject(projectPath);
-  }, [activeWindowId, path, projectPath, expandProject]);
+    rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeWindowId, activeTabId, revealNonce, path, projectPath, expandProject]);
   const branchName = worktree.branch ?? basename(path);
   const hasDiff = worktree.added > 0 || worktree.deleted > 0;
 
@@ -179,7 +187,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   };
 
   return (
-    <div className="relative">
+    <div ref={rowRef} className="relative">
       <ContextMenu.Root onOpenChange={handleMenuOpenChange}>
         <ContextMenu.Trigger
           render={
@@ -270,7 +278,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
       <div className={`grid transition-[grid-template-rows] duration-[260ms] ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden">
           <div className="relative pl-[19px] before:absolute before:left-2 before:-top-0.5 before:bottom-2 before:w-px before:bg-guide before:content-['']">
-            {tabs.map((tab) => (
+            {tabs.map((tab, index) => (
               <SessionRow
                 key={tab.id}
                 windowPath={path}
@@ -278,6 +286,9 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
                 panes={panes}
                 isActiveTab={isWindowActive && win?.activeTabId === tab.id}
                 activePaneId={win?.activePaneId ?? null}
+                index={index}
+                tabCount={tabs.length}
+                windowActive={isWindowActive}
               />
             ))}
             <AddMenu

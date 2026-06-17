@@ -99,12 +99,19 @@ interface WorkspaceState {
   panes: Map<string, PaneInfo>;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  /** Bumped on every explicit "navigate to this window" action (dashboard tile,
+   *  session row click). The sidebar's branch rows watch it to re-reveal the
+   *  active window — expand + open + scroll into view — even when the same tab
+   *  is re-activated and no other state changes. */
+  revealNonce: number;
 
   // Window actions
   openWindow: (projectPath: string) => void;
   switchWindow: (projectPath: string) => void;
   closeWindow: (projectPath: string) => Promise<void>;
   cycleWindowByRecency: (direction: 1 | -1) => void;
+  /** Request the sidebar reveal the active window's branch (see revealNonce). */
+  revealWindow: () => void;
 
   // Tab actions (operate on a specific window — defaults to active)
   addTab: (projectPath: string, label: string, opts?: AddTabOptions) => string;
@@ -203,6 +210,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   panes: new Map(),
   sidebarWidth: 260,
   sidebarCollapsed: false,
+  revealNonce: 0,
+
+  revealWindow: () => set((state) => ({ revealNonce: state.revealNonce + 1 })),
 
   getActiveWindow: () => {
     const { windows, activeWindowId } = get();

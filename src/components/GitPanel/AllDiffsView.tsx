@@ -11,12 +11,15 @@ interface AllDiffsViewProps {
   error: string;
   /** Open one file's diff as its own full workspace tab. */
   onOpenFileInTab: (file: string) => void;
+  /** Host pane id — lets a line comment open a chat in the right window.
+   *  Absent in the sidebar inline view. */
+  paneId?: string;
 }
 
 /** PR-style stacked diffs: every changed file's diff shown inline and
  *  collapsible, so the whole change reads top-to-bottom without clicking each
  *  file. Used both in the Git panel (inline view) and the full-width tab. */
-export function AllDiffsView({ path, source, files, loading, error, onOpenFileInTab }: AllDiffsViewProps) {
+export function AllDiffsView({ path, source, files, loading, error, onOpenFileInTab, paneId }: AllDiffsViewProps) {
   // Track which files the user explicitly collapsed; everything else is open.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -69,6 +72,7 @@ export function AllDiffsView({ path, source, files, loading, error, onOpenFileIn
             expanded={!collapsed.has(file.path)}
             onToggle={() => toggle(file.path)}
             onOpenInTab={() => onOpenFileInTab(file.path)}
+            paneId={paneId}
           />
         ))}
       </div>

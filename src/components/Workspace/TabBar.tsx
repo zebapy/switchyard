@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
 import { useUiStore } from '../../stores/ui';
+import { tabSwitchHint } from '../../lib/tabHints';
 import { AddMenu } from '../ProjectTree/AddMenu';
 import { BranchMenu } from '../GitPanel/BranchMenu';
 import { OpenInMenu } from './OpenInMenu';
@@ -21,14 +22,6 @@ function leafIds(tree: PaneTree): string[] {
 
 function isRunning(pane: PaneInfo | undefined): boolean {
   return !!pane && pane.kind === 'Agent' && (pane.agentStatus === 'working' || pane.agentStatus === 'waiting');
-}
-
-/** ⌘N hint for the tab at `index`: ⌘1…8 map to the first eight tabs and ⌘9
- *  always jumps to the last — matching the keybindings in useKeybindings. */
-function tabSwitchHint(index: number, total: number): string | null {
-  if (index < 8) return `⌘${index + 1}`;
-  if (index === total - 1) return '⌘9';
-  return null;
 }
 
 /**

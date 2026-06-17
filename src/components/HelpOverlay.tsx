@@ -70,12 +70,12 @@ export function HelpOverlay({ isOpen, onClose }: HelpOverlayProps) {
         </div>
         {KEYBINDINGS.map((section) => (
           <div key={section.section} className="mb-[18px]">
-            <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-ink-ghost">{section.section}</h3>
+            <h3 className="mb-2.5 text-xs font-semibold text-ink-faint">{section.section}</h3>
             <div className="flex flex-col gap-1.5">
               {section.bindings.map((b) => (
-                <div key={b.key} className="flex items-center gap-3 text-[13px] text-ink">
-                  <kbd className="min-w-[110px] rounded-md border border-line bg-app px-1.5 py-0.5 text-center font-mono text-xs text-ember">{b.key}</kbd>
+                <div key={b.key} className="flex items-center justify-between gap-3 text-[13px] text-ink">
                   <span>{b.desc}</span>
+                  <kbd className="min-w-[110px] rounded-md border border-line bg-app px-1.5 py-0.5 text-center font-mono text-xs text-ink-faint">{b.key}</kbd>
                 </div>
               ))}
             </div>

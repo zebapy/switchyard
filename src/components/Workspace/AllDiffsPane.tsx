@@ -55,6 +55,7 @@ export function AllDiffsPane({ paneInfo }: AllDiffsPaneProps) {
         loading={loading}
         error={error}
         onOpenFileInTab={(file) => openFileDiffInTab(paneInfo.cwd, file, source)}
+        paneId={paneInfo.id}
       />
     </div>
   );

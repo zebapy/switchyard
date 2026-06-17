@@ -10,6 +10,14 @@ export interface GitInfo {
   worktrees: WorktreeInfo[];
 }
 
+/** Hosting provider + owner parsed from a repo's `origin` remote. */
+export interface GitRemoteInfo {
+  /** "github" | "gitlab" | "bitbucket", or null for unknown/self-hosted hosts. */
+  host: string | null;
+  /** Repo owner (org or user), or null when it can't be parsed. */
+  owner: string | null;
+}
+
 export interface WorktreeInfo {
   path: string;
   branch: string | null;

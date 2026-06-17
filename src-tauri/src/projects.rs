@@ -601,6 +601,24 @@ fn remote_host(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
+/// Extract the repo owner (org or user) from a git remote URL — the first path
+/// segment after the host. Handles HTTPS, `ssh://`, and scp-like
+/// (`git@host:owner/repo`) forms; strips a trailing `.git`. Returns None when
+/// no owner can be parsed.
+fn remote_owner(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches(".git");
+    let path = if let Some(after_scheme) = url.split("://").nth(1) {
+        let after_user = after_scheme.rsplit('@').next().unwrap_or(after_scheme);
+        // Drop the host, keep the remainder of the path.
+        after_user.splitn(2, ['/', ':']).nth(1)?.to_string()
+    } else {
+        // scp-like: git@host:owner/repo
+        url.split(':').nth(1)?.to_string()
+    };
+    let owner = path.trim_start_matches('/').split('/').next()?;
+    (!owner.is_empty()).then(|| owner.to_string())
+}
+
 /// Identify the git hosting provider from a remote URL, e.g. "github",
 /// "gitlab", "bitbucket". Matches on the host so self-hosted instances
 /// (`gitlab.mycorp.com`) are recognized too. Returns None for unrecognized
@@ -619,18 +637,34 @@ fn git_host_from_url(url: &str) -> Option<String> {
     Some(provider.to_string())
 }
 
-/// Detect the git hosting provider for the repo at `path` from its `origin`
-/// remote. Returns None when there's no repo, no `origin`, or the host is
-/// unrecognized — a missing remote is not an error, just "no host icon".
+/// Hosting provider and owner parsed from a repo's `origin` remote, used to
+/// pick the project icon: the owner avatar when known, else the host mark.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitRemoteInfo {
+    /// "github" | "gitlab" | "bitbucket", or None for unknown/self-hosted hosts.
+    pub host: Option<String>,
+    /// Repo owner (org or user), or None when it can't be parsed.
+    pub owner: Option<String>,
+}
+
+/// Detect the hosting provider and owner for the repo at `path` from its
+/// `origin` remote. Returns None when there's no repo, no `origin`, or no URL —
+/// a missing remote is not an error, just "no host icon".
 #[tauri::command(async)]
-pub fn get_git_host(path: String) -> Result<Option<String>, String> {
+pub fn get_git_remote_info(path: String) -> Result<Option<GitRemoteInfo>, String> {
     let Ok(repo) = git2::Repository::discover(&path) else {
         return Ok(None);
     };
     let Ok(remote) = repo.find_remote("origin") else {
         return Ok(None);
     };
-    Ok(remote.url().and_then(git_host_from_url))
+    let Some(url) = remote.url() else {
+        return Ok(None);
+    };
+    Ok(Some(GitRemoteInfo {
+        host: git_host_from_url(url),
+        owner: remote_owner(url),
+    }))
 }
 
 #[tauri::command(async)]
@@ -1181,7 +1215,7 @@ pub fn set_project_sort(
 
 #[cfg(test)]
 mod tests {
-    use super::{git_host_from_url, remote_host};
+    use super::{git_host_from_url, remote_host, remote_owner};
 
     #[test]
     fn parses_host_from_url_forms() {
@@ -1225,5 +1259,26 @@ mod tests {
         );
         // Unknown host → no icon.
         assert_eq!(git_host_from_url("https://git.example.com/o/r.git"), None);
+    }
+
+    #[test]
+    fn parses_owner_from_url_forms() {
+        assert_eq!(
+            remote_owner("https://github.com/acme/repo.git").as_deref(),
+            Some("acme")
+        );
+        assert_eq!(
+            remote_owner("https://git@gitlab.com/acme/repo.git").as_deref(),
+            Some("acme")
+        );
+        assert_eq!(
+            remote_owner("ssh://git@bitbucket.org/acme/repo.git").as_deref(),
+            Some("acme")
+        );
+        assert_eq!(
+            remote_owner("git@github.com:acme/repo.git").as_deref(),
+            Some("acme")
+        );
+        assert_eq!(remote_owner("not a url"), None);
     }
 }

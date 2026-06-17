@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useUiStore } from '../../stores/ui';
 import { goToWorkspace } from '../../router';
+import { tabSwitchHint } from '../../lib/tabHints';
 import type { PaneInfo, PaneTree, Tab } from '../../types/pane';
 import { AiIcon, TermIcon, SplitIcon, SplitBadgeIcon, ChevronIcon, CloseIcon } from '../icons';
 import { RenameField } from './RenameField';
@@ -49,21 +51,38 @@ interface SessionRowProps {
   /** This tab is the focused session (its window is active and we're in pane view). */
   isActiveTab: boolean;
   activePaneId: string | null;
+  /** Position of this tab within its window, and the window's tab count — used to
+   *  render the ⌘N switch hint. */
+  index: number;
+  tabCount: number;
+  /** Whether this row's window is the active one (⌘N only switches tabs there). */
+  windowActive: boolean;
 }
 
-export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }: SessionRowProps) {
+export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId, index, tabCount, windowActive }: SessionRowProps) {
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
+  const revealWindow = useWorkspaceStore((s) => s.revealWindow);
   const setPaneName = useWorkspaceStore((s) => s.setPaneName);
   const removeTab = useWorkspaceStore((s) => s.removeTab);
+  const metaHeld = useUiStore((s) => s.metaHeld);
   const [open, setOpen] = useState(true);
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
+
+  // ⌘N switches tabs only within the active window, so only hint there.
+  const switchHint = metaHeld && windowActive ? tabSwitchHint(index, tabCount) : null;
+  const hintKbd = switchHint ? (
+    <kbd className="shrink-0 rounded border border-line bg-app px-1 py-px font-mono text-[11px] leading-none text-ember">
+      {switchHint}
+    </kbd>
+  ) : null;
 
   const select = (paneId?: string) => {
     switchWindow(windowPath);
     setActiveTab(tab.id);
     if (paneId) setActivePane(paneId);
+    revealWindow();
     goToWorkspace();
   };
 
@@ -112,6 +131,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {isRunning(pane) && <span className="size-1.5 shrink-0 rounded-full bg-green animate-pulse-dot" title="running" />}
+        {hintKbd}
         <CloseTabButton onClose={() => removeTab(tab.id)} />
       </button>
     );
@@ -133,6 +153,7 @@ export function SessionRow({ windowPath, tab, panes, isActiveTab, activePaneId }
         <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-[7px] font-mono text-xs leading-[17px] text-ink-faint">
           <SplitBadgeIcon size={10} /> {leaves.length}
         </span>
+        {hintKbd}
         <CloseTabButton onClose={() => removeTab(tab.id)} />
       </button>
       {open && (

@@ -47,6 +47,7 @@ export function Dashboard() {
   const switchWindow = useWorkspaceStore((s) => s.switchWindow);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
+  const revealWindow = useWorkspaceStore((s) => s.revealWindow);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
   const openCloneModal = useUiStore((s) => s.openCloneModal);
 
@@ -64,8 +65,9 @@ export function Dashboard() {
     switchWindow(wtPath);
     setActiveTab(tab.id);
     if (paneId) setActivePane(paneId);
+    revealWindow();
     goToWorkspace();
-  }, [switchWindow, setActiveTab, setActivePane]);
+  }, [switchWindow, setActiveTab, setActivePane, revealWindow]);
 
   const handleAddLocalFolder = async () => {
     const sel = await open({ directory: true, multiple: false, title: 'Select project folder' });

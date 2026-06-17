@@ -6,7 +6,10 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import { BranchRow } from './BranchRow';
 import { PendingBranchRow } from './PendingBranchRow';
 import { WorktreeSortMenu } from './WorktreeSortMenu';
-import { ChevronIcon, GitHostIcon, PlusIcon, BranchPlusIcon, ClearIcon } from '../icons';
+import { WorktreeSortButton } from './WorktreeSortButton';
+import { Tooltip } from '../Tooltip';
+import { ChevronIcon, PlusIcon, BranchPlusIcon, ClearIcon } from '../icons';
+import { ProjectIcon } from './ProjectIcon';
 import { DEFAULT_WORKTREE_SORT, type ProjectInfo, type WorktreeInfo } from '../../types/project';
 import { sortWorktrees } from '../../lib/sortWorktrees';
 import { goToWorkspace } from '../../router';
@@ -81,7 +84,7 @@ export function ProjectItem({
   }
 
   const isExpanded = expandedProjects.has(project.path);
-  const gitHost = useProjectsStore((s) => s.gitHosts.get(project.path));
+  const gitRemote = useProjectsStore((s) => s.gitHosts.get(project.path));
   const git = gitInfo.get(project.path);
   const pr = prInfo.get(project.path) ?? null;
 
@@ -105,6 +108,27 @@ export function ProjectItem({
   }, [git, sort, project.is_git, project.path]);
 
   const baseBranch = git?.branch ?? worktrees.find((w) => w.is_main)?.branch ?? null;
+
+  // Merge in-flight placeholders into the same sorted stream as the real linked
+  // worktrees, so the spinner sits exactly where its worktree will land instead
+  // of being pinned under main and then jumping. A fresh worktree shares the
+  // base branch HEAD, so mirror main's last commit (for the 'updated' sort) and
+  // treat it as newest-created (for the 'created' sort).
+  const belowMain = useMemo<WorktreeInfo[]>(() => {
+    const mainLastCommit = worktrees.find((w) => w.is_main)?.last_commit_unix ?? null;
+    const nowUnix = Math.floor(Date.now() / 1000);
+    const placeholders = pending.map<WorktreeInfo>((p) => ({
+      path: `pending:${p.id}`,
+      branch: p.label,
+      is_main: false,
+      last_commit_unix: mainLastCommit,
+      created_unix: nowUnix,
+      added: 0,
+      deleted: 0,
+    }));
+    const linked = worktrees.filter((w) => !w.is_main);
+    return sortWorktrees([...linked, ...placeholders], sort);
+  }, [worktrees, pending, sort]);
 
   const draggable = index !== undefined;
 
@@ -137,7 +161,7 @@ export function ProjectItem({
           <span className={`grid place-items-center text-ink-faint transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
             <ChevronIcon size={12} />
           </span>
-          <span className="grid place-items-center text-ink-dim"><GitHostIcon host={gitHost} size={15} /></span>
+          <span className="grid place-items-center text-ink-dim"><ProjectIcon remote={gitRemote} size={15} /></span>
           <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[-0.1px] text-ink">
             {project.name}
           </span>
@@ -148,24 +172,30 @@ export function ProjectItem({
           )}
           {project.is_git && (
             <span className="flex shrink-0 items-center gap-0.5">
-              <span
-                role="button"
-                tabIndex={-1}
-                title="New worktree (random name)"
-                onClick={(e) => { e.stopPropagation(); void handleQuickWorktree(); }}
-                className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-ink"
-              >
-                <PlusIcon size={13} />
-              </span>
-              <span
-                role="button"
-                tabIndex={-1}
-                title="Create worktree from Linear, branch, or PR…"
-                onClick={(e) => { e.stopPropagation(); openWorktreeModal(project.path, baseBranch); }}
-                className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-ink"
-              >
-                <BranchPlusIcon size={13} />
-              </span>
+              <WorktreeSortButton
+                sort={sort}
+                onSelect={(next) => setProjectSort(project.path, next)}
+              />
+              <Tooltip label="New worktree (random name)">
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  onClick={(e) => { e.stopPropagation(); void handleQuickWorktree(); }}
+                  className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-ink"
+                >
+                  <PlusIcon size={13} />
+                </span>
+              </Tooltip>
+              <Tooltip label="Create worktree from Linear, branch, or PR…">
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  onClick={(e) => { e.stopPropagation(); openWorktreeModal(project.path, baseBranch); }}
+                  className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-ink"
+                >
+                  <BranchPlusIcon size={13} />
+                </span>
+              </Tooltip>
             </span>
           )}
         </ContextMenu.Trigger>
@@ -193,7 +223,7 @@ export function ProjectItem({
         </ContextMenu.Portal>
       </ContextMenu.Root>
 
-      <div className={`grid transition-[grid-template-rows] duration-[260ms] ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+      <div className={`grid ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden">
           <div className="relative pl-[18px] before:absolute before:left-[17px] before:top-0.5 before:bottom-1.5 before:w-px before:bg-guide before:content-['']">
             {worktrees
@@ -201,14 +231,13 @@ export function ProjectItem({
               .map((wt) => (
                 <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={pr} />
               ))}
-            {pending.map((p) => (
-              <PendingBranchRow key={p.id} label={p.label} />
-            ))}
-            {worktrees
-              .filter((wt) => !wt.is_main)
-              .map((wt) => (
+            {belowMain.map((wt) =>
+              wt.path.startsWith('pending:') ? (
+                <PendingBranchRow key={wt.path} label={wt.branch ?? ''} />
+              ) : (
                 <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={null} />
-              ))}
+              ),
+            )}
           </div>
         </div>
       </div>

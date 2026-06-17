@@ -5,10 +5,11 @@ mod projects;
 mod pty;
 mod session;
 mod token_store;
+mod usage;
 
 use pty::PtyState;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -58,7 +59,16 @@ pub fn run() {
                 .item(&PredefinedMenuItem::paste(handle, None)?)
                 .item(&PredefinedMenuItem::select_all(handle, None)?)
                 .build()?;
+            let reload_item = MenuItem::with_id(
+                handle,
+                "reload",
+                "Reload",
+                true,
+                Some("CmdOrCtrl+R"),
+            )?;
             let view_menu = SubmenuBuilder::new(handle, "View")
+                .item(&reload_item)
+                .separator()
                 .item(&PredefinedMenuItem::fullscreen(handle, None)?)
                 .build()?;
             let window_menu = SubmenuBuilder::new(handle, "Window")
@@ -69,6 +79,10 @@ pub fn run() {
             app.on_menu_event(|app, event| {
                 if event.id() == "settings" {
                     let _ = app.emit("menu:settings", ());
+                } else if event.id() == "reload" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.eval("window.location.reload()");
+                    }
                 }
             });
             Ok(())
@@ -84,7 +98,7 @@ pub fn run() {
             // Project commands
             projects::scan_projects,
             projects::get_git_info,
-            projects::get_git_host,
+            projects::get_git_remote_info,
             projects::get_worktree_diff_stats,
             projects::get_pinned_projects,
             projects::toggle_pin,
@@ -113,6 +127,8 @@ pub fn run() {
             session::save_session,
             session::load_session,
             session::clear_session,
+            // Claude usage
+            usage::get_claude_usage,
             // Linear commands
             linear::linear_login,
             linear::linear_query,

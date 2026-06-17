@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectInfo, GitInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort } from '../types/project';
+import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
 import type { ScriptSource } from '../types/scripts';
@@ -39,8 +39,8 @@ interface ProjectsState {
   pins: Set<string>;
   gitInfo: Map<string, GitInfo>;
   prInfo: Map<string, PrInfo | null>;
-  /** Git hosting provider per project path ("github" | "gitlab" | "bitbucket" | null), drives the repo icon. */
-  gitHosts: Map<string, string | null>;
+  /** Hosting provider + owner per project path, drives the project icon (owner avatar, else host mark). */
+  gitHosts: Map<string, GitRemoteInfo | null>;
   scanRoot: string;
   addedProjects: string[];
   useTmux: boolean;
@@ -160,7 +160,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     const entries = await Promise.all(
       missing.map(
         async (path) =>
-          [path, await invoke<string | null>('get_git_host', { path }).catch(() => null)] as const,
+          [path, await invoke<GitRemoteInfo | null>('get_git_remote_info', { path }).catch(() => null)] as const,
       ),
     );
     set((state) => {
