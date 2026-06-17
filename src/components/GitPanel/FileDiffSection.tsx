@@ -1,12 +1,29 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ContextMenu } from '@base-ui-components/react/context-menu';
 import { html as renderDiffHtml } from 'diff2html';
 import { ColorSchemeType } from 'diff2html/lib/types';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './diff2html-theme.css';
 import type { DiffSource, FileStatus } from '../../types/gitpanel';
+import { useWorkspaceStore } from '../../stores/workspace';
+import { openAgentChat } from '../../lib/openAgentChat';
 import { useFileDiff } from './useGitData';
-import { ChevronIcon, ExternalLinkIcon } from '../icons';
+import { DiffCommentOverlay } from './DiffCommentOverlay';
+import { ChevronIcon, ExternalLinkIcon, SparkleIcon } from '../icons';
 import { STATUS_COLOR, STATUS_SHORT, basename, dirname } from './fileStatus';
+
+const SOURCE_LABEL: Record<DiffSource, string> = {
+  unstaged: 'unstaged',
+  staged: 'staged',
+  base: 'vs base branch',
+};
+
+const menuPopupClass =
+  'z-[300] min-w-[180px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
+  'text-[13px] text-ink shadow-[0_16px_48px_rgba(0,0,0,0.5)] outline-none';
+const menuItemClass =
+  'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
+  'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink';
 
 interface FileDiffSectionProps {
   /** Repo root. */
@@ -18,11 +35,25 @@ interface FileDiffSectionProps {
   onToggle: () => void;
   /** Open this single file's diff as its own full workspace tab. */
   onOpenInTab: () => void;
+  /** Host pane id — lets a line comment open a chat in the right window.
+   *  Absent for the sidebar inline view, which falls back to the active window. */
+  paneId?: string;
 }
 
 /** The diff body for one file — fetched lazily (only mounted while expanded). */
-function DiffBody({ path, file, source }: { path: string; file: string; source: DiffSource }) {
+function DiffBody({
+  path,
+  file,
+  source,
+  paneId,
+}: {
+  path: string;
+  file: string;
+  source: DiffSource;
+  paneId?: string;
+}) {
   const { diff, loading, error } = useFileDiff(path, file, source);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const markup = useMemo(() => {
     if (!diff.trim()) return '';
@@ -44,15 +75,104 @@ function DiffBody({ path, file, source }: { path: string; file: string; source: 
 
   // diff2html escapes file content, so this generated markup is safe to inject.
   // `sy-stacked-diff` hides diff2html's own per-file header (we render our own)
-  // and strips its borders so sections sit flush in the stack.
-  return <div className="sy-stacked-diff text-[12px]" dangerouslySetInnerHTML={{ __html: markup }} />;
+  // and strips its borders so sections sit flush in the stack. `pl-[22px]`
+  // reserves a left gutter for the hover comment affordance, matching DiffView.
+  //
+  // The diff markup is clipped (rounded bottom corners) but the relative root
+  // is NOT, so the comment composer can extend past the section's last line
+  // without being cut off. Positions are measured against rootRef.
+  return (
+    <div ref={rootRef} className="relative">
+      <div className="overflow-hidden rounded-b-[5px]">
+        <div
+          className="sy-stacked-diff pl-[22px] text-[12px]"
+          dangerouslySetInnerHTML={{ __html: markup }}
+        />
+      </div>
+      <DiffCommentOverlay
+        scrollRef={rootRef}
+        markup={markup}
+        file={file}
+        cwd={path}
+        source={source}
+        paneId={paneId}
+      />
+    </div>
+  );
 }
 
-export function FileDiffSection({ path, file, source, expanded, onToggle, onOpenInTab }: FileDiffSectionProps) {
+/** Rough rendered height of a file's diff, for the offscreen placeholder.
+ *  Approximate is fine — once the body has mounted we swap in the measured
+ *  height, so this only governs the very first scroll-past. */
+const DIFF_LINE_HEIGHT = 19;
+function estimateBodyHeight(file: FileStatus): number {
+  const lines = file.added + file.deleted + 2; // +2 ≈ hunk header rows
+  return Math.min(Math.max(lines, 3), 400) * DIFF_LINE_HEIGHT;
+}
+
+export function FileDiffSection({ path, file, source, expanded, onToggle, onOpenInTab, paneId }: FileDiffSectionProps) {
   const dir = dirname(file.path);
+  const findWindowForPane = useWorkspaceStore((s) => s.findWindowForPane);
+
+  const explainFile = () => {
+    const projectPath = (paneId ? findWindowForPane(paneId)?.projectPath : null) ?? path;
+    const prompt = [
+      `Explain the changes to ${file.path} in the ${SOURCE_LABEL[source]} diff.`,
+      'Review the diff and summarize what changed and why. Be concise.',
+    ].join('\n');
+    openAgentChat({ projectPath, cwd: path, label: `${basename(file.path)} diff`, prompt });
+  };
+
+  // Lazy-mount: only render the (expensive) diff body while the section is near
+  // the viewport. Offscreen sections collapse to a placeholder of the last
+  // measured height, so a large "vs base" diff keeps only the on-screen files'
+  // diff2html tables + comment overlays in the DOM.
+  const sectionRef = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!expanded) {
+      setInView(false);
+      return;
+    }
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: '800px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded]);
+
+  // Remember the body's real height while it's mounted, so the placeholder that
+  // replaces it on scroll-away doesn't jump the scrollbar.
+  useEffect(() => {
+    if (!inView) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      const height = el.offsetHeight;
+      if (height > 0) setMeasuredHeight(height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [inView]);
+
   return (
-    <div className="overflow-hidden rounded-md border border-line">
-      <div className="group flex items-center gap-2 bg-side px-2 py-1.5">
+    <div ref={sectionRef} className="rounded-md border border-line">
+      <ContextMenu.Root>
+        <ContextMenu.Trigger
+          render={
+            <div
+              className={`group flex items-center gap-2 rounded-t-[5px] bg-side px-2 py-1.5 ${
+                expanded ? '' : 'rounded-b-[5px]'
+              }`}
+            />
+          }
+        >
         <button
           type="button"
           onClick={onToggle}
@@ -82,10 +202,26 @@ export function FileDiffSection({ path, file, source, expanded, onToggle, onOpen
         >
           <ExternalLinkIcon size={13} />
         </button>
-      </div>
+        </ContextMenu.Trigger>
+
+        <ContextMenu.Portal>
+          <ContextMenu.Positioner className="z-[300]">
+            <ContextMenu.Popup className={menuPopupClass}>
+              <ContextMenu.Item className={menuItemClass} onClick={explainFile}>
+                <span className="grid w-4 place-items-center"><SparkleIcon size={14} /></span>
+                Explain this file
+              </ContextMenu.Item>
+            </ContextMenu.Popup>
+          </ContextMenu.Positioner>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
       {expanded && (
-        <div className="border-t border-line">
-          <DiffBody path={path} file={file.path} source={source} />
+        <div ref={bodyRef} className="border-t border-line">
+          {inView ? (
+            <DiffBody path={path} file={file.path} source={source} paneId={paneId} />
+          ) : (
+            <div style={{ height: measuredHeight ?? estimateBodyHeight(file) }} aria-hidden />
+          )}
         </div>
       )}
     </div>

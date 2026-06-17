@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { goToWorkspace } from '../../router';
 import type { DiffSource } from '../../types/gitpanel';
-import { pendingPaneInput } from '../Terminal/pendingInput';
-import { AgentGlyph, PlusIcon, CloseIcon } from '../icons';
+import { openAgentChat } from '../../lib/openAgentChat';
+import { AgentGlyph, PlusIcon, CloseIcon, SparkleIcon } from '../icons';
 
 type LineType = 'ins' | 'del' | 'cntx';
 
@@ -26,7 +25,10 @@ interface DiffCommentOverlayProps {
   file: string;
   cwd: string;
   source: DiffSource;
-  paneId: string;
+  /** The host Diff pane's id — locates the window to open the chat in.
+   *  Optional: the sidebar inline diff has no owning pane, so we fall back
+   *  to the active window. */
+  paneId?: string;
 }
 
 const SOURCE_LABEL: Record<DiffSource, string> = {
@@ -88,6 +90,16 @@ function collectLines(root: HTMLElement): LineMeta[] {
   return out;
 }
 
+function lineLabelOf(lines: LineMeta[]): string {
+  const first = lines[0]?.lineNo ?? '?';
+  const last = lines[lines.length - 1]?.lineNo ?? first;
+  return lines.length > 1 ? `${first}-${last}` : String(first);
+}
+
+function snippetOf(lines: LineMeta[]): string {
+  return lines.map((line) => `${line.prefix} ${line.content}`).join('\n');
+}
+
 function buildPrompt(args: {
   file: string;
   source: DiffSource;
@@ -95,16 +107,23 @@ function buildPrompt(args: {
   comment: string;
 }): string {
   const { file, source, lines, comment } = args;
-  const first = lines[0]?.lineNo ?? '?';
-  const last = lines[lines.length - 1]?.lineNo ?? first;
-  const lineLabel = lines.length > 1 ? `${first}-${last}` : String(first);
-  const snippet = lines.map((line) => `${line.prefix} ${line.content}`).join('\n');
   return [
-    `File: ${file}:${lineLabel} (${SOURCE_LABEL[source]} diff)`,
+    `File: ${file}:${lineLabelOf(lines)} (${SOURCE_LABEL[source]} diff)`,
     lines.length > 1 ? 'Selected lines:' : 'Selected line:',
-    snippet,
+    snippetOf(lines),
     '',
     comment,
+  ].join('\n');
+}
+
+function buildExplainPrompt(args: { file: string; source: DiffSource; lines: LineMeta[] }): string {
+  const { file, source, lines } = args;
+  return [
+    `Explain this code from the ${SOURCE_LABEL[source]} diff of ${file}:${lineLabelOf(lines)}.`,
+    '',
+    snippetOf(lines),
+    '',
+    'What does it do, and what is this change doing? Be concise.',
   ].join('\n');
 }
 
@@ -117,7 +136,6 @@ export function DiffCommentOverlay({
   paneId,
 }: DiffCommentOverlayProps) {
   const agents = useProjectsStore((s) => s.agents);
-  const addTab = useWorkspaceStore((s) => s.addTab);
   const findWindowForPane = useWorkspaceStore((s) => s.findWindowForPane);
 
   const [lines, setLines] = useState<LineMeta[]>([]);
@@ -126,6 +144,7 @@ export function DiffCommentOverlay({
   const [focus, setFocus] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [agentCommand, setAgentCommand] = useState('');
+  const [menu, setMenu] = useState<{ x: number; y: number; lines: LineMeta[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const composerOpen = anchor !== null && focus !== null;
@@ -198,12 +217,71 @@ export function DiffCommentOverlay({
     };
   }, [scrollRef, anchor]);
 
+  // Right-click a line (or the current selected range) to offer "Explain this".
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-comment-ui]')) return;
+      const row = target.closest<HTMLElement>('tr[data-comment-index]');
+      if (!row) return;
+      const idx = Number.parseInt(row.dataset.commentIndex ?? '', 10);
+      if (Number.isNaN(idx) || !lines[idx]) return;
+      event.preventDefault();
+      const withinRange = composerOpen && idx >= rangeMin && idx <= rangeMax;
+      const selected = withinRange
+        ? lines.filter((line) => line.index >= rangeMin && line.index <= rangeMax)
+        : [lines[idx]];
+      setMenu({ x: event.clientX, y: event.clientY, lines: selected });
+    };
+
+    root.addEventListener('contextmenu', onContextMenu);
+    return () => root.removeEventListener('contextmenu', onContextMenu);
+  }, [scrollRef, lines, composerOpen, rangeMin, rangeMax]);
+
+  // Dismiss the right-click menu on any click, scroll, or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const dismiss = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null);
+    };
+    window.addEventListener('click', dismiss);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', dismiss);
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   const close = useCallback(() => {
     setAnchor(null);
     setFocus(null);
     setComment('');
     setHoverIndex(null);
   }, []);
+
+  const launch = (prompt: string, label: string) => {
+    const projectPath = (paneId ? findWindowForPane(paneId)?.projectPath : null) ?? cwd;
+    openAgentChat({
+      projectPath,
+      cwd,
+      label: `${basename(file)}:${label}`,
+      prompt,
+      agentCommand: agentCommand || undefined,
+    });
+  };
+
+  const explain = (selected: LineMeta[]) => {
+    if (selected.length === 0) return;
+    launch(buildExplainPrompt({ file, source, lines: selected }), lineLabelOf(selected));
+    setMenu(null);
+    close();
+  };
 
   const startComment = (event: React.MouseEvent, index: number) => {
     event.stopPropagation();
@@ -224,24 +302,7 @@ export function DiffCommentOverlay({
     const selected = lines.filter((line) => line.index >= rangeMin && line.index <= rangeMax);
     if (selected.length === 0) return;
 
-    const prompt = buildPrompt({ file, source, lines: selected, comment: trimmed });
-    const first = selected[0].lineNo ?? '?';
-    const last = selected[selected.length - 1].lineNo ?? first;
-    const lineLabel = selected.length > 1 ? `${first}-${last}` : String(first);
-    const projectPath = findWindowForPane(paneId)?.projectPath ?? cwd;
-
-    addTab(projectPath, basename(file), {
-      kind: 'Agent',
-      cwd,
-      agent: agentCommand || undefined,
-      label: `${basename(file)}:${lineLabel}`,
-    });
-    // Deliver the prompt by "typing" it into the freshly-spawned agent once its
-    // TUI is ready, rather than as a launch arg. addTab marks the new tab's pane
-    // as the active window's activePaneId.
-    const newPaneId = useWorkspaceStore.getState().getActiveWindow()?.activePaneId;
-    if (newPaneId) pendingPaneInput.set(newPaneId, prompt);
-    goToWorkspace();
+    launch(buildPrompt({ file, source, lines: selected, comment: trimmed }), lineLabelOf(selected));
     close();
   };
 
@@ -265,6 +326,24 @@ export function DiffCommentOverlay({
 
   return (
     <>
+      {menu && (
+        <div
+          data-comment-ui
+          onClick={(event) => event.stopPropagation()}
+          style={{ top: menu.y, left: menu.x }}
+          className="fixed z-[300] min-w-[160px] rounded-[10px] border border-line bg-side p-[5px] font-ui text-[13px] text-ink shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+        >
+          <button
+            type="button"
+            onClick={() => explain(menu.lines)}
+            className="flex w-full items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] text-left text-ink-dim outline-none hover:bg-hover hover:text-ink"
+          >
+            <span className="grid w-4 place-items-center"><SparkleIcon size={14} /></span>
+            Explain {menu.lines.length > 1 ? `these ${menu.lines.length} lines` : 'this line'}
+          </button>
+        </div>
+      )}
+
       {hovered && hoveredBox && (
         <button
           type="button"
