@@ -56,9 +56,13 @@ interface ProjectsState {
   filter: string;
   expandedProjects: Set<string>;
   tmuxSessions: TmuxSessionInfo[];
+  /** Signed-in GitHub login, used to filter the Pull requests view to "only mine". Null until loaded / when signed out. */
+  githubLogin: string | null;
 
   // Actions
   loadSettings: () => Promise<void>;
+  /** Fetch the signed-in GitHub login (for the "only mine" PR filter). */
+  loadGithubLogin: () => Promise<void>;
   loadAddedProjects: () => void;
   /** Fetch the git host for any added project not yet known, to pick its repo icon. */
   loadGitHosts: () => Promise<void>;
@@ -94,6 +98,8 @@ interface ProjectsState {
   discoverScripts: (projectPath: string) => Promise<ScriptSource[]>;
   // Worktrees
   createWorktree: (repoPath: string, branchName: string) => Promise<string>;
+  /** Check a GitHub PR's head branch out into a new worktree, then refresh git info. Returns the worktree path. */
+  createWorktreeForPr: (params: { repoPath: string; prNumber: number; branchName: string }) => Promise<string>;
   /** Create a worktree with a random `adjective-noun` name, branch-prefixed with
    *  the git user (e.g. `zebapy/brave-otter`). Returns its path and short label. */
   quickWorktree: (repoPath: string) => Promise<{ path: string; label: string }>;
@@ -121,6 +127,12 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   filter: '',
   expandedProjects: new Set(),
   tmuxSessions: [],
+  githubLogin: null,
+
+  loadGithubLogin: async () => {
+    const login = await invoke<string | null>('github_account').catch(() => null);
+    set({ githubLogin: login });
+  },
 
   loadSettings: async () => {
     try {
@@ -422,6 +434,12 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
 
   createWorktree: async (repoPath, branchName) => {
     const path = await invoke<string>('create_worktree', { repoPath, branchName });
+    await get().refreshGitInfo(repoPath);
+    return path;
+  },
+
+  createWorktreeForPr: async ({ repoPath, prNumber, branchName }) => {
+    const path = await invoke<string>('create_worktree_for_pr', { repoPath, prNumber, branchName });
     await get().refreshGitInfo(repoPath);
     return path;
   },

@@ -481,6 +481,69 @@ pub fn create_worktree(repo_path: String, branch_name: String) -> Result<String,
     Ok(worktree_path.to_string_lossy().to_string())
 }
 
+/// Check a GitHub PR out into a fresh worktree. Fetches the PR head via the
+/// `pull/<n>/head` ref — which exists for fork PRs too, unlike the head branch on
+/// `origin` — then creates a local branch named after the PR's head ref and adds a
+/// worktree on it. Shells out to `git` (like `clone_repo`) so the user's
+/// credentials and SSH config apply. The local branch is named exactly
+/// `branch_name` so the frontend can later match it to this worktree and offer
+/// "Go to worktree" instead of creating a duplicate.
+#[tauri::command(async)]
+pub fn create_worktree_for_pr(
+    repo_path: String,
+    pr_number: u64,
+    branch_name: String,
+) -> Result<String, String> {
+    let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let location = load_settings().worktree_location;
+    let worktrees_dir = worktree_base_dir(&repo_path, location);
+    fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
+
+    let folder = branch_name.rsplit('/').next().unwrap_or(&branch_name);
+    let worktree_path = worktrees_dir.join(folder);
+    if worktree_path.exists() {
+        return Err(format!(
+            "A worktree folder '{folder}' already exists. Open it from the sidebar instead."
+        ));
+    }
+    // A pre-existing local branch would make `worktree add -b` fail; surface a
+    // clear message pointing at the existing checkout rather than git's raw error.
+    if repo
+        .find_branch(&branch_name, git2::BranchType::Local)
+        .is_ok()
+    {
+        return Err(format!(
+            "A local branch '{branch_name}' already exists. Open its worktree or delete the branch first."
+        ));
+    }
+
+    let fetch = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo_path)
+        .args(["fetch", "origin", &format!("pull/{pr_number}/head")])
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+    if !fetch.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch.stderr);
+        return Err(format!("Couldn't fetch PR #{pr_number}: {}", stderr.trim()));
+    }
+
+    let add = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo_path)
+        .args(["worktree", "add", "-b", &branch_name])
+        .arg(&worktree_path)
+        .arg("FETCH_HEAD")
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+    if !add.status.success() {
+        let stderr = String::from_utf8_lossy(&add.stderr);
+        return Err(format!("Couldn't create the worktree: {}", stderr.trim()));
+    }
+
+    Ok(worktree_path.to_string_lossy().to_string())
+}
+
 /// Lowercase, collapse non-alphanumeric runs to '-', trim dashes. Used to turn a
 /// git `user.name` into a branch-prefix slug.
 fn slugify(value: &str) -> String {

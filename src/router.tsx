@@ -15,6 +15,9 @@ const WorkspaceRoute = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./components/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
+const PullRequestsRoute = lazy(() =>
+  import('./components/PullRequests/PullRequestsView').then((m) => ({ default: m.PullRequestsView })),
+);
 
 function lazyRoute(node: ReactNode): ReactNode {
   return <Suspense fallback={null}>{node}</Suspense>;
@@ -31,6 +34,7 @@ export const router = createHashRouter([
     element: <RootLayout />,
     children: [
       { index: true, element: lazyRoute(<Dashboard />) },
+      { path: 'pull-requests', element: lazyRoute(<PullRequestsRoute />) },
       { path: 'workspace', element: lazyRoute(<WorkspaceRoute />) },
       { path: 'settings', element: lazyRoute(<SettingsPage />) },
       { path: 'settings/:section', element: lazyRoute(<SettingsPage />) },
@@ -45,6 +49,10 @@ export const router = createHashRouter([
  */
 export function goToDashboard() {
   router.navigate('/');
+}
+
+export function goToPullRequests() {
+  router.navigate('/pull-requests');
 }
 
 export function goToWorkspace() {

@@ -248,6 +248,15 @@ export function ExternalLinkIcon({ size = 14, className }: IconProps) {
   );
 }
 
+export function RefreshIcon({ size = 14, className }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={1.5}>
+      <path d="M13 8a5 5 0 11-1.46-3.54" />
+      <path d="M13 3v2.5h-2.5" />
+    </Svg>
+  );
+}
+
 export function FolderIcon({ size = 14, className }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={1.4}>

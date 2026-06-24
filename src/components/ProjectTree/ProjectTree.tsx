@@ -5,10 +5,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
-import { goToDashboard } from '../../router';
+import { goToDashboard, goToPullRequests } from '../../router';
 import { ProjectItem } from './ProjectItem';
 import { Footer } from '../Sidebar/Footer';
-import { DashboardIcon, FolderPlusIcon, GitBranchIcon } from '../icons';
+import { DashboardIcon, FolderPlusIcon, GitBranchIcon, PrIcon } from '../icons';
 
 const menuPopupClass =
   'z-[300] min-w-[200px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
@@ -39,7 +39,9 @@ export function ProjectTree() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
-  const isDashboard = useLocation().pathname === '/';
+  const pathname = useLocation().pathname;
+  const isDashboard = pathname === '/';
+  const isPullRequests = pathname === '/pull-requests';
 
   useEffect(() => {
     const init = async () => {
@@ -175,7 +177,7 @@ export function ProjectTree() {
       onKeyDown={handleKeyDown}
       className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"
     >
-      <div className="border-b border-line-soft px-3 pb-3 pt-3">
+      <div className="flex flex-col gap-0.5 border-b border-line-soft px-3 pb-3 pt-3">
         <button
           type="button"
           onClick={goToDashboard}
@@ -188,6 +190,19 @@ export function ProjectTree() {
             <DashboardIcon size={15} />
           </span>
           Dashboard
+        </button>
+        <button
+          type="button"
+          onClick={goToPullRequests}
+          className={
+            'flex w-full items-center gap-2 rounded-lg px-3 py-[7px] text-[13px] font-semibold transition-colors ' +
+            (isPullRequests ? 'bg-ember-tint text-ink' : 'text-ink-dim hover:bg-hover hover:text-ink')
+          }
+        >
+          <span className={`grid place-items-center ${isPullRequests ? 'text-ink' : 'text-ink-faint'}`}>
+            <PrIcon size={15} />
+          </span>
+          Pull requests
         </button>
       </div>
 

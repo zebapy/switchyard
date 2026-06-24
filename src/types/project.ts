@@ -78,3 +78,16 @@ export interface GhItem {
   sub: string;
   branch: string;
 }
+
+/** An open pull request shown in the Pull requests view. Mirrors the Rust
+ *  `PullRequestItem`. `branch` (the PR head ref) is matched against a project's
+ *  worktree branches to decide between "Open in worktree" and "Go to worktree". */
+export interface PullRequestItem {
+  number: number;
+  title: string;
+  branch: string;
+  author: string;
+  url: string;
+  draft: boolean;
+  updated_at: string;
+}

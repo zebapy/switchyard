@@ -348,6 +348,22 @@ pub struct GhItem {
     pub branch: String,
 }
 
+/// A richer open-PR row for the Pull requests view: enough to filter to the
+/// signed-in user, match against local worktrees (by `branch`), and link out.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestItem {
+    pub number: u64,
+    pub title: String,
+    /// Head ref (the PR's branch) — matched against local worktree branches.
+    pub branch: String,
+    /// Author login, used by the client-side "only mine" filter.
+    pub author: String,
+    pub url: String,
+    pub draft: bool,
+    /// ISO-8601 last-updated timestamp from GitHub.
+    pub updated_at: String,
+}
+
 /// PR associated with the repo's current branch, plus a rolled-up CI status.
 #[tauri::command]
 pub async fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
@@ -495,6 +511,44 @@ async fn list_prs(path: &str) -> Option<Vec<GhItem>> {
         })
         .collect();
     Some(items)
+}
+
+/// Open PRs for the project's GitHub repo, richest-first (most recently updated),
+/// for the Pull requests view. Unlike `gh_list_prs` (which feeds the worktree
+/// modal's selector) this surfaces author, draft and url so the frontend can
+/// filter to the signed-in user and link out. Errors propagate so the view can
+/// distinguish "not signed in" / "not a GitHub repo" from an empty list.
+#[tauri::command]
+pub async fn gh_list_pull_requests(path: String) -> Result<Vec<PullRequestItem>, String> {
+    let token = read_token()?;
+    let (owner, repo) = repo_slug(&path)
+        .ok_or_else(|| "Not a GitHub repository (no github.com 'origin' remote).".to_string())?;
+    let http = http_client().clone();
+    let arr = api_get(
+        &http,
+        &token,
+        &format!("{API_BASE}/repos/{owner}/{repo}/pulls?state=open&per_page=50&sort=updated&direction=desc"),
+    )
+    .await?;
+    let rows = arr.as_array().ok_or_else(|| {
+        arr.get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unexpected response from GitHub.")
+            .to_string()
+    })?;
+    let items = rows
+        .iter()
+        .map(|el| PullRequestItem {
+            number: el["number"].as_u64().unwrap_or(0),
+            title: el["title"].as_str().unwrap_or("").to_string(),
+            branch: el["head"]["ref"].as_str().unwrap_or("").to_string(),
+            author: el["user"]["login"].as_str().unwrap_or("").to_string(),
+            url: el["html_url"].as_str().unwrap_or("").to_string(),
+            draft: el["draft"].as_bool().unwrap_or(false),
+            updated_at: el["updated_at"].as_str().unwrap_or("").to_string(),
+        })
+        .collect();
+    Ok(items)
 }
 
 #[tauri::command]

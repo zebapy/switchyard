@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Pull requests view: a "Pull requests" entry in the sidebar under Dashboard opens a per-project list of open PRs fetched from GitHub, defaulting to the active project (switch repos with the project picker). An "Only mine" toggle (on by default) filters to PRs you authored. Each row links out to GitHub and has a single action: "Open in worktree" checks the PR's head branch out into a new worktree (via `pull/<n>/head`, so fork PRs work too) and opens a workspace tab; when a worktree for that branch already exists locally the action becomes "Go to worktree" and jumps straight to it.
+
 ## [0.2.0] - 2026-06-17
 
 ### Changed
