@@ -33,6 +33,10 @@ export function RootLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const inSettings = location.pathname.startsWith('/settings');
+  // The workspace's own TabBar carries the traffic-light clearance and
+  // back/forward buttons when the sidebar is collapsed, so the standalone
+  // TopBar strip would just be a redundant second bar there.
+  const inWorkspace = location.pathname.startsWith('/workspace');
 
   const [closePrompt, setClosePrompt] = useState<{ open: boolean; sessions: TmuxSessionInfo[] }>({
     open: false,
@@ -59,6 +63,13 @@ export function RootLayout() {
   useEffect(() => {
     if (sessionLoaded.current) return;
     sessionLoaded.current = true;
+    // Returning from Zen Mode remounts this layout with windows already live and
+    // newer than disk — reload only on a genuine cold start, else just resume.
+    const ws = useWorkspaceStore.getState();
+    if (ws.windows.size > 0) {
+      if (ws.activeWindowId) navigate('/workspace');
+      return;
+    }
     loadSession()
       .then((loaded) => { if (loaded) navigate('/workspace'); })
       .catch(() => null);
@@ -168,7 +179,7 @@ export function RootLayout() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      {sidebarCollapsed && <TopBar />}
+      {sidebarCollapsed && !inWorkspace && <TopBar />}
 
       <div className="flex min-h-0 flex-1">
         {!sidebarCollapsed && (

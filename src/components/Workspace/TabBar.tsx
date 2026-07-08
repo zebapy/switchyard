@@ -8,6 +8,7 @@ import { AddMenu } from '../ProjectTree/AddMenu';
 import { BranchMenu } from '../GitPanel/BranchMenu';
 import { OpenInMenu } from './OpenInMenu';
 import { RenameField } from '../ProjectTree/RenameField';
+import { HistoryButtons } from '../HistoryButtons';
 import { AiIcon, TermIcon, SplitIcon, CloseIcon, BaseBranchIcon, WorktreeIcon, PanelRightIcon } from '../icons';
 import type { PaneInfo, PaneTree } from '../../types/pane';
 
@@ -40,6 +41,10 @@ export function TabBar() {
   const gitPanelOpen = useGitPanelStore((s) => s.open);
   const toggleGitPanel = useGitPanelStore((s) => s.toggle);
   const metaHeld = useUiStore((s) => s.metaHeld);
+  // When the sidebar is collapsed it no longer hosts the macOS traffic
+  // lights or the back/forward buttons, so this strip becomes the window's
+  // top-left chrome: it must clear the native buttons and carry history.
+  const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
   const win = activeWindowId ? windows.get(activeWindowId) ?? null : null;
@@ -69,14 +74,22 @@ export function TabBar() {
       {/* Top row: workspace + branch on the left, "Open in" on the right. */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 border-b border-line-soft py-1.5 pl-3 pr-3"
+        className={
+          'flex items-center gap-2 border-b border-line-soft py-1.5 pr-3 ' +
+          (sidebarCollapsed ? 'pl-[78px]' : 'pl-3')
+        }
       >
+        {sidebarCollapsed && (
+          <div className="flex flex-none items-center gap-0.5">
+            <HistoryButtons />
+          </div>
+        )}
         <div data-tauri-drag-region className="flex min-w-0 items-center gap-[7px] text-[13px] text-ink-dim">
-          <span className="truncate text-ink-dim">{basename(win.projectPath)}</span>
+          <span data-tauri-drag-region className="truncate text-ink-dim">{basename(win.projectPath)}</span>
           {branch && (
             <>
-              <span className="text-ink-ghost">/</span>
-              <span className={`inline-flex ${isMainWt ? 'text-ink-dim' : 'text-ink-faint'}`}>
+              <span data-tauri-drag-region className="text-ink-ghost">/</span>
+              <span data-tauri-drag-region className={`inline-flex ${isMainWt ? 'text-ink-dim' : 'text-ink-faint'}`}>
                 {isMainWt ? <BaseBranchIcon size={13} /> : <WorktreeIcon size={13} />}
               </span>
               <BranchMenu path={win.projectPath} branch={branch} />
