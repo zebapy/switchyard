@@ -74,6 +74,10 @@ pub enum WorktreeSort {
     Created,
     /// Last commit time, newest first.
     Updated,
+    /// Most uncommitted changes (added + deleted lines) first.
+    Changes,
+    /// Worktrees with an open pull request first.
+    Pr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -111,6 +115,11 @@ pub struct AppSettings {
     /// `.claude/worktrees`, or in a shared global `~/.switchyard` directory.
     #[serde(default = "default_worktree_location")]
     pub worktree_location: WorktreeLocation,
+    /// Linear team identifier prefixes (e.g. `["fdy"]`) used to detect an issue
+    /// identifier like `fdy-123` inside a worktree's branch or path, so a row
+    /// can offer to open the related Linear issue.
+    #[serde(default)]
+    pub linear_issue_prefixes: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -126,6 +135,7 @@ impl Default for AppSettings {
             project_sort: HashMap::new(),
             agents: default_agents(),
             worktree_location: default_worktree_location(),
+            linear_issue_prefixes: Vec::new(),
         }
     }
 }
@@ -730,6 +740,55 @@ pub fn get_git_remote_info(path: String) -> Result<Option<GitRemoteInfo>, String
     }))
 }
 
+/// Percent-encode the characters a git branch name may legally contain that
+/// would otherwise break a URL path. Git refnames already forbid spaces, `?`,
+/// `*`, `[`, `~`, `^`, `:`, and control chars, so `%` and `#` are the only
+/// realistic offenders; a stray space is encoded defensively. Slashes are left
+/// intact so `feat/foo` maps to a nested path segment.
+fn encode_branch(branch: &str) -> String {
+    branch
+        .replace('%', "%25")
+        .replace('#', "%23")
+        .replace(' ', "%20")
+}
+
+/// Build a web URL that shows `branch` on the repo's hosting provider, using
+/// each provider's tree-path convention (GitHub `/tree`, GitLab `/-/tree`,
+/// Bitbucket `/src`). Unknown hosts fall back to the GitHub convention.
+fn branch_web_url(url: &str, branch: &str) -> Option<String> {
+    let host = remote_host(url)?;
+    let owner = remote_owner(url)?;
+    let repo = repo_name_from_url(url)?;
+    let base = format!("https://{host}/{owner}/{repo}");
+    let encoded = encode_branch(branch);
+    let host_lc = host.to_lowercase();
+    let tree = if host_lc.contains("bitbucket") {
+        format!("{base}/src/{encoded}")
+    } else if host_lc.contains("gitlab") {
+        format!("{base}/-/tree/{encoded}")
+    } else {
+        format!("{base}/tree/{encoded}")
+    };
+    Some(tree)
+}
+
+/// Resolve a browser URL for viewing `branch` of the repo at `path` on its
+/// `origin` host. Returns None when there's no repo, no `origin`, no URL, or the
+/// owner/repo can't be parsed — a missing remote is not an error, just "no link".
+#[tauri::command(async)]
+pub fn remote_branch_url(path: String, branch: String) -> Result<Option<String>, String> {
+    let Ok(repo) = git2::Repository::discover(&path) else {
+        return Ok(None);
+    };
+    let Ok(remote) = repo.find_remote("origin") else {
+        return Ok(None);
+    };
+    let Some(url) = remote.url() else {
+        return Ok(None);
+    };
+    Ok(branch_web_url(url, &branch))
+}
+
 #[tauri::command(async)]
 pub fn delete_worktree(repo_path: String, name: String) -> Result<(), String> {
     let repo = git2::Repository::open(&repo_path).map_err(|e| e.to_string())?;
@@ -1276,9 +1335,24 @@ pub fn set_project_sort(
     Ok(settings)
 }
 
+#[tauri::command]
+pub fn set_linear_issue_prefixes(prefixes: Vec<String>) -> Result<AppSettings, String> {
+    // Normalise: trim, drop blanks, lowercase, de-dupe (preserving order).
+    let mut seen = std::collections::HashSet::new();
+    let cleaned = prefixes
+        .into_iter()
+        .map(|p| p.trim().to_lowercase())
+        .filter(|p| !p.is_empty() && seen.insert(p.clone()))
+        .collect();
+    let mut settings = load_settings();
+    settings.linear_issue_prefixes = cleaned;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{git_host_from_url, remote_host, remote_owner};
+    use super::{branch_web_url, git_host_from_url, remote_host, remote_owner};
 
     #[test]
     fn parses_host_from_url_forms() {
@@ -1343,5 +1417,38 @@ mod tests {
             Some("acme")
         );
         assert_eq!(remote_owner("not a url"), None);
+    }
+
+    #[test]
+    fn builds_branch_url_per_provider() {
+        // GitHub, both HTTPS and scp-like SSH forms.
+        assert_eq!(
+            branch_web_url("https://github.com/acme/repo.git", "main").as_deref(),
+            Some("https://github.com/acme/repo/tree/main")
+        );
+        assert_eq!(
+            branch_web_url("git@github.com:acme/repo.git", "feat/x").as_deref(),
+            Some("https://github.com/acme/repo/tree/feat/x")
+        );
+        // GitLab uses `/-/tree`, Bitbucket uses `/src`.
+        assert_eq!(
+            branch_web_url("https://gitlab.com/acme/repo.git", "dev").as_deref(),
+            Some("https://gitlab.com/acme/repo/-/tree/dev")
+        );
+        assert_eq!(
+            branch_web_url("ssh://git@bitbucket.org/acme/repo.git", "dev").as_deref(),
+            Some("https://bitbucket.org/acme/repo/src/dev")
+        );
+        // Unknown host falls back to the GitHub tree convention.
+        assert_eq!(
+            branch_web_url("https://git.example.com/acme/repo.git", "main").as_deref(),
+            Some("https://git.example.com/acme/repo/tree/main")
+        );
+        // URL-unsafe branch chars are percent-encoded; slashes stay intact.
+        assert_eq!(
+            branch_web_url("https://github.com/acme/repo.git", "fix/#42 space").as_deref(),
+            Some("https://github.com/acme/repo/tree/fix/%2342%20space")
+        );
+        assert_eq!(branch_web_url("not a url", "main"), None);
     }
 }

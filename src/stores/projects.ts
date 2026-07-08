@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort } from '../types/project';
+import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort, PullRequestItem } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
 import type { ScriptSource } from '../types/scripts';
@@ -32,6 +32,7 @@ interface AppSettings {
   project_sort: Record<string, WorktreeSort>;
   agents: AgentConfig[];
   worktree_location: WorktreeLocation;
+  linear_issue_prefixes: string[];
 }
 
 interface ProjectsState {
@@ -51,6 +52,10 @@ interface ProjectsState {
   worktreeLocation: WorktreeLocation;
   /** Per-project worktree-list sort order, keyed by project path. */
   projectSort: Record<string, WorktreeSort>;
+  /** Linear team identifier prefixes (e.g. `['fdy']`) used to detect issue ids in worktrees. */
+  linearIssuePrefixes: string[];
+  /** Per-project set of branch names that have an open PR, for the 'pr' sort. */
+  prBranches: Map<string, Set<string>>;
   /** Worktrees whose creation is in flight, shown as placeholder rows. */
   pendingWorktrees: PendingWorktree[];
   filter: string;
@@ -87,6 +92,10 @@ interface ProjectsState {
   setWorktreeLocation: (location: WorktreeLocation) => Promise<void>;
   /** Persist a project's worktree-list sort order. */
   setProjectSort: (projectPath: string, sort: WorktreeSort) => Promise<void>;
+  /** Persist the Linear team identifier prefixes used for issue detection. */
+  setLinearIssuePrefixes: (prefixes: string[]) => Promise<void>;
+  /** Fetch the project's open-PR head branches (for the 'pr' sort). */
+  refreshPrBranches: (projectPath: string) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
   /** Expand a project (idempotent — never collapses). */
@@ -123,6 +132,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   agents: [DEFAULT_AGENT],
   worktreeLocation: 'project',
   projectSort: {},
+  linearIssuePrefixes: [],
+  prBranches: new Map(),
   pendingWorktrees: [],
   filter: '',
   expandedProjects: new Set(),
@@ -146,6 +157,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         agents,
         worktreeLocation: settings.worktree_location ?? 'project',
         projectSort: settings.project_sort ?? {},
+        linearIssuePrefixes: settings.linear_issue_prefixes ?? [],
       });
       return;
     } catch (e) {
@@ -385,6 +397,30 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       console.error('Failed to set project sort:', e);
       set({ projectSort: previous });
     }
+  },
+
+  setLinearIssuePrefixes: async (prefixes) => {
+    const previous = get().linearIssuePrefixes;
+    set({ linearIssuePrefixes: prefixes });
+    try {
+      const settings = await invoke<AppSettings>('set_linear_issue_prefixes', { prefixes });
+      set({ linearIssuePrefixes: settings.linear_issue_prefixes ?? [] });
+    } catch (e) {
+      console.error('Failed to set Linear issue prefixes:', e);
+      set({ linearIssuePrefixes: previous });
+    }
+  },
+
+  refreshPrBranches: async (projectPath) => {
+    const prs = await invoke<PullRequestItem[]>('gh_list_pull_requests', { path: projectPath }).catch(
+      () => null,
+    );
+    if (!prs) return;
+    set((state) => {
+      const next = new Map(state.prBranches);
+      next.set(projectPath, new Set(prs.map((pr) => pr.branch)));
+      return { prBranches: next };
+    });
   },
 
   setFilter: (filter) => set({ filter }),

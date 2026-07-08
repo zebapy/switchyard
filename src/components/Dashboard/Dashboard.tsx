@@ -240,7 +240,7 @@ function TabRow({ tab, wtPath, onSelect }: TabRowProps) {
         <span className={`grid shrink-0 place-items-center ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
           {isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
         </span>
-        <span className="min-w-0 flex-1 truncate">{pane?.title ?? tab.label}</span>
+        <span className="min-w-0 flex-1 truncate">{pane?.customName ?? pane?.title ?? tab.label}</span>
         {isRunning(pane) && <span className="size-1.5 shrink-0 rounded-full bg-green" />}
       </button>
     );

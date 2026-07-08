@@ -1,12 +1,21 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import { RouterProvider } from "react-router";
 import "@fontsource-variable/hanken-grotesk";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
-import { router } from "./router";
+import { useUiStore } from "./stores/ui";
 import "./styles.css";
+
+// The standard chrome and the Zen layout are each lazy so only one whole
+// interface's module graph loads — flipping zenMode swaps which is mounted.
+const StandardApp = lazy(() => import("./StandardApp").then((m) => ({ default: m.StandardApp })));
+const ZenApp = lazy(() => import("./zen/ZenApp").then((m) => ({ default: m.ZenApp })));
+
+function Root() {
+  const zenMode = useUiStore((s) => s.zenMode);
+  return <Suspense fallback={null}>{zenMode ? <ZenApp /> : <StandardApp />}</Suspense>;
+}
 
 // Disable the native webview right-click menu app-wide. It exposes browser
 // chrome (Reload, Inspect, Back/Forward) that makes no sense in a desktop app.
@@ -23,6 +32,6 @@ document.addEventListener("contextmenu", (event) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <Root />
   </React.StrictMode>,
 );

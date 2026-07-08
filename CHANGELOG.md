@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Arrow-key navigation in the ⌘K command palette and the "New script…" palette no longer yanks the selection to whatever row happens to sit under a stationary mouse cursor. Scrolling the selected row into view was shifting rows under the cursor and firing a `mousemove`/`pointermove` the palettes mistook for a real hover.
+
 ### Added
 
+- Open a worktree's branch on its git host in the browser. Right-click any worktree row for **Open branch on GitHub** (labelled per provider — GitLab/Bitbucket too), and the ⌘K command palette gains **Open Branch on GitHub** for the currently focused workspace. The backend resolves the `origin` remote to the provider's branch tree URL (GitHub `/tree`, GitLab `/-/tree`, Bitbucket `/src`); repos without an `origin` quietly do nothing.
+- Worktree sort now defaults to **Created** (newest working directory first) and gains two options alongside Name/Created/Updated: **Changes** (worktrees with the most uncommitted +/- lines first) and **Pull request** (worktrees whose branch has an open GitHub PR first, then most-recently-committed). The root/main worktree always stays pinned to the top regardless of sort. Sort is also a **view action in the ⌘K command palette** — "Sort worktrees by …" (current option checked) acts on the active workspace's project — and in **Zen mode's ⌘K** on the Workspaces tier, which now honours the chosen order too.
+- Right-click a worktree row for **Open Linear issue FDY-123** when its branch or path contains a configured team identifier. Configure the prefixes (e.g. `fdy`) under Settings → Linear → "Issue identifier prefixes"; the row resolves the identifier to its canonical Linear URL via the API and opens it.
+- Zen Mode: a single-focus alternative layout, toggled with "Enter Zen Mode" in the ⌘K command palette (and "Exit Zen Mode" from Zen's own ⌘K). It drills one tier at a time — Projects → Workspaces (a repo's root + worktrees) → Panes — in a Navigate mode where the arrow keys move a cursor (→/Enter drills in, ← climbs out); entering a pane switches to Focus mode where the terminal/agent owns the keyboard and `^←` escapes. Inside Zen, `⌘P` opens a global jump palette (any pane/worktree, plus "Exit Zen Mode") and `⌘K` opens contextual actions for whatever's selected — archive on a worktree; rename / detach / close / new terminal / new chat on a pane. The two interfaces are lazy-loaded and only one is ever mounted (flipping the toggle swaps the whole tree), so the standard chrome adds nothing when Zen is on and vice-versa; both share the same stores and tmux back end, so terminals reattach across the switch. The toggle persists across restarts.
 - Pull requests view: a "Pull requests" entry in the sidebar under Dashboard opens a per-project list of open PRs fetched from GitHub, defaulting to the active project (switch repos with the project picker). An "Only mine" toggle (on by default) filters to PRs you authored. Each row links out to GitHub and has a single action: "Open in worktree" checks the PR's head branch out into a new worktree (via `pull/<n>/head`, so fork PRs work too) and opens a workspace tab; when a worktree for that branch already exists locally the action becomes "Go to worktree" and jumps straight to it.
 
 ## [0.2.0] - 2026-06-17

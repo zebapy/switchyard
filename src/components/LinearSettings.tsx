@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useProjectsStore } from '../stores/projects';
 
 interface LinearViewer {
   name: string;
@@ -21,6 +22,65 @@ const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
 const btnClass =
   'rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink-dim transition hover:border-guide hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-50';
+const inputClass =
+  'w-full rounded-lg border border-line bg-app px-[11px] py-1.5 text-xs text-ink outline-none transition placeholder:text-ink-faint focus:border-guide';
+
+const subH4Class = 'mb-1.5 mt-3.5 text-xs font-semibold text-ink';
+
+/** Split a free-text list of team keys on commas/whitespace into clean prefixes. */
+function parsePrefixes(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+/** Configure the Linear team prefixes (e.g. `fdy`) used to detect an issue
+ *  identifier inside a worktree's branch or path. */
+function IssuePrefixesForm() {
+  const prefixes = useProjectsStore((s) => s.linearIssuePrefixes);
+  const setPrefixes = useProjectsStore((s) => s.setLinearIssuePrefixes);
+  const [value, setValue] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  // Reflect the persisted prefixes into the input whenever they change.
+  useEffect(() => {
+    setValue(prefixes.join(', '));
+  }, [prefixes]);
+
+  const save = () => {
+    setPrefixes(parsePrefixes(value));
+    setSaved(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save();
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <h4 className={subH4Class}>Issue identifier prefixes</h4>
+      <p className={descClass}>
+        Team keys used to spot an issue id like <span className="font-mono text-ink-dim">fdy-123</span> in
+        a worktree&apos;s branch or path, so its row can open the matching Linear issue. Comma-separated.
+      </p>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setSaved(false); }}
+        onBlur={save}
+        placeholder="fdy, eng, ops"
+        aria-label="Linear issue identifier prefixes"
+        className={inputClass}
+      />
+      <div className="mt-2 flex items-center gap-2.5">
+        <button type="submit" className={btnClass}>Save</button>
+        {saved && <span className="text-xs text-ink-faint">Saved.</span>}
+      </div>
+    </form>
+  );
+}
 
 export function LinearSettings() {
   const [connected, setConnected] = useState(false);
@@ -101,6 +161,7 @@ export function LinearSettings() {
         </>
       )}
       {error && <p className="mt-2 text-xs text-del">{error}</p>}
+      <IssuePrefixesForm />
     </div>
   );
 }

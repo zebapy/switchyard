@@ -99,6 +99,7 @@ pub fn run() {
             projects::scan_projects,
             projects::get_git_info,
             projects::get_git_remote_info,
+            projects::remote_branch_url,
             projects::get_worktree_diff_stats,
             projects::get_pinned_projects,
             projects::toggle_pin,
@@ -124,6 +125,7 @@ pub fn run() {
             projects::discover_scripts,
             projects::set_project_scripts,
             projects::set_project_sort,
+            projects::set_linear_issue_prefixes,
             // Session commands
             session::save_session,
             session::load_session,
@@ -134,6 +136,7 @@ pub fn run() {
             linear::linear_login,
             linear::linear_query,
             linear::linear_list_issues,
+            linear::linear_issue_url,
             linear::linear_logout,
             linear::linear_is_connected,
             // GitHub commands (OAuth device flow + API, replacing the `gh` CLI)

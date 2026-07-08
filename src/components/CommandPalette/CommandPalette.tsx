@@ -2,7 +2,10 @@ import { useEffect, useMemo } from 'react';
 import { Command as Cmdk } from 'cmdk';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
+import { useUiStore } from '../../stores/ui';
 import { goToWorkspace } from '../../router';
+import { openBranchOnRemote, hostLabel } from '../../lib/openBranchOnRemote';
+import { WORKTREE_SORT_OPTIONS, DEFAULT_WORKTREE_SORT } from '../../types/project';
 
 interface PaletteCommand {
   id: string;
@@ -27,7 +30,7 @@ interface BranchTarget {
 }
 
 /** Order categories appear in the list; unknown categories are appended. */
-const CATEGORY_ORDER = ['Workspace', 'Branch', 'Pane', 'Tab', 'Navigation', 'Settings', 'Window'];
+const CATEGORY_ORDER = ['Workspace', 'Branch', 'Sort', 'Pane', 'Tab', 'Navigation', 'View', 'Settings', 'Window'];
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -56,7 +59,10 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
   const agents = useProjectsStore((s) => s.agents);
   const projects = useProjectsStore((s) => s.projects);
   const gitInfo = useProjectsStore((s) => s.gitInfo);
+  const gitHosts = useProjectsStore((s) => s.gitHosts);
   const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
+  const projectSort = useProjectsStore((s) => s.projectSort);
+  const setProjectSort = useProjectsStore((s) => s.setProjectSort);
 
   const activeWindow = activeWindowId ? windows.get(activeWindowId) ?? null : null;
   const activePaneId = activeWindow?.activePaneId ?? null;
@@ -141,6 +147,15 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
         action: onFocusTree,
       },
       {
+        id: 'enter-zen-mode',
+        label: 'Enter Zen Mode',
+        category: 'View',
+        action: () => {
+          void useWorkspaceStore.getState().saveSession();
+          useUiStore.getState().setZenMode(true);
+        },
+      },
+      {
         id: 'open-settings',
         label: 'Open Settings',
         category: 'Settings',
@@ -157,6 +172,47 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
     ];
 
     if (activeWindow) {
+      // The active window is keyed by its worktree path; resolve the checked-out
+      // branch and hosting provider so we can open that branch in the browser.
+      const activePath = activeWindow.projectPath;
+      let activeBranch = activePath.split('/').pop() || activePath;
+      let activeHost: string | null = null;
+      // The base project owning the active worktree — the key `projectSort` is
+      // stored under, and the target of the sort actions below.
+      let owningProject: { path: string; name: string } | null = null;
+      for (const project of projects) {
+        const wt = gitInfo.get(project.path)?.worktrees.find((w) => w.path === activePath);
+        if (!wt) continue;
+        activeBranch = wt.branch ?? activeBranch;
+        activeHost = gitHosts.get(project.path)?.host ?? null;
+        owningProject = { path: project.path, name: project.name };
+        break;
+      }
+      base.push({
+        id: 'open-branch-remote',
+        label: `Open Branch on ${hostLabel(activeHost)}`,
+        category: 'Branch',
+        hint: activeBranch,
+        action: () => { openBranchOnRemote(activePath, activeBranch).catch(() => null); },
+      });
+
+      // Sort the owning project's worktree list — an action on the current view.
+      if (owningProject) {
+        const target = owningProject;
+        const currentSort = projectSort[target.path] ?? DEFAULT_WORKTREE_SORT;
+        for (const option of WORKTREE_SORT_OPTIONS) {
+          const isCurrent = option.value === currentSort;
+          base.push({
+            id: `sort-worktrees-${option.value}`,
+            label: `Sort worktrees by ${option.label}${isCurrent ? ' ✓' : ''}`,
+            category: 'Sort',
+            hint: target.name,
+            searchText: `Sort worktrees by ${option.label} ${target.name}`,
+            action: () => { setProjectSort(target.path, option.value).catch(console.error); },
+          });
+        }
+      }
+
       const label = activeWindow.projectPath.split('/').pop() || activeWindow.projectPath;
       base.push({
         id: 'close-window',
@@ -183,6 +239,7 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
     activePaneId, panes, closePane, detachPane, splitPane,
     cyclePaneForward, cyclePaneBackward, nextTab, prevTab, onFocusTree,
     onOpenSettings, useTmux, setUseTmux, agents, activeWindow, closeWindow,
+    projects, gitInfo, gitHosts, projectSort, setProjectSort,
   ]);
 
   // Reveal or open a branch/worktree window. Mirrors BranchRow's openWorkspace:
@@ -290,6 +347,11 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
       <Cmdk
         label="Command palette"
         loop
+        // Keyboard-first palette: don't let cmdk re-select on pointer move.
+        // Arrow-key nav calls scrollIntoView, which shifts rows under a
+        // stationary cursor and fires pointermove — that would otherwise
+        // yank the selection to whatever row slid under the mouse.
+        disablePointerSelection
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}
         className="flex max-h-[60vh] w-[540px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]"
         onClick={(e) => e.stopPropagation()}

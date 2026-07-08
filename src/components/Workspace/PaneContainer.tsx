@@ -38,7 +38,7 @@ export const PaneContainer = memo(function PaneContainer({ paneInfo, isActive }:
       ? basename(paneInfo.diffFile ?? paneInfo.cwd)
       : isFile
         ? basename(paneInfo.filePath ?? paneInfo.cwd)
-        : paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
+        : paneInfo.customName ?? paneInfo.title ?? basename(paneInfo.cwd) ?? 'Terminal';
 
   const actBtn = 'grid size-[26px] place-items-center rounded-md text-ink-faint hover:bg-hover hover:text-ink';
 

@@ -32,16 +32,18 @@ export interface WorktreeInfo {
 }
 
 /** How a project's worktree list is ordered. Root/main worktree always stays on top. */
-export type WorktreeSort = 'name' | 'created' | 'updated';
+export type WorktreeSort = 'name' | 'created' | 'updated' | 'changes' | 'pr';
 
 /** Default ordering when a project has no saved preference. */
-export const DEFAULT_WORKTREE_SORT: WorktreeSort = 'updated';
+export const DEFAULT_WORKTREE_SORT: WorktreeSort = 'created';
 
 /** Sort options in display order, for building the sort menu. */
 export const WORKTREE_SORT_OPTIONS: { value: WorktreeSort; label: string }[] = [
-  { value: 'name', label: 'Name' },
   { value: 'created', label: 'Created' },
   { value: 'updated', label: 'Updated' },
+  { value: 'name', label: 'Name' },
+  { value: 'changes', label: 'Changes' },
+  { value: 'pr', label: 'Pull request' },
 ];
 
 /** Deferred uncommitted line counts for one worktree, fetched after the tree renders. */

@@ -204,6 +204,44 @@ pub async fn linear_list_issues(all: bool) -> Result<Vec<crate::github::GhItem>,
     Ok(items)
 }
 
+/// Resolve a Linear issue identifier (e.g. `FDY-123`) to its canonical web URL
+/// by looking it up via the API. Returns `Ok(None)` when no matching issue
+/// exists. Splitting the identifier into team key + number lets us filter
+/// precisely instead of full-text searching.
+#[tauri::command]
+pub async fn linear_issue_url(identifier: String) -> Result<Option<String>, String> {
+    let token = read_token()?;
+    let (team_key, number) = identifier
+        .rsplit_once('-')
+        .ok_or_else(|| format!("invalid Linear identifier: {identifier}"))?;
+    let number: u64 = number
+        .parse()
+        .map_err(|_| format!("invalid Linear identifier number: {identifier}"))?;
+    let team_key = team_key.to_uppercase();
+
+    let query = format!(
+        r#"{{ issues(first: 1, filter: {{ number: {{ eq: {number} }}, team: {{ key: {{ eq: "{team_key}" }} }} }}) {{ nodes {{ url }} }} }}"#
+    );
+
+    let res: serde_json::Value = http_client()
+        .post("https://api.linear.app/graphql")
+        .header("Authorization", token) // Linear expects the raw token, no "Bearer" prefix.
+        .json(&serde_json::json!({ "query": query }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let url = res["data"]["issues"]["nodes"]
+        .as_array()
+        .and_then(|nodes| nodes.first())
+        .and_then(|node| node["url"].as_str())
+        .map(|s| s.to_string());
+    Ok(url)
+}
+
 #[tauri::command]
 pub fn linear_logout() -> Result<(), String> {
     clear_token()

@@ -43,6 +43,10 @@ export function ScriptPalette() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Last physical cursor position, to tell a real hover from a scroll-induced
+  // mousemove. Arrow-key nav scrolls the list under a stationary cursor, which
+  // fires mousemove with unchanged coords — those must not steal the selection.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
   // Fetch manifests whenever the palette opens for a project.
   useEffect(() => {
@@ -202,7 +206,13 @@ export function ScriptPalette() {
                     data-idx={idx}
                     className={`flex cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-[7px] ${selected ? 'bg-hover' : ''}`}
                     onClick={() => run(item)}
-                    onMouseMove={() => setSelectedIdx(idx)}
+                    onMouseMove={(e) => {
+                      const prev = lastPointer.current;
+                      lastPointer.current = { x: e.clientX, y: e.clientY };
+                      if (!prev || prev.x !== e.clientX || prev.y !== e.clientY) {
+                        setSelectedIdx(idx);
+                      }
+                    }}
                   >
                     <span className={`w-[14px] flex-none text-center font-mono text-[13px] ${selected ? 'text-ember' : 'text-ink-faint'}`}>
                       ▸

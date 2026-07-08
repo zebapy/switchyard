@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { ContextMenu } from '@base-ui-components/react/context-menu';
+import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { goToWorkspace } from '../../router';
+import { findLinearIdentifier } from '../../lib/linearIdentifier';
 import { SessionRow } from './SessionRow';
 import { AddMenu } from './AddMenu';
 import { ArchiveConfirmDialog } from './ArchiveConfirmDialog';
-import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon, ArchiveIcon } from '../icons';
+import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon, ArchiveIcon, GitHostIcon, LinearIcon } from '../icons';
+import { openBranchOnRemote, hostLabel } from '../../lib/openBranchOnRemote';
 import type { WorktreeInfo, PrInfo, WorktreeArchiveStatus } from '../../types/project';
 
 const menuPopupClass =
@@ -19,6 +23,7 @@ const menuItemClass =
   'data-[disabled]:cursor-not-allowed data-[disabled]:text-ink-faint data-[disabled]:data-[highlighted]:bg-transparent';
 const menuIconClass = 'grid w-4 place-items-center text-ink-faint';
 const menuStatusClass = 'px-[9px] pb-[3px] pt-[4px] text-[11px] leading-snug text-ink-faint';
+const menuSeparatorClass = 'my-[5px] h-px bg-line';
 
 function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path;
@@ -102,6 +107,8 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
   const getWorktreeArchiveStatus = useProjectsStore((s) => s.getWorktreeArchiveStatus);
   const expandProject = useProjectsStore((s) => s.expandProject);
   const defaultAgent = useProjectsStore((s) => s.agents[0]?.command);
+  const remoteHost = useProjectsStore((s) => s.gitHosts.get(projectPath)?.host ?? null);
+  const linearIssuePrefixes = useProjectsStore((s) => s.linearIssuePrefixes);
 
   const tabs = win?.tabs ?? [];
   const [open, setOpen] = useState(isMain || tabs.length > 0);
@@ -186,6 +193,21 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
     archiveWorktree(projectPath, basename(path)).catch((e) => setArchiveError(String(e)));
   };
 
+  const openOnRemote = () => {
+    openBranchOnRemote(path, branchName).catch(() => null);
+  };
+
+  // A Linear issue identifier (e.g. FDY-123) embedded in this worktree's branch
+  // or path, matched against the user's configured team prefixes.
+  const linearIssueId = findLinearIdentifier(`${branchName} ${path}`, linearIssuePrefixes);
+
+  const openLinearIssue = () => {
+    if (!linearIssueId) return;
+    invoke<string | null>('linear_issue_url', { identifier: linearIssueId })
+      .then((url) => (url ? openUrl(url) : null))
+      .catch(() => null);
+  };
+
   return (
     <div ref={rowRef} className="relative">
       <ContextMenu.Root onOpenChange={handleMenuOpenChange}>
@@ -255,6 +277,17 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="z-[300]">
             <ContextMenu.Popup className={menuPopupClass}>
+              {linearIssueId && (
+                <ContextMenu.Item className={menuItemClass} onClick={openLinearIssue}>
+                  <span className={menuIconClass}><LinearIcon size={14} /></span>
+                  Open Linear issue {linearIssueId}
+                </ContextMenu.Item>
+              )}
+              <ContextMenu.Item className={menuItemClass} onClick={openOnRemote}>
+                <span className={menuIconClass}><GitHostIcon host={remoteHost} size={14} /></span>
+                Open branch on {hostLabel(remoteHost)}
+              </ContextMenu.Item>
+              <ContextMenu.Separator className={menuSeparatorClass} />
               <ArchiveMenuItems
                 isMain={isMain}
                 loading={statusLoading}

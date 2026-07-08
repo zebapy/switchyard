@@ -60,6 +60,8 @@ export function ProjectItem({
   const agents = useProjectsStore((s) => s.agents);
   const sort = useProjectsStore((s) => s.projectSort[project.path]) ?? DEFAULT_WORKTREE_SORT;
   const setProjectSort = useProjectsStore((s) => s.setProjectSort);
+  const prBranches = useProjectsStore((s) => s.prBranches.get(project.path));
+  const refreshPrBranches = useProjectsStore((s) => s.refreshPrBranches);
   const addTab = useWorkspaceStore((s) => s.addTab);
   const pendingWorktrees = useProjectsStore((s) => s.pendingWorktrees);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
@@ -95,17 +97,25 @@ export function ProjectItem({
     }
   }, [isExpanded, project.path, project.is_git, refreshGitInfo, refreshPrInfo]);
 
+  // The 'pr' sort needs to know which branches have an open PR — fetch the
+  // project's open PRs whenever that sort is active on an expanded project.
+  useEffect(() => {
+    if (isExpanded && project.is_git && sort === 'pr') {
+      refreshPrBranches(project.path);
+    }
+  }, [isExpanded, project.path, project.is_git, sort, refreshPrBranches]);
+
   // Root worktree first, then linked worktrees ordered by the project's chosen
   // sort. Non-git projects get a synthetic base.
   const worktrees = useMemo<WorktreeInfo[]>(() => {
     if (git?.worktrees && git.worktrees.length > 0) {
-      return sortWorktrees(git.worktrees, sort);
+      return sortWorktrees(git.worktrees, sort, { prBranches });
     }
     if (!project.is_git) {
       return [{ path: project.path, branch: null, is_main: true, last_commit_unix: null, created_unix: null, added: 0, deleted: 0 }];
     }
     return [];
-  }, [git, sort, project.is_git, project.path]);
+  }, [git, sort, prBranches, project.is_git, project.path]);
 
   const baseBranch = git?.branch ?? worktrees.find((w) => w.is_main)?.branch ?? null;
 
@@ -127,8 +137,8 @@ export function ProjectItem({
       deleted: 0,
     }));
     const linked = worktrees.filter((w) => !w.is_main);
-    return sortWorktrees([...linked, ...placeholders], sort);
-  }, [worktrees, pending, sort]);
+    return sortWorktrees([...linked, ...placeholders], sort, { prBranches });
+  }, [worktrees, pending, sort, prBranches]);
 
   const draggable = index !== undefined;
 

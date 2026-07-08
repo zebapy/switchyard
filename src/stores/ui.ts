@@ -2,6 +2,17 @@ import { create } from 'zustand';
 
 export const APP_NAME = 'Switchyard';
 
+// Zen Mode is persisted in localStorage (not the Rust session) so it's known
+// before any store loads — `main.tsx` reads it to decide which whole interface
+// to mount on startup, the standard chrome or the single-focus Zen layout.
+const ZEN_MODE_KEY = 'switchyard.zenMode';
+function readZenMode(): boolean {
+  return localStorage.getItem(ZEN_MODE_KEY) === '1';
+}
+function persistZenMode(value: boolean): void {
+  localStorage.setItem(ZEN_MODE_KEY, value ? '1' : '0');
+}
+
 interface WorktreeModalState {
   open: boolean;
   projectPath: string | null;
@@ -64,6 +75,11 @@ interface UiState {
   setHelpOpen: (v: boolean) => void;
   toggleHelp: () => void;
   setTreeFocused: (v: boolean) => void;
+
+  /** When true, the single-focus Zen layout replaces the standard chrome. */
+  zenMode: boolean;
+  setZenMode: (v: boolean) => void;
+  toggleZenMode: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -105,4 +121,8 @@ export const useUiStore = create<UiState>((set) => ({
   setHelpOpen: (v) => set({ helpOpen: v }),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
   setTreeFocused: (v) => set({ treeFocused: v }),
+
+  zenMode: readZenMode(),
+  setZenMode: (v) => { persistZenMode(v); set({ zenMode: v }); },
+  toggleZenMode: () => set((s) => { const v = !s.zenMode; persistZenMode(v); return { zenMode: v }; }),
 }));
