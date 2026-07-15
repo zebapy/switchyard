@@ -11,6 +11,7 @@ import { PrTemplateSettings } from './PrTemplateSettings';
 import { AgentSettings } from './AgentSettings';
 import { TerminalSettings } from './TerminalSettings';
 import { NotificationsSettings } from './NotificationsSettings';
+import { ZenModeSettings } from './ZenModeSettings';
 import { SettingsFileSection } from './SettingsFileSection';
 import { SETTINGS_SECTIONS } from './settingsSections';
 
@@ -24,6 +25,7 @@ const SECTION_COMPONENTS: Record<string, ComponentType> = {
   'pull-requests': PrTemplateSettings,
   agents: AgentSettings,
   terminal: TerminalSettings,
+  'zen-mode': ZenModeSettings,
   notifications: NotificationsSettings,
   'settings-file': SettingsFileSection,
 };

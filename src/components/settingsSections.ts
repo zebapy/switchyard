@@ -41,6 +41,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     sections: [
       { id: 'agents', label: 'Agents' },
       { id: 'terminal', label: 'Terminal' },
+      { id: 'zen-mode', label: 'Zen Mode' },
       { id: 'notifications', label: 'Notifications' },
       { id: 'settings-file', label: 'Settings file' },
     ],
