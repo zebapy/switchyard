@@ -5,6 +5,32 @@ All notable changes to Switchyard are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Zen Mode gains a **Back button** in the top-left toolbar, just right of the macOS traffic lights, with a hotkey keycap. Its label names where it lands — the parent worktree, the project, or `Projects` at the root — and it mirrors the escape keys: in a focused chat/terminal it leaves the pane (`^←`), otherwise it climbs one tier (`←`). Hidden at the Projects root, where there's nowhere left to go back to. It replaces the focus-only `^← escape pane` button.
+
+### Changed
+
+- Zen Mode tier lists (Projects / Workspaces / Terminals & chats) are restyled around a new **Signal aqua** accent (`#40e0c0`) — the railway signal-lamp glow, distinct from every status color. Selected rows drop the border ring and ember tint for a borderless **soft aqua fill** with rounded corners and aqua-tinted label. The `ROOT` badge and the PR indicator lose their boxed borders (now bare colored text), and the Zen overlay menus (actions, sort, open-in) pick up the same aqua selection highlight.
+- Zen Mode replaces the global **⌘P jump** palette (jump to any pane/worktree across every project) with a context-aware **sort** button in the same top-right slot. It sorts whichever tier is on screen and persists the choice: **Projects** by Manual (drag order, default) / Recent activity / Name / Workspaces / Panes; **Workspaces** by the existing Created / Updated / Name / Changes / Pull request; **Terminals & chats** by **Status** (agents awaiting input first, then working, then idle, then terminals — the new default), Name, or Kind. The button (labelled `⌘P ⇅ Sort: <type>`) opens a small menu with the active option checked; `⌘P` still toggles it. Worktree sort is no longer buried in the Workspaces-tier ⌘K actions, and **Exit Zen Mode** (previously only in the jump palette) moves to the ⌘K action menu, where it's always available.
+- Zen Mode Projects and Workspaces tiers now group into **`Pinned` and `Projects`/`Worktrees` sections** with headings. **Pin project** / **Pin workspace** (and their unpin counterparts) are in each row's ⌘K actions; pinned items float to the top regardless of sort. On the Workspaces tier the repo **root always leads the `Pinned` section** (it can't be pinned or unpinned), and the redundant per-row `WORKTREE` badge is gone — the section heading conveys it — while the `ROOT` badge stays. Sections collapse to a flat list while a search is active.
+
+### Fixed
+
+- Zen Mode's **sort** and **New…** menus were missing a search box, which also left cmdk without a focused input — so opening them, then pressing ↑/↓ did nothing and there was no field to type into. All Zen overlay menus (⌘K actions, ⇅ sort, ⌘O open-in, ⌘⇧K new) now share one combobox component with an **autofocused search** that fuzzy-narrows the list and full up/down/Enter keyboard nav.
+- Zen Mode now vertically centers the macOS traffic-light buttons in its taller top toolbar (they no longer look crammed against the top of the window) and gives them a left inset matching the toolbar's right padding. The buttons are repositioned natively while Zen owns the window and restored to their default macOS layout on exit, so the Standard layout is unaffected.
+
+### Added
+
+- New context-aware **New… menu** anchored to the bottom-left and toggled with **⌘⇧K**. In the Standard layout it sits in the sidebar footer: the Workspace view offers new-session actions for the active window (New _agent_, New terminal, New worktree…), every other view offers project actions (Clone repo…, Add project…). In **Zen Mode** it sits in the bottom-left status bar: the Projects tier offers _Add folder as project…_, and the Workspaces/Panes tiers offer _New chat_ / _New terminal_ in the selected workspace.
+- Zen Mode toolbar gains a centered, always-focused **search input**. Start typing anywhere in the tier view to fuzzy-narrow the current list — projects on the Projects tier, worktrees on the Workspaces tier, and terminals/agents/cloud sessions on the Panes tier — with the best match ordered first and the cursor snapped to it. Arrow keys still navigate the filtered list, → / Enter drills in, and Escape clears the query before climbing a tier. The search resets whenever you change tiers.
+- Zen Mode chrome is simplified: the breadcrumb moves from the top toolbar to the **bottom-left status bar**, and the verbose navigation-hint strip (the `NAVIGATE` badge and `↑↓ move` / `→ enter` / `← up` / `⌘T` legends) is removed. The bottom-right action button now shows `→` (matching the forward-arrow/Enter that opens the selection).
+- Zen Mode **Focus** (a pane opened full-screen) now shares the same toolbar and footer as the tier list instead of a separate green-outlined card: the breadcrumb stays in the bottom-left (extended with the focused pane's name), the **^← escape pane** control moves into the top toolbar, and the green focus outline and `FOCUS` badges are gone.
+- Zen Mode toolbar gains a **⌘O open** button (left of ⌘P jump) that opens the current directory — the selected project, worktree, focused terminal/agent/cloud session, or empty worktree — in Finder, VS Code, Cursor, Terminal, iTerm, Warp, or Ghostty. The `Open in…` app list is now a shared API (`src/lib/openIn`) reused by the workspace header menu.
+- Zen Mode Workspaces tier now shows a **pull-request badge** in each worktree row's right-hand detail when its branch has an open GitHub PR (`#123`, marked `draft` for drafts). The row's ⌘K actions gain **Open pull request #123 on GitHub** when a PR exists, or **Create pull request…** (seeds a Create-PR agent chat in that worktree) when it doesn't.
+
 ## [0.3.1] - 2026-07-15
 
 ### Added

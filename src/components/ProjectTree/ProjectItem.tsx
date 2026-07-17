@@ -60,7 +60,7 @@ export function ProjectItem({
   const agents = useProjectsStore((s) => s.agents);
   const sort = useProjectsStore((s) => s.projectSort[project.path]) ?? DEFAULT_WORKTREE_SORT;
   const setProjectSort = useProjectsStore((s) => s.setProjectSort);
-  const prBranches = useProjectsStore((s) => s.prBranches.get(project.path));
+  const prsByBranch = useProjectsStore((s) => s.prsByBranch.get(project.path));
   const refreshPrBranches = useProjectsStore((s) => s.refreshPrBranches);
   const addTab = useWorkspaceStore((s) => s.addTab);
   const pendingWorktrees = useProjectsStore((s) => s.pendingWorktrees);
@@ -109,13 +109,13 @@ export function ProjectItem({
   // sort. Non-git projects get a synthetic base.
   const worktrees = useMemo<WorktreeInfo[]>(() => {
     if (git?.worktrees && git.worktrees.length > 0) {
-      return sortWorktrees(git.worktrees, sort, { prBranches });
+      return sortWorktrees(git.worktrees, sort, { prsByBranch });
     }
     if (!project.is_git) {
       return [{ path: project.path, branch: null, is_main: true, last_commit_unix: null, created_unix: null, added: 0, deleted: 0 }];
     }
     return [];
-  }, [git, sort, prBranches, project.is_git, project.path]);
+  }, [git, sort, prsByBranch, project.is_git, project.path]);
 
   const baseBranch = git?.branch ?? worktrees.find((w) => w.is_main)?.branch ?? null;
 
@@ -137,8 +137,8 @@ export function ProjectItem({
       deleted: 0,
     }));
     const linked = worktrees.filter((w) => !w.is_main);
-    return sortWorktrees([...linked, ...placeholders], sort, { prBranches });
-  }, [worktrees, pending, sort, prBranches]);
+    return sortWorktrees([...linked, ...placeholders], sort, { prsByBranch });
+  }, [worktrees, pending, sort, prsByBranch]);
 
   const draggable = index !== undefined;
 

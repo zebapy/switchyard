@@ -1,16 +1,21 @@
 import { useMemo, useState } from 'react';
-import { Command as Cmdk } from 'cmdk';
+import { open } from '@tauri-apps/plugin-dialog';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useProjectsStore } from '../stores/projects';
+import { useUiStore } from '../stores/ui';
 import { useZenStore } from './zenStore';
 import { basename, paneLabel } from './zenData';
-import { WORKTREE_SORT_OPTIONS, DEFAULT_WORKTREE_SORT } from '../types/project';
+import { loadPrTemplate, renderPrPrompt } from '../components/GitPanel/createPr';
+import { ZenMenu, type ZenMenuItem } from './ZenMenu';
 import type { PaneInfo } from '../types/pane';
+import type { PullRequestItem } from '../types/project';
 
 /** What ⌘K acts on — derived from the current tier/cursor (or focused pane). */
 export type ZenActionTarget =
-  | { kind: 'project'; path: string; name: string }
-  | { kind: 'worktree'; projectPath: string; path: string; name: string; isMain: boolean }
+  | { kind: 'projects' } // the project list itself (e.g. when it's empty)
+  | { kind: 'project'; path: string; name: string; pinned: boolean }
+  | { kind: 'worktree'; projectPath: string; path: string; name: string; branch: string | null; isMain: boolean; pinned: boolean; pr?: PullRequestItem }
   | { kind: 'pane'; paneId: string; info: PaneInfo; worktreePath: string }
   | { kind: 'empty'; worktreePath: string };
 
@@ -22,14 +27,33 @@ interface ZenAction {
   run: () => void;
 }
 
-const kbdClass =
-  'ml-auto rounded-[5px] border border-line bg-app px-1.5 py-px font-mono text-[11px] leading-none text-ink-faint';
-
 export function spawnPane(worktreePath: string, kind: 'Shell' | 'Agent') {
   const agent = kind === 'Agent' ? useProjectsStore.getState().agents[0]?.command : undefined;
   useWorkspaceStore.getState().addTab(worktreePath, basename(worktreePath), { kind, cwd: worktreePath, agent });
   const newId = useWorkspaceStore.getState().windows.get(worktreePath)?.activePaneId;
   if (newId) useZenStore.getState().focus(newId);
+}
+
+// Start a Create-PR agent chat in the worktree, seeded with the same prompt the
+// Git panel uses, and focus it. Kept inside Zen (no goToWorkspace) so the flow
+// stays in the single-focus layout.
+function createPrInWorktree(worktreePath: string, branch: string | null, defaultBranch: string | null) {
+  const agent = useProjectsStore.getState().agents[0]?.command;
+  const prompt = renderPrPrompt(loadPrTemplate(), { branch, base: defaultBranch, files: [] });
+  useWorkspaceStore.getState().addTab(worktreePath, basename(worktreePath), {
+    kind: 'Agent',
+    cwd: worktreePath,
+    agent,
+    command: prompt,
+    label: 'Create PR',
+  });
+  const newId = useWorkspaceStore.getState().windows.get(worktreePath)?.activePaneId;
+  if (newId) useZenStore.getState().focus(newId);
+}
+
+async function addFolderAsProject() {
+  const sel = await open({ directory: true, multiple: false, title: 'Select project folder' });
+  if (typeof sel === 'string') await useProjectsStore.getState().addProjectPath(sel);
 }
 
 async function archive(projectPath: string, name: string) {
@@ -46,29 +70,69 @@ async function archive(projectPath: string, name: string) {
   useZenStore.getState().back();
 }
 
-// View-level actions on a project's worktree list — reorder the list the same
-// way the sidebar's sort button does. Distinct from the selected worktree's own
-// item actions (open, archive), which sit above these.
-function sortActionsFor(projectPath: string): ZenAction[] {
-  const current = useProjectsStore.getState().projectSort[projectPath] ?? DEFAULT_WORKTREE_SORT;
-  return WORKTREE_SORT_OPTIONS.map((option) => ({
-    id: `sort-${option.value}`,
-    label: `Sort worktrees by ${option.label}${option.value === current ? ' ✓' : ''}`,
-    run: () => { void useProjectsStore.getState().setProjectSort(projectPath, option.value); },
-  }));
-}
+// Always available, regardless of what's selected — the in-Zen way back to the
+// standard layout (formerly the jump palette's "Exit Zen Mode" entry).
+const exitZenAction: ZenAction = {
+  id: 'exit-zen',
+  label: 'Exit Zen Mode',
+  run: () => {
+    void useWorkspaceStore.getState().saveSession();
+    useUiStore.getState().setZenMode(false);
+  },
+};
 
 // `id: 'rename'` is handled inline by the component; the rest run on select.
 function actionsFor(target: ZenActionTarget): ZenAction[] {
   const ws = () => useWorkspaceStore.getState();
   const zen = () => useZenStore.getState();
 
+  const addProjectAction: ZenAction = {
+    id: 'add-project',
+    label: 'Add folder as project…',
+    run: () => { void addFolderAsProject(); },
+  };
+
+  if (target.kind === 'projects') {
+    return [addProjectAction];
+  }
+
   if (target.kind === 'project') {
-    return [{ id: 'open', label: 'Open', run: () => zen().enterProject(target.path) }];
+    return [
+      { id: 'open', label: 'Open', run: () => zen().enterProject(target.path) },
+      {
+        id: 'pin',
+        label: target.pinned ? 'Unpin project' : 'Pin project',
+        run: () => { void useProjectsStore.getState().togglePin(target.path); },
+      },
+      addProjectAction,
+    ];
   }
 
   if (target.kind === 'worktree') {
     const actions: ZenAction[] = [{ id: 'open', label: 'Open', run: () => zen().enterWorktree(target.path) }];
+    // The root/main worktree is pinned to the top implicitly and can't be toggled.
+    if (!target.isMain) {
+      actions.push({
+        id: 'pin',
+        label: target.pinned ? 'Unpin workspace' : 'Pin workspace',
+        run: () => { void useProjectsStore.getState().togglePin(target.path); },
+      });
+    }
+    if (target.pr) {
+      const prUrl = target.pr.url;
+      actions.push({
+        id: 'open-pr',
+        label: `Open pull request #${target.pr.number} on GitHub`,
+        run: () => { void openUrl(prUrl); },
+      });
+    } else {
+      const defaultBranch = useProjectsStore.getState().gitInfo.get(target.projectPath)?.branch ?? null;
+      actions.push({
+        id: 'create-pr',
+        label: 'Create pull request…',
+        run: () => createPrInWorktree(target.path, target.branch, defaultBranch),
+      });
+    }
     if (!target.isMain) {
       actions.push({
         id: 'archive',
@@ -77,7 +141,6 @@ function actionsFor(target: ZenActionTarget): ZenAction[] {
         run: () => { void archive(target.projectPath, basename(target.path)); },
       });
     }
-    actions.push(...sortActionsFor(target.projectPath));
     return actions;
   }
 
@@ -99,12 +162,15 @@ function actionsFor(target: ZenActionTarget): ZenAction[] {
 }
 
 function targetTitle(target: ZenActionTarget): string {
+  if (target.kind === 'projects') return 'Projects';
   if (target.kind === 'pane') return paneLabel(target.info);
   if (target.kind === 'empty') return basename(target.worktreePath);
   return target.name;
 }
 
-const scrimClass = 'fixed inset-0 z-[200] flex items-start justify-center bg-[rgba(6,7,9,0.6)] pt-[12vh] backdrop-blur-[3px]';
+// Anchored above the bottom-right "⌘K actions" button — the card's bottom-right
+// corner hugs the button and the list grows up/leftward, staying in the window.
+const scrimClass = 'fixed inset-0 z-[200] flex items-end justify-end bg-[rgba(6,7,9,0.6)] pb-[58px] pr-[18px] backdrop-blur-[3px]';
 const cardClass = 'flex max-h-[60vh] w-[420px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]';
 const headerClass = 'border-b border-line px-[18px] py-2.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-ghost';
 
@@ -140,7 +206,22 @@ function RenamePane({ info, paneId, title, onDone }: { info: PaneInfo; paneId: s
 export function ZenActionMenu({ target }: { target: ZenActionTarget }) {
   const closeActionMenu = useZenStore((s) => s.closeActionMenu);
   const [renaming, setRenaming] = useState(false);
-  const actions = useMemo(() => actionsFor(target), [target]);
+
+  const items = useMemo<ZenMenuItem[]>(
+    () =>
+      [...actionsFor(target), exitZenAction].map((action) => ({
+        id: action.id,
+        label: action.label,
+        shortcut: action.shortcut,
+        danger: action.danger,
+        onSelect: () => {
+          if (action.id === 'rename') { setRenaming(true); return; }
+          action.run();
+          closeActionMenu();
+        },
+      })),
+    [target, closeActionMenu],
+  );
 
   if (renaming && target.kind === 'pane') {
     return (
@@ -154,41 +235,15 @@ export function ZenActionMenu({ target }: { target: ZenActionTarget }) {
   }
 
   return (
-    <div className={scrimClass} onClick={closeActionMenu}>
-      <Cmdk
-        label="Zen actions"
-        loop
-        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closeActionMenu(); } }}
-        className={cardClass}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={headerClass}>{targetTitle(target)}</div>
-        <Cmdk.Input
-          autoFocus
-          placeholder="Action…"
-          className="w-full border-b border-line bg-transparent px-[18px] py-3 text-[14px] text-ink outline-none placeholder:text-ink-ghost"
-        />
-        <Cmdk.List className="scroll-thin overflow-y-auto p-1.5">
-          <Cmdk.Empty className="p-[18px] text-center text-[13px] text-ink-ghost">No matching actions</Cmdk.Empty>
-          {actions.map((action) => (
-            <Cmdk.Item
-              key={action.id}
-              value={action.label}
-              onSelect={() => {
-                if (action.id === 'rename') { setRenaming(true); return; }
-                action.run();
-                closeActionMenu();
-              }}
-              className={`flex cursor-pointer items-center gap-3 rounded-[9px] px-3 py-[9px] text-[13px] data-[selected=true]:bg-ember-tint ${
-                action.danger ? 'text-del' : 'text-ink'
-              }`}
-            >
-              {action.label}
-              {action.shortcut && <kbd className={kbdClass}>{action.shortcut}</kbd>}
-            </Cmdk.Item>
-          ))}
-        </Cmdk.List>
-      </Cmdk>
-    </div>
+    <ZenMenu
+      label="Zen actions"
+      title={targetTitle(target)}
+      anchor="bottom-right"
+      width={420}
+      items={items}
+      onClose={closeActionMenu}
+      placeholder="Action…"
+      emptyText="No matching actions"
+    />
   );
 }

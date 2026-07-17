@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort, PullRequestItem } from '../types/project';
+import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort, ProjectListSort, PaneSort, PullRequestItem } from '../types/project';
+import { DEFAULT_PROJECT_LIST_SORT, DEFAULT_PANE_SORT } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
 import type { ScriptSource } from '../types/scripts';
@@ -30,6 +31,8 @@ interface AppSettings {
   desktop_notifications: boolean;
   project_scripts: Record<string, string[]>;
   project_sort: Record<string, WorktreeSort>;
+  project_list_sort: ProjectListSort;
+  pane_sort: PaneSort;
   agents: AgentConfig[];
   worktree_location: WorktreeLocation;
   linear_issue_prefixes: string[];
@@ -52,10 +55,15 @@ interface ProjectsState {
   worktreeLocation: WorktreeLocation;
   /** Per-project worktree-list sort order, keyed by project path. */
   projectSort: Record<string, WorktreeSort>;
+  /** Global Zen-mode project-list sort order. */
+  projectListSort: ProjectListSort;
+  /** Global Zen-mode pane-list sort order (within a workspace). */
+  paneSort: PaneSort;
   /** Linear team identifier prefixes (e.g. `['fdy']`) used to detect issue ids in worktrees. */
   linearIssuePrefixes: string[];
-  /** Per-project set of branch names that have an open PR, for the 'pr' sort. */
-  prBranches: Map<string, Set<string>>;
+  /** Per-project open PRs indexed by head branch, for the 'pr' sort and the
+   *  Zen worktree PR indicator / "open pull request" action. */
+  prsByBranch: Map<string, Map<string, PullRequestItem>>;
   /** Worktrees whose creation is in flight, shown as placeholder rows. */
   pendingWorktrees: PendingWorktree[];
   filter: string;
@@ -92,9 +100,13 @@ interface ProjectsState {
   setWorktreeLocation: (location: WorktreeLocation) => Promise<void>;
   /** Persist a project's worktree-list sort order. */
   setProjectSort: (projectPath: string, sort: WorktreeSort) => Promise<void>;
+  /** Persist the global Zen-mode project-list sort order. */
+  setProjectListSort: (sort: ProjectListSort) => Promise<void>;
+  /** Persist the global Zen-mode pane-list sort order. */
+  setPaneSort: (sort: PaneSort) => Promise<void>;
   /** Persist the Linear team identifier prefixes used for issue detection. */
   setLinearIssuePrefixes: (prefixes: string[]) => Promise<void>;
-  /** Fetch the project's open-PR head branches (for the 'pr' sort). */
+  /** Fetch the project's open PRs indexed by head branch (for the 'pr' sort and Zen PR indicators). */
   refreshPrBranches: (projectPath: string) => Promise<void>;
   setFilter: (filter: string) => void;
   toggleExpanded: (projectPath: string) => void;
@@ -132,8 +144,10 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   agents: [DEFAULT_AGENT],
   worktreeLocation: 'project',
   projectSort: {},
+  projectListSort: DEFAULT_PROJECT_LIST_SORT,
+  paneSort: DEFAULT_PANE_SORT,
   linearIssuePrefixes: [],
-  prBranches: new Map(),
+  prsByBranch: new Map(),
   pendingWorktrees: [],
   filter: '',
   expandedProjects: new Set(),
@@ -157,6 +171,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         agents,
         worktreeLocation: settings.worktree_location ?? 'project',
         projectSort: settings.project_sort ?? {},
+        projectListSort: settings.project_list_sort ?? DEFAULT_PROJECT_LIST_SORT,
+        paneSort: settings.pane_sort ?? DEFAULT_PANE_SORT,
         linearIssuePrefixes: settings.linear_issue_prefixes ?? [],
       });
       return;
@@ -399,6 +415,30 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
+  setProjectListSort: async (sort) => {
+    const previous = get().projectListSort;
+    set({ projectListSort: sort });
+    try {
+      const settings = await invoke<AppSettings>('set_project_list_sort', { sort });
+      set({ projectListSort: settings.project_list_sort ?? DEFAULT_PROJECT_LIST_SORT });
+    } catch (e) {
+      console.error('Failed to set project list sort:', e);
+      set({ projectListSort: previous });
+    }
+  },
+
+  setPaneSort: async (sort) => {
+    const previous = get().paneSort;
+    set({ paneSort: sort });
+    try {
+      const settings = await invoke<AppSettings>('set_pane_sort', { sort });
+      set({ paneSort: settings.pane_sort ?? DEFAULT_PANE_SORT });
+    } catch (e) {
+      console.error('Failed to set pane sort:', e);
+      set({ paneSort: previous });
+    }
+  },
+
   setLinearIssuePrefixes: async (prefixes) => {
     const previous = get().linearIssuePrefixes;
     set({ linearIssuePrefixes: prefixes });
@@ -417,9 +457,9 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     );
     if (!prs) return;
     set((state) => {
-      const next = new Map(state.prBranches);
-      next.set(projectPath, new Set(prs.map((pr) => pr.branch)));
-      return { prBranches: next };
+      const next = new Map(state.prsByBranch);
+      next.set(projectPath, new Map(prs.map((pr) => [pr.branch, pr])));
+      return { prsByBranch: next };
     });
   },
 

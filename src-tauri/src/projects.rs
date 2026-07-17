@@ -80,6 +80,42 @@ pub enum WorktreeSort {
     Pr,
 }
 
+/// How the Zen-mode project list is ordered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectListSort {
+    /// The user's saved drag order (project add order).
+    Manual,
+    /// Most-recently-focused project first.
+    Recent,
+    /// Project name, A→Z.
+    Name,
+    /// Most workspaces (worktrees) first.
+    Workspaces,
+    /// Most open panes first.
+    Panes,
+}
+
+fn default_project_list_sort() -> ProjectListSort {
+    ProjectListSort::Manual
+}
+
+/// How the Zen-mode pane (terminals & chats) list within a workspace is ordered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneSort {
+    /// Agents awaiting input first, then working, then idle, then terminals.
+    Status,
+    /// Pane label, A→Z.
+    Name,
+    /// Agents first, then terminals; alphabetical within each group.
+    Kind,
+}
+
+fn default_pane_sort() -> PaneSort {
+    PaneSort::Status
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[schemars(title = "AppSettings", description = "User settings for the Switchyard app.")]
 pub struct AppSettings {
@@ -108,6 +144,12 @@ pub struct AppSettings {
     /// absent from the map fall back to the default sort.
     #[serde(default)]
     pub project_sort: HashMap<String, WorktreeSort>,
+    /// How the Zen-mode project list is ordered (global, not per-project).
+    #[serde(default = "default_project_list_sort")]
+    pub project_list_sort: ProjectListSort,
+    /// How the Zen-mode pane list within a workspace is ordered (global).
+    #[serde(default = "default_pane_sort")]
+    pub pane_sort: PaneSort,
     /// Configured AI agents, ordered by preference. First entry is the default.
     #[serde(default = "default_agents")]
     pub agents: Vec<AgentConfig>,
@@ -133,6 +175,8 @@ impl Default for AppSettings {
             desktop_notifications: true,
             project_scripts: HashMap::new(),
             project_sort: HashMap::new(),
+            project_list_sort: default_project_list_sort(),
+            pane_sort: default_pane_sort(),
             agents: default_agents(),
             worktree_location: default_worktree_location(),
             linear_issue_prefixes: Vec::new(),
@@ -1331,6 +1375,22 @@ pub fn set_project_sort(
 ) -> Result<AppSettings, String> {
     let mut settings = load_settings();
     settings.project_sort.insert(project_path, sort);
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_project_list_sort(sort: ProjectListSort) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.project_list_sort = sort;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_pane_sort(sort: PaneSort) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.pane_sort = sort;
     save_settings(&settings)?;
     Ok(settings)
 }

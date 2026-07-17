@@ -1,12 +1,16 @@
 import { goToSettings } from '../../router';
 import { GearIcon } from '../icons';
 import { HelpMenu } from './HelpMenu';
+import { SidebarAddMenu } from './SidebarAddMenu';
 import { UsageBars } from './UsageBars';
 
 export function Footer() {
   return (
     <div className="flex items-center justify-between gap-2 border-t border-line p-2">
-      <UsageBars />
+      <div className="flex items-center gap-1">
+        <SidebarAddMenu />
+        <UsageBars />
+      </div>
       <div className="flex items-center gap-1">
         <HelpMenu />
         <button

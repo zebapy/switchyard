@@ -132,6 +132,13 @@ export function useKeybindings({
         return;
       }
 
+      // ⌘⇧K: toggle the context-aware "new" menu (bottom-left)
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        useUiStore.getState().toggleAddMenu();
+        return;
+      }
+
       // Ctrl+Q: quit
       if (e.ctrlKey && e.key === 'q') {
         e.preventDefault();

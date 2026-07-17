@@ -1,4 +1,4 @@
-import type { ProjectInfo, GitInfo, WorktreeSort } from '../types/project';
+import type { ProjectInfo, GitInfo, WorktreeSort, ProjectListSort, PaneSort, PullRequestItem } from '../types/project';
 import type { PaneInfo, PaneTree, Window } from '../types/pane';
 import { sortWorktrees } from '../lib/sortWorktrees';
 
@@ -8,14 +8,24 @@ export interface ProjectRow {
   name: string;
   worktrees: number;
   panes: number;
+  /** Unix ms the project's most-recently-focused window was last active (0 if none). */
+  lastActiveAt: number;
+  /** Pinned to the top of the project list regardless of sort. */
+  pinned: boolean;
 }
 
 /** A workspace = a repo's root or one of its git worktrees. */
 export interface WorktreeRow {
   path: string;
   name: string;
+  /** The worktree's checked-out branch, if any — the head ref matched against open PRs. */
+  branch: string | null;
   isMain: boolean;
   panes: number;
+  /** Pinned above unpinned worktrees (the root/main worktree still sorts first). */
+  pinned: boolean;
+  /** The open pull request for this worktree's branch, when one exists. */
+  pr?: PullRequestItem;
 }
 
 /** A single leaf pane within a worktree's window. */
@@ -51,16 +61,59 @@ export function paneLabel(info: PaneInfo): string {
   return basename(info.cwd) || info.kind.toLowerCase();
 }
 
-/** Tier 1 — top-level repos (worktree children are folded into their parent). */
-export function deriveProjectRows(projects: ProjectInfo[], gitInfo: GitInfoMap, windows: Windows): ProjectRow[] {
-  return projects
+/** Most-recent `lastActiveAt` across a project's own window and its worktree windows. */
+function lastActiveAcross(windows: Windows, paths: string[]): number {
+  let latest = 0;
+  for (const path of paths) {
+    const at = windows.get(path)?.lastActiveAt ?? 0;
+    if (at > latest) latest = at;
+  }
+  return latest;
+}
+
+/** Reorder project rows by the chosen sort. `manual` keeps the incoming order. */
+function sortProjectRows(rows: ProjectRow[], sort: ProjectListSort): ProjectRow[] {
+  if (sort === 'manual') return rows;
+  const next = [...rows];
+  if (sort === 'name') {
+    next.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  } else if (sort === 'workspaces') {
+    next.sort((a, b) => b.worktrees - a.worktrees);
+  } else if (sort === 'panes') {
+    next.sort((a, b) => b.panes - a.panes);
+  } else {
+    next.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  }
+  return next;
+}
+
+/** Tier 1 — top-level repos (worktree children are folded into their parent).
+ *  Pinned projects float to the top; the chosen sort orders within each group. */
+export function deriveProjectRows(
+  projects: ProjectInfo[],
+  gitInfo: GitInfoMap,
+  windows: Windows,
+  sort: ProjectListSort,
+  pins: ReadonlySet<string>,
+): ProjectRow[] {
+  const rows = projects
     .filter((p) => !p.worktree_parent)
     .map((p) => {
       const worktrees = gitInfo.get(p.path)?.worktrees ?? [];
       const paneSources = worktrees.length ? worktrees.map((w) => w.path) : [p.path];
       const panes = paneSources.reduce((n, path) => n + countPanes(windows, path), 0);
-      return { path: p.path, name: p.name, worktrees: worktrees.length || 1, panes };
+      return {
+        path: p.path,
+        name: p.name,
+        worktrees: worktrees.length || 1,
+        panes,
+        lastActiveAt: lastActiveAcross(windows, paneSources),
+        pinned: pins.has(p.path),
+      };
     });
+  const sorted = sortProjectRows(rows, sort);
+  // Stable float: pinned first, sort order preserved within each group.
+  return [...sorted].sort((a, b) => Number(b.pinned) - Number(a.pinned));
 }
 
 /** Tier 2 — a project's root + worktrees (or the project itself when non-git),
@@ -70,22 +123,56 @@ export function deriveWorktreeRows(
   windows: Windows,
   projectPath: string,
   sort: WorktreeSort,
-  prBranches?: Set<string>,
+  pins: ReadonlySet<string>,
+  prsByBranch?: Map<string, PullRequestItem>,
 ): WorktreeRow[] {
   const worktrees = gitInfo.get(projectPath)?.worktrees ?? [];
   if (worktrees.length) {
-    return sortWorktrees(worktrees, sort, { prBranches }).map((wt) => ({
+    const rows = sortWorktrees(worktrees, sort, { prsByBranch }).map((wt) => ({
       path: wt.path,
       name: wt.branch ?? basename(wt.path),
+      branch: wt.branch,
       isMain: wt.is_main,
       panes: countPanes(windows, wt.path),
+      pinned: pins.has(wt.path),
+      pr: wt.branch ? prsByBranch?.get(wt.branch) : undefined,
     }));
+    // Stable float: root/main stays first, then pinned worktrees, then the rest.
+    const rank = (row: WorktreeRow) => (row.isMain ? 0 : row.pinned ? 1 : 2);
+    return [...rows].sort((a, b) => rank(a) - rank(b));
   }
-  return [{ path: projectPath, name: basename(projectPath), isMain: true, panes: countPanes(windows, projectPath) }];
+  return [{ path: projectPath, name: basename(projectPath), branch: null, isMain: true, panes: countPanes(windows, projectPath), pinned: pins.has(projectPath) }];
+}
+
+/** True while a pane is still a live agent chat (not a shell, not an exited agent). */
+function isLiveAgent(info: PaneInfo): boolean {
+  return info.kind === 'Agent' && !info.agentExited;
+}
+
+/** Status priority for the 'status' sort: awaiting input → working → idle → terminals. */
+function statusRank(info: PaneInfo): number {
+  if (!isLiveAgent(info)) return 3;
+  if (info.agentStatus === 'waiting') return 0;
+  if (info.agentStatus === 'working') return 1;
+  return 2; // idle or unknown
+}
+
+/** Reorder pane rows by the chosen sort, keeping insertion order within ties. */
+function sortPaneRows(rows: PaneRow[], sort: PaneSort): PaneRow[] {
+  if (sort === 'name') {
+    return [...rows].sort((a, b) =>
+      paneLabel(a.info).localeCompare(paneLabel(b.info), undefined, { sensitivity: 'base' }),
+    );
+  }
+  if (sort === 'kind') {
+    // Live agents first, then everything else; stable within each group.
+    return [...rows].sort((a, b) => Number(isLiveAgent(b.info)) - Number(isLiveAgent(a.info)));
+  }
+  return [...rows].sort((a, b) => statusRank(a.info) - statusRank(b.info));
 }
 
 /** Tier 3 — every leaf pane in a worktree's window, flattened across tabs/splits. */
-export function derivePaneRows(windows: Windows, panes: Panes, worktreePath: string): PaneRow[] {
+export function derivePaneRows(windows: Windows, panes: Panes, worktreePath: string, sort: PaneSort): PaneRow[] {
   const win = windows.get(worktreePath);
   if (!win) return [];
   const rows: PaneRow[] = [];
@@ -95,7 +182,7 @@ export function derivePaneRows(windows: Windows, panes: Panes, worktreePath: str
       if (info) rows.push({ paneId: id, info });
     }
   }
-  return rows;
+  return sortPaneRows(rows, sort);
 }
 
 /** Project + worktree names for a window key, for the focus breadcrumb. */

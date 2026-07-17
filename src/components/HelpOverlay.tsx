@@ -12,6 +12,7 @@ const KEYBINDINGS = [
     { key: '⌘,', desc: 'Settings' },
     { key: '⌘⇧E', desc: 'Focus project tree' },
     { key: '⌘B', desc: 'Toggle sidebar' },
+    { key: '⌘⇧K', desc: 'New… menu' },
     { key: 'Ctrl+Q', desc: 'Quit' },
   ]},
   { section: 'Tree', bindings: [

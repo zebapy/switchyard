@@ -27,6 +27,10 @@
   --color-ember-tint:   rgba(255, 148, 56, 0.12);
   --color-ember-edge:   rgba(255, 148, 56, 0.45);
 
+  /* signal aqua — Zen list accent (railway signal-lamp glow / rail patina) */
+  --color-signal:      #40e0c0;
+  --color-signal-dim:  rgba(64, 224, 192, 0.13);
+
   /* status */
   --color-add:    #6fd08c;
   --color-del:    #f0758a;

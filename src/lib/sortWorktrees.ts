@@ -5,8 +5,8 @@ import type { WorktreeInfo, WorktreeSort } from '../types/project';
 
 /** Extra data some sorts need that doesn't live on the worktree itself. */
 export interface SortContext {
-  /** Branch names that have an open pull request, for the 'pr' sort. */
-  prBranches?: Set<string>;
+  /** Open PRs keyed by head branch, for the 'pr' sort. Only membership is read. */
+  prsByBranch?: ReadonlyMap<string, unknown>;
 }
 
 /** Display label a name-sort compares on: branch, falling back to the path basename. */
@@ -21,8 +21,8 @@ function changeCount(worktree: WorktreeInfo): number {
 }
 
 /** Whether this worktree's branch has an open pull request. */
-function hasPr(worktree: WorktreeInfo, prBranches: Set<string> | undefined): boolean {
-  return worktree.branch !== null && (prBranches?.has(worktree.branch) ?? false);
+function hasPr(worktree: WorktreeInfo, prsByBranch: ReadonlyMap<string, unknown> | undefined): boolean {
+  return worktree.branch !== null && (prsByBranch?.has(worktree.branch) ?? false);
 }
 
 /** Compare two worktrees by the chosen sort. Missing timestamps sort last. */
@@ -43,7 +43,7 @@ function compareBySort(
   }
   if (sort === 'pr') {
     // PR-bearing worktrees first, then most-recently-committed within each group.
-    const prDiff = Number(hasPr(b, context.prBranches)) - Number(hasPr(a, context.prBranches));
+    const prDiff = Number(hasPr(b, context.prsByBranch)) - Number(hasPr(a, context.prsByBranch));
     if (prDiff !== 0) return prDiff;
     return (b.last_commit_unix ?? 0) - (a.last_commit_unix ?? 0);
   }

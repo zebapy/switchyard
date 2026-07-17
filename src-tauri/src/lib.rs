@@ -5,9 +5,11 @@ mod projects;
 mod pty;
 mod session;
 mod token_store;
+mod traffic_lights;
 mod usage;
 
 use pty::PtyState;
+use traffic_lights::TrafficLightState;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{Emitter, Manager};
 
@@ -20,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(PtyState::new())
+        .manage(TrafficLightState::default())
         .setup(|app| {
             // Rename the legacy `cc-tui` config dir to `switchyard` before any
             // config file is read or written, so existing settings/tokens carry over.
@@ -125,6 +128,8 @@ pub fn run() {
             projects::discover_scripts,
             projects::set_project_scripts,
             projects::set_project_sort,
+            projects::set_project_list_sort,
+            projects::set_pane_sort,
             projects::set_linear_issue_prefixes,
             // Session commands
             session::save_session,
@@ -160,6 +165,9 @@ pub fn run() {
             git_ext::git_checkout_branch,
             git_ext::git_list_tree,
             git_ext::read_file_text,
+            // macOS traffic-light positioning (Zen mode)
+            traffic_lights::center_traffic_lights,
+            traffic_lights::reset_traffic_lights,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

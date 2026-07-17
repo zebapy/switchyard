@@ -46,6 +46,32 @@ export const WORKTREE_SORT_OPTIONS: { value: WorktreeSort; label: string }[] = [
   { value: 'pr', label: 'Pull request' },
 ];
 
+/** How the Zen-mode project list is ordered (global, not per-project). */
+export type ProjectListSort = 'manual' | 'recent' | 'name' | 'workspaces' | 'panes';
+
+/** Default project-list ordering — the user's saved drag order. */
+export const DEFAULT_PROJECT_LIST_SORT: ProjectListSort = 'manual';
+
+export const PROJECT_LIST_SORT_OPTIONS: { value: ProjectListSort; label: string }[] = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'recent', label: 'Recent activity' },
+  { value: 'name', label: 'Name' },
+  { value: 'workspaces', label: 'Workspaces' },
+  { value: 'panes', label: 'Panes' },
+];
+
+/** How the Zen-mode pane list within a workspace is ordered (global). */
+export type PaneSort = 'status' | 'name' | 'kind';
+
+/** Default pane ordering — surface agents that need attention first. */
+export const DEFAULT_PANE_SORT: PaneSort = 'status';
+
+export const PANE_SORT_OPTIONS: { value: PaneSort; label: string }[] = [
+  { value: 'status', label: 'Status' },
+  { value: 'name', label: 'Name' },
+  { value: 'kind', label: 'Kind' },
+];
+
 /** Deferred uncommitted line counts for one worktree, fetched after the tree renders. */
 export interface DiffStat {
   added: number;

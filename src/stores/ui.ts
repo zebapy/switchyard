@@ -70,6 +70,10 @@ interface UiState {
   paletteOpen: boolean;
   helpOpen: boolean;
   treeFocused: boolean;
+  /** Context-aware "new" menu anchored bottom-left (⌘⇧K). Content follows the active view. */
+  addMenuOpen: boolean;
+  setAddMenuOpen: (v: boolean) => void;
+  toggleAddMenu: () => void;
   setPaletteOpen: (v: boolean) => void;
   togglePalette: () => void;
   setHelpOpen: (v: boolean) => void;
@@ -116,6 +120,9 @@ export const useUiStore = create<UiState>((set) => ({
   paletteOpen: false,
   helpOpen: false,
   treeFocused: false,
+  addMenuOpen: false,
+  setAddMenuOpen: (v) => set({ addMenuOpen: v }),
+  toggleAddMenu: () => set((s) => ({ addMenuOpen: !s.addMenuOpen })),
   setPaletteOpen: (v) => set({ paletteOpen: v }),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setHelpOpen: (v) => set({ helpOpen: v }),

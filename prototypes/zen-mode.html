@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — Switchyard "Zen Mode" look exploration. Throwaway. Delete once a
+  direction is picked. Question it answers: what should the single-focus Zen
+  interface look like? Three STRUCTURALLY different takes, switch with the
+  bottom bar / keys 1-2-3 / [ ] . Each is keyboard-driven (arrows belong to the
+  variant, not the switcher).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Switchyard · Zen Mode prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ── Switchyard design tokens (graphite + ember) ── */
+  :root {
+    --app:#0a0b0d; --canvas:#101216; --side:#131519; --side2:#16181d;
+    --hover:#1d2026; --active:#20242b;
+    --line:#24272e; --line-soft:#1c1f25; --guide:#262a31;
+    --ink:#e6e8ec; --ink-dim:#9aa0ab; --ink-faint:#646b76; --ink-ghost:#454b54;
+    --ember:#ffae5c; --ember-strong:#ff9438; --ember-tint:rgba(255,148,56,.12); --ember-edge:rgba(255,148,56,.45);
+    --add:#6fd08c; --del:#f0758a; --green:#57c98a; --ai:#c79bff; --url:#7cc7ff;
+    --ui:'Hanken Grotesk',system-ui,-apple-system,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    font-family:var(--ui); color:var(--ink); background:var(--app);
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  #stage { position:fixed; inset:0; }
+  .variant { position:absolute; inset:0; display:none; flex-direction:column; }
+  .variant.on { display:flex; }
+  .mono { font-family:var(--mono); }
+  .dim { color:var(--ink-dim); } .faint { color:var(--ink-faint); } .ghost { color:var(--ink-ghost); }
+  .ember { color:var(--ember); }
+
+  /* status dots */
+  .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .s-run, .s-ready { background:var(--green); box-shadow:0 0 8px rgba(87,201,138,.5); }
+  .s-agent { background:var(--ai); box-shadow:0 0 8px rgba(199,155,255,.5); }
+  .s-idle { background:transparent; border:1.5px solid var(--ink-ghost); }
+  .s-fail { background:var(--del); }
+  .x { color:var(--del); font-family:var(--mono); }
+
+  .tag { font-family:var(--mono); font-size:9px; letter-spacing:.08em; padding:1px 5px; border-radius:4px;
+         border:1px solid var(--line); color:var(--ink-faint); }
+  .tag.root { color:var(--ember); border-color:var(--ember-edge); }
+
+  /* ───────────── shared breadcrumb + mode footer ───────────── */
+  .crumb { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--ink-faint); }
+  .crumb b { color:var(--ink); font-weight:600; }
+  .crumb .sep { color:var(--ink-ghost); }
+  .modebar { display:flex; align-items:center; gap:14px; font-family:var(--mono); font-size:11px; color:var(--ink-faint);
+             padding:10px 18px; border-top:1px solid var(--line-soft); }
+  .badge { font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.1em; padding:3px 8px; border-radius:5px; }
+  .badge.nav { background:var(--ember-tint); color:var(--ember); }
+  .badge.focus { background:rgba(87,201,138,.14); color:var(--green); }
+  .modebar kbd { font-family:var(--mono); color:var(--ink-dim); }
+  .modebar .key { color:var(--ink-dim); }
+
+  /* =====================================================================
+     VARIANT A — DRILL COLUMN  (Miller / breadcrumb single-tier)
+     One tier fullscreen at a time. Arrows move a cursor, → drills in,
+     ← climbs out, Enter at a pane = Focus. The mockup's literal take.
+     ===================================================================== */
+  #vA .topbar { display:flex; align-items:center; justify-content:space-between; padding:16px 22px; border-bottom:1px solid var(--line-soft); }
+  #vA .tier-label { font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--ink-ghost); text-transform:uppercase; }
+  #vA .list { flex:1; overflow:auto; padding:14px 14px; }
+  #vA .row { display:flex; align-items:center; gap:14px; padding:13px 18px; border-radius:10px; cursor:pointer;
+             border:1px solid transparent; }
+  #vA .row .lead { display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
+  #vA .row .name { font-size:15px; }
+  #vA .row.head .name { font-family:var(--mono); font-weight:600; }
+  #vA .row .meta { font-family:var(--mono); font-size:12px; color:var(--ink-faint); }
+  #vA .row .chev { color:var(--ink-ghost); font-family:var(--mono); }
+  #vA .row.sel { background:var(--ember-tint); border-color:var(--ember-edge); }
+  #vA .row.sel .chev { color:var(--ember); }
+  #vA .row.sel::before { content:''; position:absolute; }
+  #vA .list { position:relative; }
+  #vA .row { position:relative; }
+  #vA .row.sel { box-shadow:inset 3px 0 0 var(--ember); }
+
+  /* focus screen (shared shape, reused by all variants) */
+  .focusview { flex:1; display:flex; flex-direction:column; margin:14px; border-radius:14px; overflow:hidden;
+               background:var(--canvas); border:1px solid var(--line);
+               box-shadow:0 0 0 1px rgba(87,201,138,.25), 0 0 34px rgba(87,201,138,.10); }
+  .focusview .fhead { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-bottom:1px solid var(--line-soft); }
+  .focusview .term { flex:1; padding:20px 22px; font-family:var(--mono); font-size:13.5px; line-height:1.85; overflow:auto; }
+  .term .p { color:var(--ink-dim); } .term .g { color:var(--green); } .term .a { color:var(--ai); }
+  .term .num { color:var(--ink-ghost); } .term .add { color:var(--add); } .term .mod { color:var(--ember); }
+  .caret { display:inline-block; width:8px; height:1.1em; background:var(--green); vertical-align:text-bottom; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* =====================================================================
+     VARIANT B — SPOTLIGHT  (palette-first, near-zero chrome)
+     The screen is ONLY the focused pane. No tiers. ⌘K opens a centered
+     palette that flat-searches every pane everywhere. Maximal zen.
+     ===================================================================== */
+  #vB { background:var(--app); }
+  #vB .miniback { display:none; }
+  #vB .hint { position:absolute; bottom:22px; right:24px; font-family:var(--mono); font-size:11px; color:var(--ink-ghost); }
+  #vB .hint kbd { color:var(--ink-faint); }
+  #vB .full { flex:1; margin:0; border-radius:0; border:none; box-shadow:none; background:var(--app); }
+  #vB .full .fhead { background:transparent; border-color:var(--line-soft); padding-left:60px; }
+
+  /* palette overlay (used by B and as ^K in all) */
+  .scrim { position:absolute; inset:0; background:rgba(5,6,8,.62); backdrop-filter:blur(3px); display:none; z-index:30;
+           align-items:flex-start; justify-content:center; }
+  .scrim.on { display:flex; }
+  .palette { margin-top:12vh; width:min(640px,90vw); background:var(--side2); border:1px solid var(--line);
+             border-radius:14px; box-shadow:0 24px 70px rgba(0,0,0,.6); overflow:hidden; }
+  .palette .pinput { display:flex; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid var(--line-soft); }
+  .palette .pinput .k { font-family:var(--mono); font-size:11px; color:var(--ember); border:1px solid var(--ember-edge); border-radius:5px; padding:2px 6px; }
+  .palette .pinput input { flex:1; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--mono); font-size:15px; }
+  .palette .presults { max-height:46vh; overflow:auto; padding:8px; }
+  .palette .pitem { display:flex; align-items:center; gap:12px; padding:11px 14px; border-radius:9px; cursor:pointer; }
+  .palette .pitem .ppath { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-ghost); }
+  .palette .pitem.sel { background:var(--ember-tint); }
+  .palette .pitem.sel .ppath { color:var(--ember); }
+  .palette .pitem .name { font-family:var(--mono); font-size:13.5px; }
+
+  /* =====================================================================
+     VARIANT C — RAIL + FOCUS  (persistent thin rail, single main pane)
+     A slim left rail keeps the active workspace's panes always visible
+     (spatial memory), main area is the one focused pane. Hybrid.
+     ===================================================================== */
+  #vC { flex-direction:row; }
+  #vC .rail { width:264px; flex:0 0 auto; background:linear-gradient(180deg,var(--side2),var(--side));
+              border-right:1px solid var(--line); display:flex; flex-direction:column; }
+  #vC .railhead { padding:16px 16px 12px; border-bottom:1px solid var(--line-soft); }
+  #vC .railhead .proj { font-family:var(--mono); font-weight:600; font-size:14px; }
+  #vC .railhead .ws { display:flex; align-items:center; gap:8px; margin-top:6px; font-family:var(--mono); font-size:12px; color:var(--ink-faint); cursor:pointer; }
+  #vC .railhead .ws:hover { color:var(--ink-dim); }
+  #vC .panes { flex:1; overflow:auto; padding:8px; }
+  #vC .plabel { font-family:var(--mono); font-size:10px; letter-spacing:.12em; color:var(--ink-ghost); padding:10px 12px 6px; text-transform:uppercase; }
+  #vC .prow { display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:8px; cursor:pointer; }
+  #vC .prow .name { font-size:13.5px; }
+  #vC .prow .st { margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-ghost); }
+  #vC .prow:hover { background:var(--hover); }
+  #vC .prow.sel { background:var(--active); box-shadow:inset 2px 0 0 var(--ember); }
+  #vC .railfoot { padding:10px 14px; border-top:1px solid var(--line-soft); font-family:var(--mono); font-size:10.5px; color:var(--ink-ghost); }
+  #vC .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #vC .mainbar { padding:14px 20px; border-bottom:1px solid var(--line-soft); }
+  #vC .focusview { margin:14px; }
+
+  /* ───────────── floating prototype switcher ───────────── */
+  #switcher { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:100;
+              display:flex; align-items:center; gap:4px; background:#000; border:1px solid var(--line);
+              border-radius:999px; padding:6px 8px; box-shadow:0 10px 34px rgba(0,0,0,.7); font-family:var(--mono); }
+  #switcher button { background:transparent; border:none; color:var(--ink-dim); cursor:pointer; font-family:var(--mono);
+                     font-size:15px; width:30px; height:30px; border-radius:50%; }
+  #switcher button:hover { background:var(--hover); color:var(--ink); }
+  #switcher .vlabel { padding:0 12px; font-size:12px; color:var(--ink); min-width:188px; text-align:center; }
+  #switcher .vlabel small { color:var(--ink-faint); }
+  #switcher .keys { margin-left:6px; padding-left:10px; border-left:1px solid var(--line); font-size:10px; color:var(--ink-ghost); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- VARIANT A -->
+  <section id="vA" class="variant">
+    <div class="topbar">
+      <div class="crumb" id="vA-crumb"></div>
+      <div class="tier-label" id="vA-tier"></div>
+    </div>
+    <div class="list" id="vA-list"></div>
+    <div class="modebar" id="vA-foot"></div>
+  </section>
+
+  <!-- VARIANT B -->
+  <section id="vB" class="variant">
+    <div class="miniback crumb" id="vB-crumb"></div>
+    <div class="focusview full" id="vB-focus"></div>
+    <div class="hint">press <kbd>⌘K</kbd> · <kbd>/</kbd> to jump anywhere</div>
+  </section>
+
+  <!-- VARIANT C -->
+  <section id="vC" class="variant">
+    <div class="rail">
+      <div class="railhead">
+        <div class="proj" id="vC-proj"></div>
+        <div class="ws" id="vC-ws"></div>
+      </div>
+      <div class="panes" id="vC-panes"></div>
+      <div class="railfoot">↑↓ pane · ⇧↑↓ workspace · ⌘K jump</div>
+    </div>
+    <div class="main">
+      <div class="mainbar crumb" id="vC-crumb"></div>
+      <div class="focusview" id="vC-focus" style="box-shadow:none;"></div>
+    </div>
+  </section>
+</div>
+
+<!-- shared palette overlay -->
+<div class="scrim" id="scrim">
+  <div class="palette">
+    <div class="pinput"><span class="k">^K</span><input id="pq" placeholder="Jump to a pane, workspace, or project…" autocomplete="off" /></div>
+    <div class="presults" id="presults"></div>
+  </div>
+</div>
+
+<div id="switcher">
+  <button id="prev">‹</button>
+  <div class="vlabel" id="vlabel"></div>
+  <button id="next">›</button>
+  <span class="keys">1·2·3 · [ ]</span>
+</div>
+
+<script>
+// ───────────── fake-but-real Switchyard data ─────────────
+const STATUS = { run:'s-run', ready:'s-ready', agent:'s-agent', idle:'s-idle', fail:'s-fail' };
+const STLABEL = { run:'running', ready:'ready', agent:'working', idle:'idle', fail:'failed' };
+function pane(name, kind, status, meta) { return { name, kind, status, meta:meta||'' }; }
+
+const DATA = [
+  { name:'api-gateway', workspaces:[
+    { name:'main', tag:'ROOT', panes:[
+      pane('zsh','shell','idle'),
+      pane('dev server','shell','run',':3000'),
+      pane('claude · refactor auth','agent','agent'),
+      pane('test runner','shell','idle'),
+      pane('build','shell','fail'),
+    ]},
+    { name:'feat/auth', tag:'WORKTREE', panes:[ pane('zsh','shell','idle'), pane('claude · oauth flow','agent','ready') ]},
+    { name:'hotfix/rate-limit', tag:'WORKTREE', panes:[ pane('zsh','shell','run') ]},
+    { name:'experiment/edge', tag:'WORKTREE', panes:[]},
+  ]},
+  { name:'web-dashboard', workspaces:[
+    { name:'main', tag:'ROOT', panes:[ pane('zsh','shell','idle'), pane('vite','shell','run',':5173'), pane('claude · charts','agent','ready') ]},
+    { name:'feat/dark-mode', tag:'WORKTREE', panes:[ pane('zsh','shell','idle') ]},
+  ]},
+  { name:'switchyard', workspaces:[
+    { name:'main', tag:'ROOT', panes:[ pane('zsh','shell','idle'), pane('tauri dev','shell','run'), pane('claude · zen mode','agent','agent'), pane('tsc --watch','shell','run') ]},
+  ]},
+  { name:'infra', workspaces:[
+    { name:'main', tag:'ROOT', panes:[ pane('zsh','shell','idle'), pane('terraform plan','shell','idle'), pane('k9s','shell','run') ]},
+    { name:'feat/staging', tag:'WORKTREE', panes:[ pane('zsh','shell','idle') ]},
+  ]},
+  { name:'notes-cli', workspaces:[
+    { name:'main', tag:'ROOT', panes:[ pane('zsh','shell','idle'), pane('go test ./...','shell','fail') ]},
+  ]},
+];
+
+function dotFor(p) { return STATUS[p.status === 'agent' ? 'agent' : p.status] || 's-idle'; }
+
+// flat index of every pane for the palette
+const FLAT = [];
+DATA.forEach(pr => pr.workspaces.forEach(ws => ws.panes.forEach(pn =>
+  FLAT.push({ project:pr.name, workspace:ws.name, pane:pn }))));
+
+// fake terminal bodies keyed by pane kind/name
+function termBody(p, project, workspace) {
+  if (p.kind === 'agent') {
+    return `<div class="a">◐ ${esc(p.name)}</div><br>
+      <div class="p">I'll extract the token check into a single middleware so the</div>
+      <div class="p">route handlers stop repeating it. Plan:</div><br>
+      <div><span class="num">1</span> &nbsp;move <b>verifyJWT</b> → <span class="mod">middleware/auth.js</span></div>
+      <div><span class="num">2</span> &nbsp;wrap the protected routes with it</div>
+      <div><span class="num">3</span> &nbsp;drop the inline checks in <b>4 handlers</b></div><br>
+      <div class="p ghost">$ rg "verifyJWT" src/</div>
+      <div class="p ghost">4 files · 6 matches</div><br>
+      <div>Proceed with the refactor? <span class="p">(y/n)</span> <span class="caret"></span></div>`;
+  }
+  if (p.status === 'fail') {
+    return `<div class="p">$ ${esc(p.name)}</div>
+      <div class="x">✗ exited with code 1</div>
+      <div class="p ghost">3 tests failed · see output above</div>
+      <div><span class="g">~/${esc(project)}</span> <span class="p">on</span> ${esc(workspace)} <span class="p">›</span> <span class="caret"></span></div>`;
+  }
+  return `<div><span class="g">~/${esc(project)}</span> <span class="p">on</span> ${esc(workspace)} <span class="p">›</span> git status -s</div>
+    <div class="mod">M src/middleware/auth.js</div>
+    <div class="mod">M src/routes/users.js</div>
+    <div class="add">?? src/middleware/auth.test.js</div><br>
+    <div><span class="g">~/${esc(project)}</span> <span class="p">on</span> ${esc(workspace)} <span class="p">›</span> <span class="caret"></span></div>`;
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function focusViewHTML(p, project, workspace) {
+  return `<div class="fhead">
+      <div class="crumb"><span>~/${esc(project)}</span><span class="sep">›</span><span>${esc(workspace)}</span><span class="sep">›</span><b>${esc(p.name)}</b></div>
+      <span class="badge focus">● FOCUS</span>
+    </div>
+    <div class="term">${termBody(p, project, workspace)}</div>`;
+}
+
+// ───────────── VARIANT A: drill column ─────────────
+const A = { level:0, proj:0, ws:0, pane:0, focused:false };
+function aCurrentProject() { return DATA[A.proj]; }
+function aCurrentWs() { return aCurrentProject().workspaces[A.ws]; }
+function renderA() {
+  const crumb = document.getElementById('vA-crumb');
+  const tier = document.getElementById('vA-tier');
+  const list = document.getElementById('vA-list');
+  const foot = document.getElementById('vA-foot');
+
+  if (A.focused) {
+    const p = aCurrentWs().panes[A.pane];
+    crumb.innerHTML = `<span>~/code</span><span class="sep">›</span><span>${esc(aCurrentProject().name)}</span><span class="sep">›</span><span>${esc(aCurrentWs().name)}</span><span class="sep">›</span><b>${esc(p.name)}</b>`;
+    tier.textContent = '';
+    list.innerHTML = `<div class="focusview" style="margin:0">${focusViewHTML(p, aCurrentProject().name, aCurrentWs().name)}</div>`;
+    foot.innerHTML = `<span class="badge focus">FOCUS</span><span class="key">^← escape pane</span><span class="faint">every other key → pane</span>`;
+    return;
+  }
+
+  let rows = '', tierName = '', crumbHTML = '<span>~/code</span>';
+  if (A.level === 0) {
+    tierName = 'Tier 1 · Projects';
+    DATA.forEach((pr, i) => {
+      const wc = pr.workspaces.length, pc = pr.workspaces.reduce((n,w)=>n+w.panes.length,0);
+      rows += `<div class="row head ${i===A.proj?'sel':''}"><div class="lead"><span class="chev">▸</span><span class="name mono">${esc(pr.name)}</span></div><span class="meta">${wc} workspace${wc>1?'s':''} · ${pc} panes</span></div>`;
+    });
+  } else if (A.level === 1) {
+    tierName = 'Tier 2 · Workspaces — root + worktrees';
+    crumbHTML += `<span class="sep">›</span><b>${esc(aCurrentProject().name)}</b>`;
+    aCurrentProject().workspaces.forEach((ws, i) => {
+      const tagClass = ws.tag === 'ROOT' ? 'tag root' : 'tag';
+      rows += `<div class="row head ${i===A.ws?'sel':''}"><div class="lead"><span class="chev">▸</span><span class="name mono">${esc(ws.name)}</span><span class="${tagClass}">${ws.tag}</span></div><span class="meta">${ws.panes.length} pane${ws.panes.length!==1?'s':''}</span></div>`;
+    });
+  } else {
+    tierName = 'Tier 3 · Panes — terminals + agents';
+    crumbHTML += `<span class="sep">›</span><span>${esc(aCurrentProject().name)}</span><span class="sep">›</span><b>${esc(aCurrentWs().name)}</b>`;
+    aCurrentWs().panes.forEach((p, i) => {
+      const mark = p.status==='fail' ? '<span class="x">✗</span>' : `<span class="dot ${dotFor(p)}"></span>`;
+      rows += `<div class="row ${i===A.pane?'sel':''}"><div class="lead">${mark}<span class="name">${esc(p.name)}</span>${p.meta?`<span class="meta">${esc(p.meta)}</span>`:''}</div><span class="chev">→ focus</span></div>`;
+    });
+    if (aCurrentWs().panes.length === 0) rows = `<div class="row"><span class="faint">no panes — <span class="ember">t</span> to open a terminal</span></div>`;
+  }
+  crumb.innerHTML = crumbHTML;
+  tier.textContent = tierName;
+  list.innerHTML = rows;
+  const enterLabel = A.level === 2 ? 'focus' : 'enter';
+  foot.innerHTML = `<span class="badge nav">NAVIGATE</span><span class="key">↑↓ move</span><span class="key">→ ${enterLabel}</span><span class="key">← up</span><span class="key">^K jump</span><span class="faint">? help</span>`;
+}
+function aKey(e) {
+  if (A.focused) { if (e.key==='ArrowLeft' && e.ctrlKey) { A.focused=false; renderA(); e.preventDefault(); } return; }
+  const len = A.level===0 ? DATA.length : A.level===1 ? aCurrentProject().workspaces.length : aCurrentWs().panes.length;
+  const cur = A.level===0?'proj':A.level===1?'ws':'pane';
+  if (e.key==='ArrowDown') { A[cur] = Math.min(len-1, A[cur]+1); }
+  else if (e.key==='ArrowUp') { A[cur] = Math.max(0, A[cur]-1); }
+  else if (e.key==='ArrowRight' || e.key==='Enter') {
+    if (A.level===0) { A.level=1; A.ws=0; }
+    else if (A.level===1) { if (aCurrentWs().panes.length) { A.level=2; A.pane=0; } }
+    else { A.focused=true; }
+  }
+  else if (e.key==='ArrowLeft') { if (A.level>0) A.level--; }
+  else return;
+  e.preventDefault(); renderA();
+}
+
+// ───────────── VARIANT B: spotlight ─────────────
+const B = { flat:2 }; // start on api-gateway/main/claude
+function renderB() {
+  const f = FLAT[B.flat];
+  document.getElementById('vB-crumb').innerHTML =
+    `<span>${esc(f.project)}</span><span class="sep">›</span><span>${esc(f.workspace)}</span><span class="sep">›</span><b>${esc(f.pane.name)}</b>`;
+  document.getElementById('vB-focus').innerHTML = focusViewHTML(f.pane, f.project, f.workspace);
+}
+
+// ───────────── VARIANT C: rail + focus ─────────────
+const C = { proj:0, ws:0, pane:2 };
+function cWs() { return DATA[C.proj].workspaces[C.ws]; }
+function renderC() {
+  const ws = cWs();
+  if (C.pane >= ws.panes.length) C.pane = Math.max(0, ws.panes.length-1);
+  document.getElementById('vC-proj').textContent = DATA[C.proj].name;
+  const tagClass = ws.tag === 'ROOT' ? 'tag root' : 'tag';
+  document.getElementById('vC-ws').innerHTML = `<span class="ember">▸</span> ${esc(ws.name)} <span class="${tagClass}">${ws.tag}</span>`;
+  let rows = `<div class="plabel">Panes</div>`;
+  ws.panes.forEach((p, i) => {
+    const mark = p.status==='fail' ? '<span class="x">✗</span>' : `<span class="dot ${dotFor(p)}"></span>`;
+    rows += `<div class="prow ${i===C.pane?'sel':''}">${mark}<span class="name">${esc(p.name)}</span><span class="st">${STLABEL[p.status]}</span></div>`;
+  });
+  if (!ws.panes.length) rows += `<div class="prow"><span class="faint">no panes</span></div>`;
+  document.getElementById('vC-panes').innerHTML = rows;
+  const p = ws.panes[C.pane];
+  const crumb = document.getElementById('vC-crumb');
+  const focus = document.getElementById('vC-focus');
+  if (p) {
+    crumb.innerHTML = `<span>~/${esc(DATA[C.proj].name)}</span><span class="sep">›</span><span>${esc(ws.name)}</span><span class="sep">›</span><b>${esc(p.name)}</b>`;
+    focus.innerHTML = focusViewHTML(p, DATA[C.proj].name, ws.name);
+    focus.style.display = 'flex';
+  } else { crumb.innerHTML = `<span class="faint">empty workspace</span>`; focus.style.display='none'; }
+}
+function cKey(e) {
+  const ws = cWs();
+  if (e.shiftKey && (e.key==='ArrowDown'||e.key==='ArrowUp')) {
+    const all = []; DATA.forEach((pr,pi)=>pr.workspaces.forEach((w,wi)=>all.push([pi,wi])));
+    let idx = all.findIndex(([pi,wi])=>pi===C.proj&&wi===C.ws);
+    idx = e.key==='ArrowDown' ? Math.min(all.length-1, idx+1) : Math.max(0, idx-1);
+    [C.proj, C.ws] = all[idx]; C.pane = 0; e.preventDefault(); renderC(); return;
+  }
+  if (e.key==='ArrowDown') { C.pane = Math.min(ws.panes.length-1, C.pane+1); }
+  else if (e.key==='ArrowUp') { C.pane = Math.max(0, C.pane-1); }
+  else return;
+  e.preventDefault(); renderC();
+}
+
+// ───────────── shared ^K palette ─────────────
+const PAL = { open:false, q:'', sel:0, results:[] };
+function palResults() {
+  const q = PAL.q.toLowerCase();
+  PAL.results = FLAT.map((f,i)=>({...f,i}))
+    .filter(f => !q || (f.pane.name+f.workspace+f.project).toLowerCase().includes(q));
+}
+function renderPal() {
+  document.getElementById('scrim').classList.toggle('on', PAL.open);
+  if (!PAL.open) return;
+  palResults();
+  if (PAL.sel >= PAL.results.length) PAL.sel = Math.max(0, PAL.results.length-1);
+  document.getElementById('presults').innerHTML = PAL.results.map((f, i) => {
+    const mark = f.pane.status==='fail' ? '<span class="x">✗</span>' : `<span class="dot ${dotFor(f.pane)}"></span>`;
+    return `<div class="pitem ${i===PAL.sel?'sel':''}">${mark}<span class="name">${esc(f.pane.name)}</span><span class="ppath">${esc(f.project)} / ${esc(f.workspace)}</span></div>`;
+  }).join('') || `<div class="pitem"><span class="faint">no matches</span></div>`;
+}
+function openPal() { PAL.open=true; PAL.q=''; PAL.sel=0; document.getElementById('pq').value=''; renderPal(); setTimeout(()=>document.getElementById('pq').focus(),0); }
+function closePal() { PAL.open=false; renderPal(); }
+function palPick() {
+  const f = PAL.results[PAL.sel]; if (!f) return;
+  // route the pick into whichever variant is showing
+  if (current===0) { A.proj=DATA.findIndex(p=>p.name===f.project); A.ws=Math.max(0,DATA[A.proj].workspaces.findIndex(w=>w.name===f.workspace));
+    A.pane=DATA[A.proj].workspaces[A.ws].panes.indexOf(f.pane); A.level=2; A.focused=true; renderA(); }
+  if (current===1) { B.flat=f.i; renderB(); }
+  if (current===2) { C.proj=DATA.findIndex(p=>p.name===f.project); C.ws=DATA[C.proj].workspaces.findIndex(w=>w.name===f.workspace); C.pane=DATA[C.proj].workspaces[C.ws].panes.indexOf(f.pane); renderC(); }
+  closePal();
+}
+document.getElementById('pq').addEventListener('input', e => { PAL.q=e.target.value; PAL.sel=0; renderPal(); });
+
+// ───────────── variant switcher ─────────────
+const VARIANTS = [
+  { key:'A', name:'Drill column', el:'vA', render:renderA, key2:aKey },
+  { key:'B', name:'Spotlight', el:'vB', render:renderB, key2:null },
+  { key:'C', name:'Rail + focus', el:'vC', render:renderC, key2:cKey },
+];
+let current = 0;
+function showVariant(i, push) {
+  current = (i + VARIANTS.length) % VARIANTS.length;
+  VARIANTS.forEach((v, idx) => document.getElementById(v.el).classList.toggle('on', idx===current));
+  const v = VARIANTS[current];
+  document.getElementById('vlabel').innerHTML = `${v.key} — <small>${v.name}</small>`;
+  v.render();
+  const u = new URL(location); u.searchParams.set('variant', v.key); history.replaceState(null,'',u);
+}
+document.getElementById('prev').onclick = () => showVariant(current-1);
+document.getElementById('next').onclick = () => showVariant(current+1);
+
+// ───────────── global keys ─────────────
+window.addEventListener('keydown', e => {
+  // palette has priority
+  if (PAL.open) {
+    if (e.key==='Escape') { closePal(); e.preventDefault(); }
+    else if (e.key==='ArrowDown') { PAL.sel++; renderPal(); e.preventDefault(); }
+    else if (e.key==='ArrowUp') { PAL.sel=Math.max(0,PAL.sel-1); renderPal(); e.preventDefault(); }
+    else if (e.key==='Enter') { palPick(); e.preventDefault(); }
+    return;
+  }
+  if ((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k') { openPal(); e.preventDefault(); return; }
+  if (e.key==='/' && current===1) { openPal(); e.preventDefault(); return; }
+
+  // switcher keys (kept off the arrows so variants own them)
+  if (e.key==='1') return showVariant(0);
+  if (e.key==='2') return showVariant(1);
+  if (e.key==='3') return showVariant(2);
+  if (e.key===']') return showVariant(current+1);
+  if (e.key==='[') return showVariant(current-1);
+
+  // delegate arrows etc. to the active variant
+  const v = VARIANTS[current];
+  if (v.key2) v.key2(e);
+});
+
+// boot — honor ?variant=
+const want = new URL(location).searchParams.get('variant');
+showVariant(Math.max(0, VARIANTS.findIndex(v=>v.key===want)) || 0);
+</script>
+</body>
+</html>
