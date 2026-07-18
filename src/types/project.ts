@@ -94,9 +94,12 @@ export interface WorktreeArchiveStatus {
 
 export interface PrInfo {
   number: number;
+  /** Uppercased PR state: OPEN | CLOSED | MERGED (from `get_pr_info`). */
   state: string;
   ci_status: string | null;
   url: string;
+  title: string;
+  draft: boolean;
 }
 
 /** A selectable source row in the new-worktree modal (issue / branch / PR). */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useProjectsStore } from '../../stores/projects';
 import { useWorkspaceStore } from '../../stores/workspace';
-import type { DiffSource } from '../../types/gitpanel';
+import type { DiffAgentHooks, DiffSource } from '../../types/gitpanel';
 import { openAgentChat } from '../../lib/openAgentChat';
 import { AgentGlyph, PlusIcon, CloseIcon, SparkleIcon } from '../icons';
 
@@ -29,6 +29,9 @@ interface DiffCommentOverlayProps {
    *  Optional: the sidebar inline diff has no owning pane, so we fall back
    *  to the active window. */
   paneId?: string;
+  /** When set (Zen), comments queue and prompts launch through the host view
+   *  instead of opening a workspace chat directly. */
+  hooks?: DiffAgentHooks;
 }
 
 const SOURCE_LABEL: Record<DiffSource, string> = {
@@ -134,6 +137,7 @@ export function DiffCommentOverlay({
   cwd,
   source,
   paneId,
+  hooks,
 }: DiffCommentOverlayProps) {
   const agents = useProjectsStore((s) => s.agents);
   const findWindowForPane = useWorkspaceStore((s) => s.findWindowForPane);
@@ -266,6 +270,10 @@ export function DiffCommentOverlay({
   }, []);
 
   const launch = (prompt: string, label: string) => {
+    if (hooks) {
+      hooks.launch(prompt, `${basename(file)}:${label}`, agentCommand || undefined);
+      return;
+    }
     const projectPath = (paneId ? findWindowForPane(paneId)?.projectPath : null) ?? cwd;
     openAgentChat({
       projectPath,
@@ -281,6 +289,17 @@ export function DiffCommentOverlay({
     launch(buildExplainPrompt({ file, source, lines: selected }), lineLabelOf(selected));
     setMenu(null);
     close();
+  };
+
+  // Map a viewport Y to the diff line under it. Backs the persistent gutter rail
+  // (Zen), which drives the affordance with a reliable React handler instead of
+  // the delegated `mouseover` used by the standard hover path.
+  const lineIndexAtClientY = (clientY: number): number | null => {
+    for (const line of lines) {
+      const rect = line.el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return line.index;
+    }
+    return null;
   };
 
   const startComment = (event: React.MouseEvent, index: number) => {
@@ -301,6 +320,18 @@ export function DiffCommentOverlay({
     if (!trimmed) return;
     const selected = lines.filter((line) => line.index >= rangeMin && line.index <= rangeMax);
     if (selected.length === 0) return;
+
+    if (hooks) {
+      hooks.queueComment({
+        file,
+        lineLabel: lineLabelOf(selected),
+        snippet: snippetOf(selected),
+        comment: trimmed,
+        source,
+      });
+      close();
+      return;
+    }
 
     launch(buildPrompt({ file, source, lines: selected, comment: trimmed }), lineLabelOf(selected));
     close();
@@ -342,6 +373,23 @@ export function DiffCommentOverlay({
             Explain {menu.lines.length > 1 ? `these ${menu.lines.length} lines` : 'this line'}
           </button>
         </div>
+      )}
+
+      {/* Zen: a persistent clickable comment column in the reserved left gutter.
+          It sits over the empty pl-[22px] strip (never the code) and drives the
+          +/composer with reliable React handlers. */}
+      {hooks && root && (
+        <div
+          data-comment-ui
+          title="Click to comment on a line (shift-click to extend a range)"
+          onMouseMove={(event) => setHoverIndex(lineIndexAtClientY(event.clientY))}
+          onMouseLeave={() => setHoverIndex(null)}
+          onClick={(event) => {
+            const idx = lineIndexAtClientY(event.clientY);
+            if (idx !== null) startComment(event, idx);
+          }}
+          className="absolute inset-y-0 left-0 z-[5] w-[22px] cursor-pointer border-r border-transparent hover:border-ember-edge hover:bg-ember-tint"
+        />
       )}
 
       {hovered && hoveredBox && (
@@ -387,12 +435,16 @@ export function DiffCommentOverlay({
             onChange={(event) => setComment(event.target.value)}
             onKeyDown={onTextareaKeyDown}
             rows={3}
-            placeholder="Comment — sent to a new agent chat with the file & line (⏎ to send, ⇧⏎ for newline)"
+            placeholder={
+              hooks
+                ? 'Comment — added to a queue you send to one agent chat (⏎ to add, ⇧⏎ for newline)'
+                : 'Comment — sent to a new agent chat with the file & line (⏎ to send, ⇧⏎ for newline)'
+            }
             className="w-full resize-y rounded-lg border border-line bg-app px-2.5 py-1.5 text-[12.5px] text-ink outline-none transition focus:border-ember-edge focus:shadow-[0_0_0_3px_var(--color-ember-tint)]"
           />
 
           <div className="mt-2 flex items-center gap-2">
-            <div className="flex flex-1 flex-wrap items-center gap-1">
+            <div className={`flex flex-1 flex-wrap items-center gap-1 ${hooks ? 'hidden' : ''}`}>
               {agents.map((agent) => {
                 const active = agent.command === agentCommand;
                 return (
@@ -421,7 +473,7 @@ export function DiffCommentOverlay({
               disabled={!comment.trim()}
               className="flex-none rounded-md border border-ember bg-ember px-3 py-1 text-[12px] font-semibold text-[#1a1206] transition hover:border-ember-strong hover:bg-ember-strong disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Send ↵
+              {hooks ? 'Add ↵' : 'Send ↵'}
             </button>
           </div>
         </div>

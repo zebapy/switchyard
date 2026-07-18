@@ -4,7 +4,7 @@ import { html as renderDiffHtml } from 'diff2html';
 import { ColorSchemeType } from 'diff2html/lib/types';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './diff2html-theme.css';
-import type { DiffSource, FileStatus } from '../../types/gitpanel';
+import type { DiffAgentHooks, DiffSource, FileStatus } from '../../types/gitpanel';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { openAgentChat } from '../../lib/openAgentChat';
 import { useFileDiff } from './useGitData';
@@ -38,6 +38,8 @@ interface FileDiffSectionProps {
   /** Host pane id — lets a line comment open a chat in the right window.
    *  Absent for the sidebar inline view, which falls back to the active window. */
   paneId?: string;
+  /** Host-view hooks (Zen): queue comments / launch prompts in a focused pane. */
+  hooks?: DiffAgentHooks;
 }
 
 /** The diff body for one file — fetched lazily (only mounted while expanded). */
@@ -46,11 +48,13 @@ function DiffBody({
   file,
   source,
   paneId,
+  hooks,
 }: {
   path: string;
   file: string;
   source: DiffSource;
   paneId?: string;
+  hooks?: DiffAgentHooks;
 }) {
   const { diff, loading, error } = useFileDiff(path, file, source);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +100,7 @@ function DiffBody({
         cwd={path}
         source={source}
         paneId={paneId}
+        hooks={hooks}
       />
     </div>
   );
@@ -110,16 +115,20 @@ function estimateBodyHeight(file: FileStatus): number {
   return Math.min(Math.max(lines, 3), 400) * DIFF_LINE_HEIGHT;
 }
 
-export function FileDiffSection({ path, file, source, expanded, onToggle, onOpenInTab, paneId }: FileDiffSectionProps) {
+export function FileDiffSection({ path, file, source, expanded, onToggle, onOpenInTab, paneId, hooks }: FileDiffSectionProps) {
   const dir = dirname(file.path);
   const findWindowForPane = useWorkspaceStore((s) => s.findWindowForPane);
 
   const explainFile = () => {
-    const projectPath = (paneId ? findWindowForPane(paneId)?.projectPath : null) ?? path;
     const prompt = [
       `Explain the changes to ${file.path} in the ${SOURCE_LABEL[source]} diff.`,
       'Review the diff and summarize what changed and why. Be concise.',
     ].join('\n');
+    if (hooks) {
+      hooks.launch(prompt, `${basename(file.path)} diff`);
+      return;
+    }
+    const projectPath = (paneId ? findWindowForPane(paneId)?.projectPath : null) ?? path;
     openAgentChat({ projectPath, cwd: path, label: `${basename(file.path)} diff`, prompt });
   };
 
@@ -218,7 +227,7 @@ export function FileDiffSection({ path, file, source, expanded, onToggle, onOpen
       {expanded && (
         <div ref={bodyRef} className="border-t border-line">
           {inView ? (
-            <DiffBody path={path} file={file.path} source={source} paneId={paneId} />
+            <DiffBody path={path} file={file.path} source={source} paneId={paneId} hooks={hooks} />
           ) : (
             <div style={{ height: measuredHeight ?? estimateBodyHeight(file) }} aria-hidden />
           )}

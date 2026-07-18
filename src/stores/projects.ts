@@ -8,6 +8,13 @@ import type { ScriptSource } from '../types/scripts';
 import { DEFAULT_AGENT } from '../types/agent';
 import { randomWorktreeName } from '../lib/worktreeName';
 
+/** Turn free text into a git-branch-friendly slug: lowercase, non-alphanumeric
+ *  runs collapse to single dashes, no leading/trailing dashes. Empty if the text
+ *  had no letters or digits. */
+function slugifyBranch(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 /** Where new git worktrees are created. */
 export type WorktreeLocation = 'project' | 'global';
 
@@ -87,6 +94,8 @@ interface ProjectsState {
   /** Refresh cached git info for a worktree path and any project whose worktree list contains it, so a branch switch is reflected wherever the branch name is read. */
   refreshGitInfoForPath: (worktreePath: string) => Promise<void>;
   refreshPrInfo: (projectPath: string) => Promise<void>;
+  /** Refresh PR info for many worktree paths at once (one `get_pr_info` per path), for the per-worktree PR badges. */
+  refreshPrInfoForPaths: (paths: string[]) => Promise<void>;
   createProject: (parentDir: string, name: string) => Promise<void>;
   cloneRepo: (url: string, parentDir: string) => Promise<string>;
   setScanRoot: (root: string) => Promise<void>;
@@ -121,9 +130,10 @@ interface ProjectsState {
   createWorktree: (repoPath: string, branchName: string) => Promise<string>;
   /** Check a GitHub PR's head branch out into a new worktree, then refresh git info. Returns the worktree path. */
   createWorktreeForPr: (params: { repoPath: string; prNumber: number; branchName: string }) => Promise<string>;
-  /** Create a worktree with a random `adjective-noun` name, branch-prefixed with
-   *  the git user (e.g. `zebapy/brave-otter`). Returns its path and short label. */
-  quickWorktree: (repoPath: string) => Promise<{ path: string; label: string }>;
+  /** Create a worktree, branch-prefixed with the git user (e.g. `zebapy/brave-otter`).
+   *  Without `name` the label is a random `adjective-noun`; with `name` it's the
+   *  slugified text. Returns its path and short label. */
+  quickWorktree: (repoPath: string, name?: string) => Promise<{ path: string; label: string }>;
   deleteWorktree: (repoPath: string, name: string) => Promise<void>;
   /** Whether a worktree can be archived, plus uncommitted-change warnings. */
   getWorktreeArchiveStatus: (repoPath: string, name: string) => Promise<WorktreeArchiveStatus>;
@@ -301,6 +311,21 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     } catch {
       // gh not available or other error
     }
+  },
+
+  refreshPrInfoForPaths: async (paths) => {
+    const entries = await Promise.all(
+      paths.map((path) =>
+        invoke<PrInfo | null>('get_pr_info', { path })
+          .then((info) => [path, info] as const)
+          .catch(() => [path, null] as const),
+      ),
+    );
+    set((state) => {
+      const next = new Map(state.prInfo);
+      for (const [path, info] of entries) next.set(path, info);
+      return { prInfo: next };
+    });
   },
 
   createProject: async (parentDir, name) => {
@@ -520,14 +545,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     return path;
   },
 
-  quickWorktree: async (repoPath) => {
+  quickWorktree: async (repoPath, name) => {
     const existingNames = (get().gitInfo.get(repoPath)?.worktrees ?? []).map(
       (wt) => wt.path.split('/').filter(Boolean).pop() ?? '',
     );
     const pendingNames = get().pendingWorktrees
       .filter((p) => p.projectPath === repoPath)
       .map((p) => p.label);
-    const label = randomWorktreeName([...existingNames, ...pendingNames]);
+    const taken = [...existingNames, ...pendingNames];
+    const label = name ? slugifyBranch(name) : randomWorktreeName(taken);
+    if (!label) throw new Error('Enter a name with at least one letter or number.');
     const id = crypto.randomUUID();
 
     // Optimistic: show a placeholder row immediately, before any backend round-trip,

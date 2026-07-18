@@ -21,6 +21,10 @@ interface ZenNavState {
   openInOpen: boolean;
   /** ⌘⇧K — context-aware "new" menu anchored bottom-left (add project / new session). */
   addMenuOpen: boolean;
+  /** Non-null = the ephemeral "View diff" view is overtaking the main area for this worktree path. */
+  diffPath: string | null;
+  /** ⌘, — the Settings overlay (standard settings surfaces hosted inside Zen). */
+  settingsOpen: boolean;
   /** Toolbar search text — fuzzy-narrows the current tier's list. Cleared on any tier change. */
   query: string;
 
@@ -40,6 +44,11 @@ interface ZenNavState {
   closeOpenIn: () => void;
   openAddMenu: () => void;
   closeAddMenu: () => void;
+  /** Overtake the main area with the diff view for `worktreePath`. */
+  openDiff: (worktreePath: string) => void;
+  closeDiff: () => void;
+  openSettings: () => void;
+  closeSettings: () => void;
 }
 
 export const useZenStore = create<ZenNavState>((set) => ({
@@ -52,6 +61,8 @@ export const useZenStore = create<ZenNavState>((set) => ({
   actionMenuOpen: false,
   openInOpen: false,
   addMenuOpen: false,
+  diffPath: null,
+  settingsOpen: false,
   query: '',
 
   setCursor: (tier, index) =>
@@ -84,4 +95,12 @@ export const useZenStore = create<ZenNavState>((set) => ({
   closeOpenIn: () => set({ openInOpen: false }),
   openAddMenu: () => set({ addMenuOpen: true, sortMenuOpen: false, actionMenuOpen: false, openInOpen: false }),
   closeAddMenu: () => set({ addMenuOpen: false }),
+
+  openDiff: (worktreePath) =>
+    set({ diffPath: worktreePath, actionMenuOpen: false, sortMenuOpen: false, openInOpen: false, addMenuOpen: false }),
+  closeDiff: () => set({ diffPath: null }),
+
+  openSettings: () =>
+    set({ settingsOpen: true, actionMenuOpen: false, sortMenuOpen: false, openInOpen: false, addMenuOpen: false }),
+  closeSettings: () => set({ settingsOpen: false }),
 }));

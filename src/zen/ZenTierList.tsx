@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef } from 'react';
 import { AiIcon, TermIcon, CodeIcon, PrIcon, RepoIcon, BaseBranchIcon, WorktreeIcon } from '../components/icons';
 import type { PaneInfo } from '../types/pane';
-import type { ProjectRow, WorktreeRow, PaneRow } from './zenData';
-import { paneLabel } from './zenData';
+import type { ProjectRow, WorktreeRow, PaneRow, PaneStatusCounts } from './zenData';
+import { paneLabel, paneGroup } from './zenData';
 
 interface ZenTierListProps {
   tier: 'projects' | 'worktrees' | 'panes';
@@ -36,6 +36,59 @@ function SectionHeading({ label }: { label: string }) {
     <div className="px-[18px] pb-1 pt-3.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-dim first:pt-1">
       {label}
     </div>
+  );
+}
+
+function zenPrClass(state: string, draft: boolean): string {
+  const s = state.toLowerCase();
+  if (s === 'merged') return 'text-ai';
+  if (s === 'closed') return 'text-del';
+  if (draft) return 'text-ink-dim';
+  return 'text-green';
+}
+
+function ciGlyph(status: string): { glyph: string; className: string } {
+  if (status === 'passing') return { glyph: '✓', className: 'text-add' };
+  if (status === 'failing') return { glyph: '✗', className: 'text-del' };
+  return { glyph: '◌', className: 'text-[#f9e2af]' };
+}
+
+/** Colored count pips summarizing a workspace's live-agent statuses.
+ *  Ordered by urgency: needs-input → working → idle; zero-count pips are hidden. */
+function StatusPips({ status }: { status: PaneStatusCounts }) {
+  const pips = [
+    { count: status.waiting, dot: 'bg-ember', text: 'text-ember', label: 'needs input', pulse: false },
+    { count: status.working, dot: 'bg-green', text: 'text-green', label: 'working', pulse: true },
+    { count: status.idle, dot: 'bg-ink-faint', text: 'text-ink-faint', label: 'idle', pulse: false },
+  ].filter((p) => p.count > 0);
+  if (pips.length === 0) return null;
+  return (
+    <span className="flex items-center gap-2">
+      {pips.map((p) => (
+        <span key={p.label} className={`flex items-center gap-1 font-mono text-[11px] ${p.text}`} title={`${p.count} ${p.label}`}>
+          <span className={`size-1.5 shrink-0 rounded-full ${p.dot} ${p.pulse ? 'animate-pulse-dot' : ''}`} />
+          {p.count}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A single live-agent pane's status: colored dot + label. Nothing for
+ *  non-agent panes or exited agents. */
+function PaneStatusPip({ info }: { info: PaneInfo }) {
+  if (info.kind !== 'Agent' || info.agentExited) return null;
+  const map = {
+    waiting: { dot: 'bg-ember', text: 'text-ember', label: 'needs input', pulse: false },
+    working: { dot: 'bg-green', text: 'text-green', label: 'working', pulse: true },
+    idle: { dot: 'bg-ink-faint', text: 'text-ink-faint', label: 'idle', pulse: false },
+  } as const;
+  const pip = map[info.agentStatus ?? 'idle'];
+  return (
+    <span className={`flex items-center gap-1.5 font-mono text-[11px] ${pip.text}`} title={pip.label}>
+      <span className={`size-1.5 shrink-0 rounded-full ${pip.dot} ${pip.pulse ? 'animate-pulse-dot' : ''}`} />
+      {pip.label}
+    </span>
   );
 }
 
@@ -127,13 +180,17 @@ export function ZenTierList({
                 <span className={`truncate font-mono text-[15px] font-semibold ${i === cursor ? 'text-signal' : 'text-ink'}`}>{row.name}</span>
               </span>
               <span className="flex items-center gap-3">
+                <StatusPips status={row.status} />
                 {row.pr && (
                   <span
-                    className="flex items-center gap-1 font-mono text-[10px] text-green"
-                    title={`${row.pr.draft ? 'Draft pull request' : 'Pull request'} #${row.pr.number}: ${row.pr.title}`}
+                    className={`flex items-center gap-1 font-mono text-[10px] ${zenPrClass(row.pr.state, row.pr.draft)}`}
+                    title={`${row.pr.draft ? 'Draft pull request' : 'Pull request'} #${row.pr.number} (${row.pr.state.toLowerCase()}): ${row.pr.title}`}
                   >
                     <PrIcon size={11} />
-                    #{row.pr.number}{row.pr.draft ? ' draft' : ''}
+                    #{row.pr.number}{row.pr.draft ? ' draft' : row.pr.state.toLowerCase() === 'open' ? '' : ` ${row.pr.state.toLowerCase()}`}
+                    {row.pr.ci_status && (
+                      <span className={ciGlyph(row.pr.ci_status).className}>{ciGlyph(row.pr.ci_status).glyph}</span>
+                    )}
                   </span>
                 )}
                 <span className="font-mono text-[12px] text-ink-faint">
@@ -158,16 +215,24 @@ export function ZenTierList({
     );
   }
 
+  // "Agents" (top) then "Terminals" — headings show even for a lone group.
+  // Rows arrive agents-first from the sort, so headings stay contiguous.
+  const paneSectioned = !searching;
   return (
     <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-auto p-3.5">
       {paneRows.map((row, i) => (
-        <div key={row.paneId} className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)}>
-          <span className="flex min-w-0 flex-1 items-center gap-3">
-            <PaneIcon info={row.info} />
-            <span className={`truncate text-[15px] ${i === cursor ? 'text-signal' : 'text-ink'}`}>{paneLabel(row.info)}</span>
-          </span>
-          <span className={`font-mono text-[12px] ${i === cursor ? 'text-signal' : 'text-ink-ghost'}`}>→ focus</span>
-        </div>
+        <Fragment key={row.paneId}>
+          {paneSectioned && (i === 0 || paneGroup(paneRows[i - 1].info) !== paneGroup(row.info)) && (
+            <SectionHeading label={paneGroup(row.info)} />
+          )}
+          <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)}>
+            <span className="flex min-w-0 flex-1 items-center gap-3">
+              <PaneIcon info={row.info} />
+              <span className={`truncate text-[15px] ${i === cursor ? 'text-signal' : 'text-ink'}`}>{paneLabel(row.info)}</span>
+            </span>
+            <PaneStatusPip info={row.info} />
+          </div>
+        </Fragment>
       ))}
     </div>
   );

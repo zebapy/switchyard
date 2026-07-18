@@ -17,7 +17,6 @@ interface SortOption {
 
 /** The sort options + current value + setter for the tier the cursor is on. */
 function useTierSort(tier: ZenTier, projectPath: string | null): {
-  title: string;
   options: SortOption[];
   current: string;
   choose: (value: string) => void;
@@ -28,7 +27,6 @@ function useTierSort(tier: ZenTier, projectPath: string | null): {
 
   if (tier === 'projects') {
     return {
-      title: 'Sort projects',
       options: PROJECT_LIST_SORT_OPTIONS,
       current: projectListSort,
       choose: (value) => { void useProjectsStore.getState().setProjectListSort(value as never); },
@@ -36,7 +34,6 @@ function useTierSort(tier: ZenTier, projectPath: string | null): {
   }
   if (tier === 'worktrees') {
     return {
-      title: 'Sort workspaces',
       options: WORKTREE_SORT_OPTIONS,
       current: projectSort ?? DEFAULT_WORKTREE_SORT,
       choose: (value) => {
@@ -45,7 +42,6 @@ function useTierSort(tier: ZenTier, projectPath: string | null): {
     };
   }
   return {
-    title: 'Sort terminals & chats',
     options: PANE_SORT_OPTIONS,
     current: paneSort,
     choose: (value) => { void useProjectsStore.getState().setPaneSort(value as never); },
@@ -59,7 +55,7 @@ function useTierSort(tier: ZenTier, projectPath: string | null): {
  */
 export function ZenSortMenu({ tier, projectPath }: { tier: ZenTier; projectPath: string | null }) {
   const closeSortMenu = useZenStore((s) => s.closeSortMenu);
-  const { title, options, current, choose } = useTierSort(tier, projectPath);
+  const { options, current, choose } = useTierSort(tier, projectPath);
 
   const items = useMemo<ZenMenuItem[]>(
     () =>
@@ -75,11 +71,9 @@ export function ZenSortMenu({ tier, projectPath }: { tier: ZenTier; projectPath:
   return (
     <ZenMenu
       label="Zen sort"
-      title={title}
       anchor="top-right"
       items={items}
       onClose={closeSortMenu}
-      placeholder="Sort by…"
       emptyText="No matching sorts"
     />
   );

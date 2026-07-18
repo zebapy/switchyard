@@ -29,10 +29,11 @@ function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path;
 }
 
-function prClass(state: string): string {
+function prClass(state: string, draft = false): string {
   const s = state.toLowerCase();
   if (s === 'merged') return 'pr-merged border-[rgba(199,155,255,0.3)] text-ai';
   if (s === 'closed') return 'pr-closed border-[rgba(240,117,138,0.3)] text-del';
+  if (draft) return 'pr-draft border-line text-ink-dim';
   return 'pr-open border-[rgba(111,208,140,0.25)] text-add';
 }
 
@@ -243,8 +244,8 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
         <span className="ml-auto flex shrink-0 items-center gap-[7px]">
           {pr && (
             <span
-              className={`inline-flex items-center rounded-full border px-[7px] font-mono text-xs font-medium leading-[17px] ${prClass(pr.state)}`}
-              title={pr.url}
+              className={`inline-flex items-center rounded-full border px-[7px] font-mono text-xs font-medium leading-[17px] ${prClass(pr.state, pr.draft)}`}
+              title={pr.draft ? `${pr.url} (draft)` : pr.url}
             >
               #{pr.number}
               {pr.ci_status && (

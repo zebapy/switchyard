@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useZenStore } from './zenStore';
-import { basename } from './zenData';
 import { OPEN_IN_TARGETS, openPathIn } from '../lib/openIn';
 import { ZenMenu, type ZenMenuItem } from './ZenMenu';
 
@@ -23,12 +22,10 @@ export function ZenOpenIn({ dir }: { dir: string }) {
   return (
     <ZenMenu
       label="Open in…"
-      title={`Open in · ${basename(dir)}`}
       anchor="top-right"
       width={420}
       items={items}
       onClose={closeOpenIn}
-      placeholder="Open in…"
       emptyText="No matching apps"
     />
   );

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { useProjectsStore } from '../stores/projects';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useZenStore } from './zenStore';
@@ -16,10 +17,13 @@ import { ZenTierList } from './ZenTierList';
 import { ZenFocus } from './ZenFocus';
 import { ZenSortMenu } from './ZenSortMenu';
 import { ZenActionMenu, spawnPane, type ZenActionTarget } from './ZenActionMenu';
+import { ZenDiffView } from './ZenDiffView';
 import { ZenActionsCluster, type ClusterAction } from './ZenActionsCluster';
 import { ZenOpenIn } from './ZenOpenIn';
 import { ZenAddMenu, TIER_TITLE } from './ZenAddMenu';
 import { ZenBackButton } from './ZenBackButton';
+import { ZenSettings } from './ZenSettings';
+import { UsageBars } from '../components/Sidebar/UsageBars';
 import { fuzzyMatch } from '../components/CommandPalette/fuzzyMatch';
 import {
   DEFAULT_WORKTREE_SORT,
@@ -39,6 +43,15 @@ function filterRows<T>(rows: T[], query: string, toText: (row: T) => string): T[
     .map((entry) => entry.row);
 }
 
+/** Create a worktree whose branch is the slugified `text`, then drill into it —
+ *  the worktrees-tier Tab action. Mirrors ZenNewWorktreeMenu's quick-worktree flow. */
+async function startWorktreeFromText(projectPath: string, text: string) {
+  const res = await useProjectsStore.getState().quickWorktree(projectPath, text).catch(() => null);
+  if (!res) return;
+  useProjectsStore.getState().expandProject(projectPath);
+  useZenStore.getState().enterWorktree(res.path);
+}
+
 /**
  * The single-focus "Zen" interface — mounted instead of the standard chrome
  * (see `main.tsx`). It drills Projects → Workspaces → Panes one tier at a time
@@ -56,6 +69,8 @@ export function ZenApp() {
   const pins = useProjectsStore((s) => s.pins);
   const prsByBranch = useProjectsStore((s) => s.prsByBranch);
   const refreshPrBranches = useProjectsStore((s) => s.refreshPrBranches);
+  const prInfo = useProjectsStore((s) => s.prInfo);
+  const refreshPrInfoForPaths = useProjectsStore((s) => s.refreshPrInfoForPaths);
   const windows = useWorkspaceStore((s) => s.windows);
   const panes = useWorkspaceStore((s) => s.panes);
   const nav = useZenStore();
@@ -73,6 +88,13 @@ export function ZenApp() {
       Promise.resolve(ps.loadSettings()).then(() => ps.loadAddedProjects()).catch(() => null);
     }
     if (ws.windows.size === 0) ws.loadSession().catch(() => null);
+  }, []);
+
+  // The native menu's Settings item (⌘,) emits this; the standard layout's
+  // listener is unmounted while Zen owns the window, so handle it here too.
+  useEffect(() => {
+    const unlisten = listen('menu:settings', () => useZenStore.getState().openSettings());
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   // Best-effort session save if the app closes while Zen is the active layout
@@ -124,15 +146,23 @@ export function ZenApp() {
 
   const activeSort = nav.projectPath ? projectSort[nav.projectPath] ?? DEFAULT_WORKTREE_SORT : DEFAULT_WORKTREE_SORT;
 
-  // Fetch open PRs for the project whose worktree list is on screen — used both
-  // for the 'pr' sort and the per-worktree PR indicator / action, so always load.
+  // The open-PR list drives the 'pr' sort. The per-worktree PR badge (open,
+  // merged, or closed, with CI) comes from `get_pr_info` per worktree path.
+  // Both cover the worktree list on screen, so load both. Join the paths into a
+  // stable primitive so git-refresh array churn doesn't re-trigger the fetch.
+  const worktreePaths = nav.projectPath
+    ? gitInfo.get(nav.projectPath)?.worktrees?.map((w) => w.path).join('\n')
+    : undefined;
   useEffect(() => {
     if (nav.projectPath) refreshPrBranches(nav.projectPath);
   }, [nav.projectPath, refreshPrBranches]);
+  useEffect(() => {
+    if (worktreePaths) refreshPrInfoForPaths(worktreePaths.split('\n'));
+  }, [worktreePaths, refreshPrInfoForPaths]);
 
   const allProjectRows = deriveProjectRows(projects, gitInfo, windows, projectListSort, pins);
   const allWorktreeRows = nav.projectPath
-    ? deriveWorktreeRows(gitInfo, windows, nav.projectPath, activeSort, pins, prsByBranch.get(nav.projectPath))
+    ? deriveWorktreeRows(gitInfo, windows, panes, nav.projectPath, activeSort, pins, prsByBranch.get(nav.projectPath), prInfo)
     : [];
   const allPaneRows = nav.worktreePath ? derivePaneRows(windows, panes, nav.worktreePath, paneSort) : [];
 
@@ -190,6 +220,25 @@ export function ZenApp() {
     useWorkspaceStore.getState().addTab(path, basename(path), { kind: 'Agent', cwd: path, agent });
     const newId = useWorkspaceStore.getState().windows.get(path)?.activePaneId;
     if (newId) st.focus(newId);
+  }, []);
+
+  // Tab on a non-empty search turns the typed text into a new thing for the
+  // current tier: a fresh agent chat (panes) seeded with the text as its prompt,
+  // or a new worktree (worktrees) whose branch is the slugified text. Projects
+  // has no such action. Clears the query so the new item isn't left filtered out.
+  const sendTabAction = useCallback(() => {
+    const st = useZenStore.getState();
+    const text = st.query.trim();
+    if (!text) return;
+    if (st.tier === 'panes' && st.worktreePath) {
+      spawnPane(st.worktreePath, 'Agent', text);
+      st.setQuery('');
+      return;
+    }
+    if (st.tier === 'worktrees' && st.projectPath) {
+      void startWorktreeFromText(st.projectPath, text);
+      st.setQuery('');
+    }
   }, []);
 
   // Whether ⌘K has something to act on in the current context.
@@ -253,6 +302,21 @@ export function ZenApp() {
     const handler = (e: KeyboardEvent) => {
       const st = useZenStore.getState();
 
+      // The Settings overlay owns the keyboard while open (its own Esc closes it).
+      if (st.settingsOpen) return;
+
+      // ⌘, opens Settings from anywhere in Zen, even in Focus or the diff view.
+      if (e.metaKey && e.key === ',') {
+        e.preventDefault();
+        e.stopPropagation();
+        st.openSettings();
+        return;
+      }
+
+      // The diff view overtakes the main area and owns the keyboard itself
+      // (⌘P to change source, Esc/← to close), so yield everything to it.
+      if (st.diffPath) return;
+
       // ⌘P toggles the context-aware sort menu for the current tier.
       if (e.metaKey && e.key === 'p') {
         e.preventDefault();
@@ -301,18 +365,30 @@ export function ZenApp() {
         return;
       }
 
+      // Tab turns the toolbar search text into a new chat/worktree for the
+      // current tier (see sendTabAction). Always swallow Tab so focus stays in
+      // the always-on search field instead of leaving it for a toolbar button.
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.shiftKey) sendTabAction();
+        return;
+      }
+
       // Navigate mode.
       if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
       else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); enterAtCursor(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); st.back(); }
+      // ← climbs a tier, but while the toolbar search has text it moves the
+      // caret like a normal field; only navigate back once the field is empty.
+      else if (e.key === 'ArrowLeft') { if (!st.query) { e.preventDefault(); st.back(); } }
       // Escape clears an active search first, then climbs a tier.
       else if (e.key === 'Escape') { e.preventDefault(); if (st.query) st.setQuery(''); else st.back(); }
     };
 
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [move, enterAtCursor, toggleActionMenu, toggleSortMenu, toggleOpenIn, toggleAddMenu]);
+  }, [move, enterAtCursor, sendTabAction, toggleActionMenu, toggleSortMenu, toggleOpenIn, toggleAddMenu]);
 
   // Drop Focus if the pane disappears (closed elsewhere).
   useEffect(() => {
@@ -323,9 +399,9 @@ export function ZenApp() {
   // yielding only while an overlay or Focus mode owns the keyboard.
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (nav.sortMenuOpen || nav.actionMenuOpen || nav.openInOpen || nav.addMenuOpen || nav.focusedPaneId) return;
+    if (nav.sortMenuOpen || nav.actionMenuOpen || nav.openInOpen || nav.addMenuOpen || nav.focusedPaneId || nav.diffPath || nav.settingsOpen) return;
     searchRef.current?.focus();
-  }, [nav.tier, nav.sortMenuOpen, nav.actionMenuOpen, nav.openInOpen, nav.addMenuOpen, nav.focusedPaneId]);
+  }, [nav.tier, nav.sortMenuOpen, nav.actionMenuOpen, nav.openInOpen, nav.addMenuOpen, nav.focusedPaneId, nav.diffPath, nav.settingsOpen]);
 
   const onHover = (index: number) => useZenStore.getState().setCursor(nav.tier, index);
   const onActivate = (index: number) => {
@@ -369,12 +445,13 @@ export function ZenApp() {
       {nav.sortMenuOpen && <ZenSortMenu tier={nav.tier} projectPath={nav.projectPath} />}
       {nav.actionMenuOpen && actionTarget && <ZenActionMenu target={actionTarget} />}
       {nav.openInOpen && openDir && <ZenOpenIn dir={openDir} />}
-      {nav.addMenuOpen && <ZenAddMenu tier={nav.tier} spawnPath={addSpawnPath} />}
+      {nav.addMenuOpen && <ZenAddMenu tier={nav.tier} spawnPath={addSpawnPath} projectPath={nav.projectPath} />}
     </>
   );
 
   // Focus mode is just a different middle region — it keeps the same toolbar and
   // footer as the tier list, so the breadcrumb stays put and the pane body swaps in.
+  const diffOpen = nav.diffPath != null;
   const focused = !!(focusInfo && nav.worktreePath);
   const ctx = focused && nav.worktreePath ? resolveContext(projects, gitInfo, nav.worktreePath) : null;
 
@@ -392,7 +469,9 @@ export function ZenApp() {
 
   // Where the Back button lands, and its label: out of a focused pane → its
   // worktree; up from panes → the project; up from worktrees → the Projects root.
-  const backDestination = focused
+  const backDestination = diffOpen
+    ? null // the diff view carries its own Back control
+    : focused
     ? worktreeName
     : nav.tier === 'panes'
       ? projectName
@@ -404,6 +483,14 @@ export function ZenApp() {
     nav.tier === 'projects' ? 'Search projects…'
     : nav.tier === 'worktrees' ? 'Search worktrees…'
     : 'Search terminals & chats…';
+
+  // What ⇥ does with the typed text on this tier — shown as a hint inside the
+  // search field once there's text to act on. Projects has no Tab action.
+  const tabHint =
+    nav.query.trim() === '' ? null
+    : nav.tier === 'panes' ? 'New chat'
+    : nav.tier === 'worktrees' ? 'New worktree'
+    : null;
 
   // The current tier's active sort, shown on the toolbar's sort button.
   const sortLabel = (() => {
@@ -439,32 +526,45 @@ export function ZenApp() {
           <ZenBackButton destination={backDestination} />
         </div>
         <div data-tauri-drag-region className="flex flex-1 justify-center">
-          {!focused && (
-            <input
-              ref={searchRef}
-              type="text"
-              value={nav.query}
-              onChange={(e) => nav.setQuery(e.target.value)}
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              className="w-full max-w-[340px] rounded-md border border-line bg-transparent px-3 py-[5px] font-mono text-[12px] text-ink outline-none transition placeholder:text-ink-ghost focus:border-guide focus:bg-hover"
-            />
+          {!focused && !diffOpen && (
+            <div className="relative w-full max-w-[340px]">
+              <input
+                ref={searchRef}
+                type="text"
+                value={nav.query}
+                onChange={(e) => nav.setQuery(e.target.value)}
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                className={`w-full rounded-md border border-line bg-transparent py-[5px] pl-3 font-mono text-[12px] text-ink outline-none transition placeholder:text-ink-ghost focus:border-guide focus:bg-hover ${tabHint ? 'pr-[132px]' : 'pr-3'}`}
+              />
+              {tabHint && (
+                <span className="pointer-events-none absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1.5 font-mono text-[11px] text-ink-dim">
+                  {tabHint}
+                  <kbd className="rounded border border-line bg-side px-1.5 py-px text-ink-dim">⇥ Tab</kbd>
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div data-tauri-drag-region className="flex flex-1 justify-end">
           <ZenActionsCluster
-            actions={[
-              openDir && { keys: '⌘O', label: 'Open in…', onClick: toggleOpenIn, title: 'Open the current directory in an external app' },
-              !focused && { keys: '⌘P', label: `Sort: ${sortLabel}`, onClick: toggleSortMenu, title: 'Sort the current list' },
-            ].filter(Boolean) as ClusterAction[]}
+            actions={(diffOpen
+              ? []
+              : [
+                  openDir && { keys: '⌘O', label: 'Open in…', onClick: toggleOpenIn, title: 'Open the current directory in an external app' },
+                  !focused && { keys: '⌘P', label: `Sort: ${sortLabel}`, onClick: toggleSortMenu, title: 'Sort the current list' },
+                ]
+            ).filter(Boolean) as ClusterAction[]}
           />
         </div>
       </div>
 
-      {focused && focusInfo ? (
+      {diffOpen && nav.diffPath ? (
+        <ZenDiffView path={nav.diffPath} />
+      ) : focused && focusInfo ? (
         <ZenFocus info={focusInfo} />
       ) : (
         <ZenTierList
@@ -479,9 +579,17 @@ export function ZenApp() {
         />
       )}
 
+      {!diffOpen && (
       <div className="flex flex-none items-center gap-3.5 border-t border-line-soft px-[18px] py-2.5 font-mono text-[11px] text-ink-faint">
         <ZenActionsCluster
-          actions={[{ keys: '⌘⇧K', label: TIER_TITLE[nav.tier], onClick: toggleAddMenu, title: 'New… (⌘⇧K)' }]}
+          actions={
+            nav.tier === 'panes' && nav.worktreePath
+              ? [
+                  { keys: '⌘⇧T', label: 'New agent', onClick: () => spawnPane(nav.worktreePath!, 'Agent'), title: 'New agent chat here (⌘⇧T)' },
+                  { keys: '⌘T', label: 'New terminal', onClick: () => spawnPane(nav.worktreePath!, 'Shell'), title: 'New terminal here (⌘T)' },
+                ]
+              : [{ keys: '⌘⇧K', label: TIER_TITLE[nav.tier], onClick: toggleAddMenu, title: 'New… (⌘⇧K)' }]
+          }
         />
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           <span>~</span>
@@ -504,7 +612,8 @@ export function ZenApp() {
             </>
           )}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3.5">
+          {focused && focusInfo?.kind === 'Agent' && <UsageBars />}
           <ZenActionsCluster
             actions={[
               !focused && enterActionLabel && { keys: '→', label: enterActionLabel, onClick: enterAtCursor },
@@ -513,8 +622,10 @@ export function ZenApp() {
           />
         </div>
       </div>
+      )}
 
       {overlays}
+      {nav.settingsOpen && <ZenSettings />}
     </div>
   );
 }

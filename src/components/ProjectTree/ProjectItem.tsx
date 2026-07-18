@@ -53,7 +53,7 @@ export function ProjectItem({
   const gitInfo = useProjectsStore((s) => s.gitInfo);
   const prInfo = useProjectsStore((s) => s.prInfo);
   const refreshGitInfo = useProjectsStore((s) => s.refreshGitInfo);
-  const refreshPrInfo = useProjectsStore((s) => s.refreshPrInfo);
+  const refreshPrInfoForPaths = useProjectsStore((s) => s.refreshPrInfoForPaths);
   const removeProjectPath = useProjectsStore((s) => s.removeProjectPath);
   const quickWorktree = useProjectsStore((s) => s.quickWorktree);
   const expandProject = useProjectsStore((s) => s.expandProject);
@@ -88,22 +88,31 @@ export function ProjectItem({
   const isExpanded = expandedProjects.has(project.path);
   const gitRemote = useProjectsStore((s) => s.gitHosts.get(project.path));
   const git = gitInfo.get(project.path);
-  const pr = prInfo.get(project.path) ?? null;
 
   useEffect(() => {
     if (isExpanded && project.is_git) {
       refreshGitInfo(project.path);
-      refreshPrInfo(project.path);
     }
-  }, [isExpanded, project.path, project.is_git, refreshGitInfo, refreshPrInfo]);
+  }, [isExpanded, project.path, project.is_git, refreshGitInfo]);
 
-  // The 'pr' sort needs to know which branches have an open PR — fetch the
-  // project's open PRs whenever that sort is active on an expanded project.
+  // Each worktree row shows a PR badge for its own branch (open, merged, or
+  // closed, with CI) — fetch per-worktree PR info once the worktree list loads.
+  // Join the paths into a stable primitive so array identity churn from git
+  // refreshes doesn't re-trigger the fetch.
+  const worktreePaths = git?.worktrees?.map((w) => w.path).join('\n');
   useEffect(() => {
-    if (isExpanded && project.is_git && sort === 'pr') {
+    if (isExpanded && project.is_git && worktreePaths) {
+      refreshPrInfoForPaths(worktreePaths.split('\n'));
+    }
+  }, [isExpanded, project.is_git, worktreePaths, refreshPrInfoForPaths]);
+
+  // Every worktree row shows a PR badge when its branch has an open PR, and the
+  // 'pr' sort needs the same data — fetch the project's open PRs on expand.
+  useEffect(() => {
+    if (isExpanded && project.is_git) {
       refreshPrBranches(project.path);
     }
-  }, [isExpanded, project.path, project.is_git, sort, refreshPrBranches]);
+  }, [isExpanded, project.path, project.is_git, refreshPrBranches]);
 
   // Root worktree first, then linked worktrees ordered by the project's chosen
   // sort. Non-git projects get a synthetic base.
@@ -239,13 +248,13 @@ export function ProjectItem({
             {worktrees
               .filter((wt) => wt.is_main)
               .map((wt) => (
-                <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={pr} />
+                <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={prInfo.get(wt.path) ?? null} />
               ))}
             {belowMain.map((wt) =>
               wt.path.startsWith('pending:') ? (
                 <PendingBranchRow key={wt.path} label={wt.branch ?? ''} />
               ) : (
-                <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={null} />
+                <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={prInfo.get(wt.path) ?? null} />
               ),
             )}
           </div>

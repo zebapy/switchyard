@@ -338,6 +338,8 @@ pub struct PrInfo {
     pub state: String,
     pub ci_status: Option<String>,
     pub url: String,
+    pub title: String,
+    pub draft: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,6 +395,8 @@ pub async fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
         pr["state"].as_str().unwrap_or("UNKNOWN").to_uppercase()
     };
     let url = pr["html_url"].as_str().unwrap_or("").to_string();
+    let title = pr["title"].as_str().unwrap_or("").to_string();
+    let draft = pr["draft"].as_bool().unwrap_or(false);
     let sha = pr["head"]["sha"].as_str().unwrap_or("").to_string();
 
     let ci_status = if sha.is_empty() {
@@ -406,6 +410,8 @@ pub async fn get_pr_info(path: String) -> Result<Option<PrInfo>, String> {
         state,
         ci_status,
         url,
+        title,
+        draft,
     }))
 }
 

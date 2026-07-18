@@ -9,13 +9,13 @@ import { basename, paneLabel } from './zenData';
 import { loadPrTemplate, renderPrPrompt } from '../components/GitPanel/createPr';
 import { ZenMenu, type ZenMenuItem } from './ZenMenu';
 import type { PaneInfo } from '../types/pane';
-import type { PullRequestItem } from '../types/project';
+import type { PrInfo } from '../types/project';
 
 /** What ⌘K acts on — derived from the current tier/cursor (or focused pane). */
 export type ZenActionTarget =
   | { kind: 'projects' } // the project list itself (e.g. when it's empty)
   | { kind: 'project'; path: string; name: string; pinned: boolean }
-  | { kind: 'worktree'; projectPath: string; path: string; name: string; branch: string | null; isMain: boolean; pinned: boolean; pr?: PullRequestItem }
+  | { kind: 'worktree'; projectPath: string; path: string; name: string; branch: string | null; isMain: boolean; pinned: boolean; pr?: PrInfo }
   | { kind: 'pane'; paneId: string; info: PaneInfo; worktreePath: string }
   | { kind: 'empty'; worktreePath: string };
 
@@ -27,9 +27,9 @@ interface ZenAction {
   run: () => void;
 }
 
-export function spawnPane(worktreePath: string, kind: 'Shell' | 'Agent') {
+export function spawnPane(worktreePath: string, kind: 'Shell' | 'Agent', command?: string) {
   const agent = kind === 'Agent' ? useProjectsStore.getState().agents[0]?.command : undefined;
-  useWorkspaceStore.getState().addTab(worktreePath, basename(worktreePath), { kind, cwd: worktreePath, agent });
+  useWorkspaceStore.getState().addTab(worktreePath, basename(worktreePath), { kind, cwd: worktreePath, agent, command });
   const newId = useWorkspaceStore.getState().windows.get(worktreePath)?.activePaneId;
   if (newId) useZenStore.getState().focus(newId);
 }
@@ -109,7 +109,10 @@ function actionsFor(target: ZenActionTarget): ZenAction[] {
   }
 
   if (target.kind === 'worktree') {
-    const actions: ZenAction[] = [{ id: 'open', label: 'Open', run: () => zen().enterWorktree(target.path) }];
+    const actions: ZenAction[] = [
+      { id: 'open', label: 'Open', run: () => zen().enterWorktree(target.path) },
+      { id: 'view-diff', label: 'View diff…', run: () => zen().openDiff(target.path) },
+    ];
     // The root/main worktree is pinned to the top implicitly and can't be toggled.
     if (!target.isMain) {
       actions.push({
@@ -118,14 +121,19 @@ function actionsFor(target: ZenActionTarget): ZenAction[] {
         run: () => { void useProjectsStore.getState().togglePin(target.path); },
       });
     }
+    // View any existing PR (open, merged, or closed); offer to create one
+    // whenever there is no *open* PR for the branch.
     if (target.pr) {
       const prUrl = target.pr.url;
+      const state = target.pr.state.toLowerCase();
+      const stateLabel = state === 'open' ? '' : ` (${state})`;
       actions.push({
         id: 'open-pr',
-        label: `Open pull request #${target.pr.number} on GitHub`,
+        label: `Open pull request #${target.pr.number}${stateLabel} on GitHub`,
         run: () => { void openUrl(prUrl); },
       });
-    } else {
+    }
+    if (target.pr?.state?.toUpperCase() !== 'OPEN') {
       const defaultBranch = useProjectsStore.getState().gitInfo.get(target.projectPath)?.branch ?? null;
       actions.push({
         id: 'create-pr',
@@ -144,18 +152,14 @@ function actionsFor(target: ZenActionTarget): ZenAction[] {
     return actions;
   }
 
+  // New agent / new terminal moved to the panes footer cluster (see ZenApp).
   if (target.kind === 'empty') {
-    return [
-      { id: 'new-term', label: 'New terminal', shortcut: '⌘T', run: () => spawnPane(target.worktreePath, 'Shell') },
-      { id: 'new-chat', label: 'New chat', shortcut: '⌘⇧T', run: () => spawnPane(target.worktreePath, 'Agent') },
-    ];
+    return [];
   }
 
-  const { paneId, worktreePath } = target;
+  const { paneId } = target;
   return [
     { id: 'rename', label: 'Rename', run: () => {} },
-    { id: 'new-term', label: 'New terminal', shortcut: '⌘T', run: () => spawnPane(worktreePath, 'Shell') },
-    { id: 'new-chat', label: 'New chat', shortcut: '⌘⇧T', run: () => spawnPane(worktreePath, 'Agent') },
     { id: 'detach', label: 'Detach (keep tmux session alive)', run: () => { void ws().detachPane(paneId); zen().escapeFocus(); } },
     { id: 'close', label: 'Close', danger: true, run: () => { void ws().closePane(paneId); zen().escapeFocus(); } },
   ];
@@ -170,7 +174,7 @@ function targetTitle(target: ZenActionTarget): string {
 
 // Anchored above the bottom-right "⌘K actions" button — the card's bottom-right
 // corner hugs the button and the list grows up/leftward, staying in the window.
-const scrimClass = 'fixed inset-0 z-[200] flex items-end justify-end bg-[rgba(6,7,9,0.6)] pb-[58px] pr-[18px] backdrop-blur-[3px]';
+const scrimClass = 'fixed inset-0 z-[200] flex items-end justify-end bg-[rgba(6,7,9,0.2)] pb-[58px] pr-[18px] backdrop-blur-[3px]';
 const cardClass = 'flex max-h-[60vh] w-[420px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]';
 const headerClass = 'border-b border-line px-[18px] py-2.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-ghost';
 
@@ -237,12 +241,10 @@ export function ZenActionMenu({ target }: { target: ZenActionTarget }) {
   return (
     <ZenMenu
       label="Zen actions"
-      title={targetTitle(target)}
       anchor="bottom-right"
       width={420}
       items={items}
       onClose={closeActionMenu}
-      placeholder="Action…"
       emptyText="No matching actions"
     />
   );

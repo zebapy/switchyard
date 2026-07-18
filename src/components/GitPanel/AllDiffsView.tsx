@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { DiffSource, FileStatus } from '../../types/gitpanel';
+import type { DiffAgentHooks, DiffSource, FileStatus } from '../../types/gitpanel';
 import { FileDiffSection } from './FileDiffSection';
 
 interface AllDiffsViewProps {
@@ -14,12 +14,14 @@ interface AllDiffsViewProps {
   /** Host pane id — lets a line comment open a chat in the right window.
    *  Absent in the sidebar inline view. */
   paneId?: string;
+  /** Host-view hooks (Zen): queue comments / launch prompts in a focused pane. */
+  hooks?: DiffAgentHooks;
 }
 
 /** PR-style stacked diffs: every changed file's diff shown inline and
  *  collapsible, so the whole change reads top-to-bottom without clicking each
  *  file. Used both in the Git panel (inline view) and the full-width tab. */
-export function AllDiffsView({ path, source, files, loading, error, onOpenFileInTab, paneId }: AllDiffsViewProps) {
+export function AllDiffsView({ path, source, files, loading, error, onOpenFileInTab, paneId, hooks }: AllDiffsViewProps) {
   // Track which files the user explicitly collapsed; everything else is open.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -73,6 +75,7 @@ export function AllDiffsView({ path, source, files, loading, error, onOpenFileIn
             onToggle={() => toggle(file.path)}
             onOpenInTab={() => onOpenFileInTab(file.path)}
             paneId={paneId}
+            hooks={hooks}
           />
         ))}
       </div>

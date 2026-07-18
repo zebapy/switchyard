@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../stores/projects';
 import { useZenStore, type ZenTier } from './zenStore';
 import { spawnPane } from './ZenActionMenu';
+import { ZenNewWorktreeMenu } from './ZenNewWorktreeMenu';
 import { ZenMenu, type ZenMenuItem } from './ZenMenu';
 
 async function addFolderAsProject() {
@@ -33,7 +34,7 @@ function addItemsFor(tier: ZenTier, spawnPath: string | null): AddItem[] {
   if (tier === 'projects' || !spawnPath) return [addProject];
 
   return [
-    { id: 'new-chat', label: 'New chat', shortcut: '⌘⇧T', run: () => spawnPane(spawnPath, 'Agent') },
+    { id: 'new-chat', label: 'New agent', shortcut: '⌘⇧T', run: () => spawnPane(spawnPath, 'Agent') },
     { id: 'new-term', label: 'New terminal', shortcut: '⌘T', run: () => spawnPane(spawnPath, 'Shell') },
   ];
 }
@@ -50,7 +51,7 @@ export const TIER_TITLE: Record<ZenTier, string> = {
  * Anchored bottom-left — the card's bottom-left corner hugs the button and the
  * list grows up/rightward, mirroring ZenActionMenu's bottom-right anchor.
  */
-export function ZenAddMenu({ tier, spawnPath }: { tier: ZenTier; spawnPath: string | null }) {
+export function ZenAddMenu({ tier, spawnPath, projectPath }: { tier: ZenTier; spawnPath: string | null; projectPath: string | null }) {
   const closeAddMenu = useZenStore((s) => s.closeAddMenu);
 
   const items = useMemo<ZenMenuItem[]>(
@@ -64,14 +65,19 @@ export function ZenAddMenu({ tier, spawnPath }: { tier: ZenTier; spawnPath: stri
     [tier, spawnPath, closeAddMenu],
   );
 
+  // On the Workspaces tier the "New…" menu grows into worktree creation (quick,
+  // or seeded from Linear / a GitHub PR / a branch), handled by its own stateful
+  // component. Other tiers keep the simple static list above.
+  if (tier === 'worktrees' && projectPath) {
+    return <ZenNewWorktreeMenu projectPath={projectPath} />;
+  }
+
   return (
     <ZenMenu
       label="Zen new"
-      title={TIER_TITLE[tier]}
       anchor="bottom-left"
       items={items}
       onClose={closeAddMenu}
-      placeholder="New…"
       emptyText="Nothing to add"
     />
   );

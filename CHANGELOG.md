@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Zen Mode can now open **Settings with ⌘,** (matching the Standard layout and the native menu item). Settings open as a full-screen overlay hosted inside Zen — reusing the standard settings nav and section pages — so you stay in Zen instead of dropping back to the Standard chrome. Close it with the Back/close buttons or `Esc`.
 - Zen Mode gains a **Back button** in the top-left toolbar, just right of the macOS traffic lights, with a hotkey keycap. Its label names where it lands — the parent worktree, the project, or `Projects` at the root — and it mirrors the escape keys: in a focused chat/terminal it leaves the pane (`^←`), otherwise it climbs one tier (`←`). Hidden at the Projects root, where there's nowhere left to go back to. It replaces the focus-only `^← escape pane` button.
 
 ### Changed

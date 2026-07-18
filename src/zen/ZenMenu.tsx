@@ -18,15 +18,13 @@ type ZenMenuAnchor = 'top-right' | 'bottom-right' | 'bottom-left';
 interface ZenMenuProps {
   /** Accessible name for the underlying combobox. */
   label: string;
-  /** Uppercase header text at the top of the card. */
-  title: string;
   anchor: ZenMenuAnchor;
   items: ZenMenuItem[];
   onClose: () => void;
+  /** Escape handler. Defaults to `onClose`; override to climb a nested menu instead of dismissing. */
+  onEscape?: () => void;
   /** Card width in px. Defaults to 320. */
   width?: number;
-  /** Search-input placeholder. Defaults to "Search…". */
-  placeholder?: string;
   /** Text shown when the search matches nothing. */
   emptyText?: string;
 }
@@ -49,35 +47,40 @@ const kbdClass =
  */
 export function ZenMenu({
   label,
-  title,
   anchor,
   items,
   onClose,
+  onEscape,
   width = 320,
-  placeholder = 'Search…',
   emptyText = 'No matches',
 }: ZenMenuProps) {
+  const handleEscape = onEscape ?? onClose;
+  // Footer menus grow upward, so the search sits at the bottom (nearest the
+  // button that opened it); the toolbar's top-anchored menus keep it on top.
+  const searchAtBottom = anchor !== 'top-right';
+  const input = (
+    <Cmdk.Input
+      autoFocus
+      placeholder="Search…"
+      className={`w-full bg-transparent px-[18px] py-3 text-[14px] text-ink outline-none placeholder:text-ink-ghost ${
+        searchAtBottom ? 'border-t' : 'border-b'
+      } border-line`}
+    />
+  );
   return (
     <div
-      className={`fixed inset-0 z-[200] flex bg-[rgba(6,7,9,0.6)] backdrop-blur-[3px] ${anchorClass[anchor]}`}
+      className={`fixed inset-0 z-[200] flex bg-[rgba(6,7,9,0.2)] backdrop-blur-[3px] ${anchorClass[anchor]}`}
       onClick={onClose}
     >
       <Cmdk
         label={label}
         loop
-        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); handleEscape(); } }}
         style={{ width }}
         className="flex max-h-[60vh] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-line px-[18px] py-2.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-ghost">
-          {title}
-        </div>
-        <Cmdk.Input
-          autoFocus
-          placeholder={placeholder}
-          className="w-full border-b border-line bg-transparent px-[18px] py-3 text-[14px] text-ink outline-none placeholder:text-ink-ghost"
-        />
+        {!searchAtBottom && input}
         <Cmdk.List className="scroll-thin overflow-y-auto p-1.5">
           <Cmdk.Empty className="p-[18px] text-center text-[13px] text-ink-ghost">{emptyText}</Cmdk.Empty>
           {items.map((item) => (
@@ -96,6 +99,7 @@ export function ZenMenu({
             </Cmdk.Item>
           ))}
         </Cmdk.List>
+        {searchAtBottom && input}
       </Cmdk>
     </div>
   );
