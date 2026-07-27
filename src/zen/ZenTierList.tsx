@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, type MouseEvent } from 'react';
 import { AiIcon, TermIcon, CodeIcon, PrIcon, RepoIcon, BaseBranchIcon, WorktreeIcon } from '../components/icons';
 import type { PaneInfo } from '../types/pane';
 import type { ProjectRow, WorktreeRow, PaneRow, PaneStatusCounts } from './zenData';
@@ -14,6 +14,7 @@ interface ZenTierListProps {
   query: string;
   onHover: (index: number) => void;
   onActivate: (index: number) => void;
+  onContextMenu: (index: number) => void;
 }
 
 function NoMatches({ query }: { query: string }) {
@@ -113,7 +114,12 @@ export function ZenTierList({
   query,
   onHover,
   onActivate,
+  onContextMenu,
 }: ZenTierListProps) {
+  const handleContextMenu = (index: number) => (e: MouseEvent) => {
+    e.preventDefault();
+    onContextMenu(index);
+  };
   const rowClass = (index: number) => `${rowBase} ${index === cursor ? rowSelected : 'hover:bg-hover'}`;
   const searching = query.trim().length > 0;
 
@@ -138,7 +144,7 @@ export function ZenTierList({
             {sectioned && (i === 0 || projectSection(projectRows[i - 1]) !== projectSection(row)) && (
               <SectionHeading label={projectSection(row)} />
             )}
-            <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)}>
+            <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)} onContextMenu={handleContextMenu(i)}>
               <span className="flex min-w-0 flex-1 items-center gap-3">
                 <span className={i === cursor ? 'text-signal' : 'text-ink-dim'}><RepoIcon size={15} /></span>
                 <span className={`font-mono text-[15px] font-semibold ${i === cursor ? 'text-signal' : 'text-ink'}`}>{row.name}</span>
@@ -169,7 +175,7 @@ export function ZenTierList({
             {sectioned && (i === 0 || worktreeSection(worktreeRows[i - 1]) !== worktreeSection(row)) && (
               <SectionHeading label={worktreeSection(row)} />
             )}
-            <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)}>
+            <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)} onContextMenu={handleContextMenu(i)}>
               <span className="flex min-w-0 flex-1 items-center gap-3">
                 <span
                   className={i === cursor ? 'text-signal' : 'text-ink-dim'}
@@ -225,7 +231,7 @@ export function ZenTierList({
           {paneSectioned && (i === 0 || paneGroup(paneRows[i - 1].info) !== paneGroup(row.info)) && (
             <SectionHeading label={paneGroup(row.info)} />
           )}
-          <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)}>
+          <div className={rowClass(i)} data-cursor={i === cursor ? '' : undefined} onMouseEnter={() => onHover(i)} onClick={() => onActivate(i)} onContextMenu={handleContextMenu(i)}>
             <span className="flex min-w-0 flex-1 items-center gap-3">
               <PaneIcon info={row.info} />
               <span className={`truncate text-[15px] ${i === cursor ? 'text-signal' : 'text-ink'}`}>{paneLabel(row.info)}</span>

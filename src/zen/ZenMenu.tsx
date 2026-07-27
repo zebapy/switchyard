@@ -69,7 +69,7 @@ export function ZenMenu({
   );
   return (
     <div
-      className={`fixed inset-0 z-[200] flex bg-[rgba(6,7,9,0.2)] backdrop-blur-[3px] ${anchorClass[anchor]}`}
+      className={`fixed inset-0 z-[200] flex ${anchorClass[anchor]}`}
       onClick={onClose}
     >
       <Cmdk

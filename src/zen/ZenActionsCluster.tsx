@@ -19,6 +19,7 @@ const keyClass =
 /** A shortcut drawn as one outlined box per key, glowing teal when its parent
  *  `.group` (an action button) is hovered. */
 export function ZenKeyCaps({ keys }: { keys: string }) {
+  if (!keys) return null;
   return (
     <span className={keysClass}>
       {[...keys].map((key, i) => (

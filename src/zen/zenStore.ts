@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { DiffSource } from '../types/gitpanel';
 
 /** Which tier of the drill-down the cursor is currently on. */
 export type ZenTier = 'projects' | 'worktrees' | 'panes';
@@ -23,6 +24,10 @@ interface ZenNavState {
   addMenuOpen: boolean;
   /** Non-null = the ephemeral "View diff" view is overtaking the main area for this worktree path. */
   diffPath: string | null;
+  /** What the open diff is compared against (unstaged / staged / vs base branch). */
+  diffSource: DiffSource;
+  /** ⌘P — the diff-source picker overlay is open. */
+  diffPickerOpen: boolean;
   /** ⌘, — the Settings overlay (standard settings surfaces hosted inside Zen). */
   settingsOpen: boolean;
   /** Toolbar search text — fuzzy-narrows the current tier's list. Cleared on any tier change. */
@@ -47,6 +52,9 @@ interface ZenNavState {
   /** Overtake the main area with the diff view for `worktreePath`. */
   openDiff: (worktreePath: string) => void;
   closeDiff: () => void;
+  setDiffSource: (source: DiffSource) => void;
+  openDiffPicker: () => void;
+  closeDiffPicker: () => void;
   openSettings: () => void;
   closeSettings: () => void;
 }
@@ -62,6 +70,8 @@ export const useZenStore = create<ZenNavState>((set) => ({
   openInOpen: false,
   addMenuOpen: false,
   diffPath: null,
+  diffSource: 'base',
+  diffPickerOpen: false,
   settingsOpen: false,
   query: '',
 
@@ -97,8 +107,19 @@ export const useZenStore = create<ZenNavState>((set) => ({
   closeAddMenu: () => set({ addMenuOpen: false }),
 
   openDiff: (worktreePath) =>
-    set({ diffPath: worktreePath, actionMenuOpen: false, sortMenuOpen: false, openInOpen: false, addMenuOpen: false }),
-  closeDiff: () => set({ diffPath: null }),
+    set({
+      diffPath: worktreePath,
+      diffSource: 'base',
+      diffPickerOpen: false,
+      actionMenuOpen: false,
+      sortMenuOpen: false,
+      openInOpen: false,
+      addMenuOpen: false,
+    }),
+  closeDiff: () => set({ diffPath: null, diffPickerOpen: false }),
+  setDiffSource: (source) => set({ diffSource: source, diffPickerOpen: false }),
+  openDiffPicker: () => set({ diffPickerOpen: true }),
+  closeDiffPicker: () => set({ diffPickerOpen: false }),
 
   openSettings: () =>
     set({ settingsOpen: true, actionMenuOpen: false, sortMenuOpen: false, openInOpen: false, addMenuOpen: false }),

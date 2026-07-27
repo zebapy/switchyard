@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useZenStore } from './zenStore';
 import { basename } from './zenData';
-import { ZenMenu, type ZenMenuItem } from './ZenMenu';
-import { ZenActionsCluster, ZenKeyCaps, clusterClass, actionClass } from './ZenActionsCluster';
 import { AllDiffsView } from '../components/GitPanel/AllDiffsView';
-import { useChangedFiles, useDefaultBranch } from '../components/GitPanel/useGitData';
+import { useChangedFiles } from '../components/GitPanel/useGitData';
 import { useProjectsStore } from '../stores/projects';
 import { useWorkspaceStore } from '../stores/workspace';
 import { AgentGlyph, CloseIcon } from '../components/icons';
@@ -66,11 +64,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
  */
 export function ZenDiffView({ path }: { path: string }) {
   const closeDiff = useZenStore((s) => s.closeDiff);
+  const source = useZenStore((s) => s.diffSource);
+  const pickerOpen = useZenStore((s) => s.diffPickerOpen);
+  const openDiffPicker = useZenStore((s) => s.openDiffPicker);
   const agents = useProjectsStore((s) => s.agents);
-  const defaultBranch = useDefaultBranch(path);
 
-  const [source, setSource] = useState<DiffSource>('base');
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [queue, setQueue] = useState<QueuedFeedback[]>([]);
   const [agentCommand, setAgentCommand] = useState('');
   const idRef = useRef(0);
@@ -78,16 +76,6 @@ export function ZenDiffView({ path }: { path: string }) {
   useEffect(() => {
     if (!agentCommand && agents.length > 0) setAgentCommand(agents[0].command);
   }, [agents, agentCommand]);
-
-  const sourceOptions = useMemo(
-    () => [
-      { value: 'base' as const, label: `Vs ${defaultBranch ?? 'base branch'}` },
-      { value: 'unstaged' as const, label: 'Working tree' },
-      { value: 'staged' as const, label: 'Staged' },
-    ],
-    [defaultBranch],
-  );
-  const currentLabel = sourceOptions.find((o) => o.value === source)?.label ?? source;
 
   const { files, loading, error } = useChangedFiles(path, source);
 
@@ -125,7 +113,7 @@ export function ZenDiffView({ path }: { path: string }) {
       if (e.metaKey && e.key === 'p') {
         e.preventDefault();
         e.stopPropagation();
-        setPickerOpen(true);
+        openDiffPicker();
         return;
       }
       if (e.key === 'Escape' || e.key === 'ArrowLeft') {
@@ -136,53 +124,10 @@ export function ZenDiffView({ path }: { path: string }) {
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [pickerOpen, closeDiff]);
-
-  const pickerItems: ZenMenuItem[] = sourceOptions.map((o) => ({
-    id: o.value,
-    label: o.label,
-    active: o.value === source,
-    onSelect: () => {
-      setSource(o.value);
-      setPickerOpen(false);
-    },
-  }));
+  }, [pickerOpen, openDiffPicker, closeDiff]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-canvas">
-      <div className="flex flex-none items-center gap-3 border-b border-line-soft px-[18px] py-2.5">
-        <div className={clusterClass}>
-          <button
-            type="button"
-            onClick={closeDiff}
-            title="Back to worktree (Esc)"
-            aria-label="Back to worktree"
-            className={`${actionClass} text-ink-dim hover:text-ink`}
-          >
-            <ZenKeyCaps keys="←" />
-            <span className="truncate">Back</span>
-          </button>
-        </div>
-        <div className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-ink-faint">
-          <span className="text-ink-dim">Diff</span>
-          <span className="text-ink-ghost">›</span>
-          <span className="truncate font-semibold text-ink">{basename(path)}</span>
-          <span className="hidden text-ink-ghost sm:inline">· hover a line to comment</span>
-        </div>
-        <div className="ml-auto">
-          <ZenActionsCluster
-            actions={[
-              {
-                keys: '⌘P',
-                label: currentLabel,
-                onClick: () => setPickerOpen(true),
-                title: 'Change what the diff is against (⌘P)',
-              },
-            ]}
-          />
-        </div>
-      </div>
-
       <AllDiffsView
         path={path}
         source={source}
@@ -260,16 +205,6 @@ export function ZenDiffView({ path }: { path: string }) {
             </div>
           </div>
         </div>
-      )}
-
-      {pickerOpen && (
-        <ZenMenu
-          label="Diff source"
-          anchor="top-right"
-          items={pickerItems}
-          onClose={() => setPickerOpen(false)}
-          emptyText="No sources"
-        />
       )}
     </div>
   );

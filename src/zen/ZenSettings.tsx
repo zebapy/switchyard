@@ -14,6 +14,10 @@ function SettingsShell() {
   return (
     <div className="flex h-full w-full">
       <aside className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-line bg-linear-to-b from-side2 to-side">
+        {/* Zen floats the macOS traffic lights over the toolbar band, which this
+            overlay covers. Reserve a draggable strip so the Back button below
+            clears the lights instead of colliding with them. */}
+        <div data-tauri-drag-region className="h-[38px] shrink-0" />
         <SettingsNav />
       </aside>
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">

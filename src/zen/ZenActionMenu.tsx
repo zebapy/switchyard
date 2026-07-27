@@ -174,7 +174,7 @@ function targetTitle(target: ZenActionTarget): string {
 
 // Anchored above the bottom-right "⌘K actions" button — the card's bottom-right
 // corner hugs the button and the list grows up/leftward, staying in the window.
-const scrimClass = 'fixed inset-0 z-[200] flex items-end justify-end bg-[rgba(6,7,9,0.2)] pb-[58px] pr-[18px] backdrop-blur-[3px]';
+const scrimClass = 'fixed inset-0 z-[200] flex items-end justify-end pb-[58px] pr-[18px]';
 const cardClass = 'flex max-h-[60vh] w-[420px] flex-col overflow-hidden rounded-2xl border border-line bg-side shadow-[0_30px_80px_-22px_rgba(0,0,0,0.85)]';
 const headerClass = 'border-b border-line px-[18px] py-2.5 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-ghost';
 

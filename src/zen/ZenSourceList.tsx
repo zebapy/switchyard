@@ -35,7 +35,7 @@ export function ZenSourceList({
 }: ZenSourceListProps) {
   return (
     <div
-      className="fixed inset-0 z-[200] grid place-items-center bg-[rgba(6,7,9,0.2)] p-6 backdrop-blur-[3px]"
+      className="fixed inset-0 z-[200] grid place-items-center p-6"
       onClick={onClose}
     >
       <Cmdk

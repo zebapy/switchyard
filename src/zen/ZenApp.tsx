@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useProjectsStore } from '../stores/projects';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useZenStore } from './zenStore';
@@ -18,11 +19,13 @@ import { ZenFocus } from './ZenFocus';
 import { ZenSortMenu } from './ZenSortMenu';
 import { ZenActionMenu, spawnPane, type ZenActionTarget } from './ZenActionMenu';
 import { ZenDiffView } from './ZenDiffView';
+import { ZenDiffToolbar } from './ZenDiffToolbar';
 import { ZenActionsCluster, type ClusterAction } from './ZenActionsCluster';
 import { ZenOpenIn } from './ZenOpenIn';
 import { ZenAddMenu, TIER_TITLE } from './ZenAddMenu';
 import { ZenBackButton } from './ZenBackButton';
 import { ZenSettings } from './ZenSettings';
+import { GithubConnectModal } from '../components/Github/GithubConnectModal';
 import { UsageBars } from '../components/Sidebar/UsageBars';
 import { fuzzyMatch } from '../components/CommandPalette/fuzzyMatch';
 import {
@@ -43,10 +46,11 @@ function filterRows<T>(rows: T[], query: string, toText: (row: T) => string): T[
     .map((entry) => entry.row);
 }
 
-/** Create a worktree whose branch is the slugified `text`, then drill into it —
- *  the worktrees-tier Tab action. Mirrors ZenNewWorktreeMenu's quick-worktree flow. */
+/** Create a worktree, then drill into it — the worktrees-tier Tab action. With
+ *  `text` the branch is its slug; empty, it's a random name. Mirrors
+ *  ZenNewWorktreeMenu's quick-worktree flow. */
 async function startWorktreeFromText(projectPath: string, text: string) {
-  const res = await useProjectsStore.getState().quickWorktree(projectPath, text).catch(() => null);
+  const res = await useProjectsStore.getState().quickWorktree(projectPath, text || undefined).catch(() => null);
   if (!res) return;
   useProjectsStore.getState().expandProject(projectPath);
   useZenStore.getState().enterWorktree(res.path);
@@ -229,9 +233,8 @@ export function ZenApp() {
   const sendTabAction = useCallback(() => {
     const st = useZenStore.getState();
     const text = st.query.trim();
-    if (!text) return;
     if (st.tier === 'panes' && st.worktreePath) {
-      spawnPane(st.worktreePath, 'Agent', text);
+      spawnPane(st.worktreePath, 'Agent', text || undefined);
       st.setQuery('');
       return;
     }
@@ -408,6 +411,13 @@ export function ZenApp() {
     useZenStore.getState().setCursor(nav.tier, index);
     enterAtCursor();
   };
+  // Right-click a row → select it and open its contextual actions menu (the
+  // same ⌘K menu, whose target is derived from the cursor).
+  const onContextMenu = (index: number) => {
+    const st = useZenStore.getState();
+    st.setCursor(nav.tier, index);
+    st.openActionMenu();
+  };
 
   const focusInfo = nav.focusedPaneId ? panes.get(nav.focusedPaneId) : undefined;
 
@@ -437,6 +447,27 @@ export function ZenApp() {
               ? { kind: 'pane', paneId: paneRows[nav.cursor.panes].paneId, info: paneRows[nav.cursor.panes].info, worktreePath: nav.worktreePath }
               : { kind: 'empty', worktreePath: nav.worktreePath }
             : null;
+
+  // The PR indicator in the top-right cluster, shown whenever we're inside a
+  // worktree (panes tier or a focused pane). Opens the PR on GitHub if this
+  // worktree already has one; otherwise starts a chat that says "Create a pull
+  // request." so the agent opens it.
+  const worktreePr = nav.worktreePath ? prInfo.get(nav.worktreePath) : null;
+  const prAction: ClusterAction | null = nav.worktreePath
+    ? worktreePr
+      ? {
+          keys: '',
+          label: `PR #${worktreePr.number}`,
+          onClick: () => { void openUrl(worktreePr.url); },
+          title: `Open pull request #${worktreePr.number} on GitHub`,
+        }
+      : {
+          keys: '',
+          label: 'Create PR',
+          onClick: () => spawnPane(nav.worktreePath!, 'Agent', 'Create a pull request.'),
+          title: 'Start a chat to create a pull request',
+        }
+    : null;
 
   const openDir = computeOpenDir();
   const addSpawnPath = computeAddSpawnPath();
@@ -484,11 +515,11 @@ export function ZenApp() {
     : nav.tier === 'worktrees' ? 'Search worktrees…'
     : 'Search terminals & chats…';
 
-  // What ⇥ does with the typed text on this tier — shown as a hint inside the
-  // search field once there's text to act on. Projects has no Tab action.
+  // What ⇥ does on this tier — always shown as a hint inside the search field.
+  // With text it's seeded from the query; empty, it opens a blank chat / random
+  // worktree. Projects has no Tab action.
   const tabHint =
-    nav.query.trim() === '' ? null
-    : nav.tier === 'panes' ? 'New chat'
+    nav.tier === 'panes' ? 'New chat'
     : nav.tier === 'worktrees' ? 'New worktree'
     : null;
 
@@ -522,6 +553,10 @@ export function ZenApp() {
         data-tauri-drag-region
         className="flex flex-none items-center gap-4 border-b border-line-soft py-4 pl-[78px] pr-[22px]"
       >
+        {diffOpen && nav.diffPath ? (
+          <ZenDiffToolbar path={nav.diffPath} />
+        ) : (
+          <>
         <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center pl-3">
           <ZenBackButton destination={backDestination} />
         </div>
@@ -554,12 +589,15 @@ export function ZenApp() {
             actions={(diffOpen
               ? []
               : [
+                  prAction,
                   openDir && { keys: '⌘O', label: 'Open in…', onClick: toggleOpenIn, title: 'Open the current directory in an external app' },
                   !focused && { keys: '⌘P', label: `Sort: ${sortLabel}`, onClick: toggleSortMenu, title: 'Sort the current list' },
                 ]
             ).filter(Boolean) as ClusterAction[]}
           />
         </div>
+          </>
+        )}
       </div>
 
       {diffOpen && nav.diffPath ? (
@@ -576,6 +614,7 @@ export function ZenApp() {
           query={nav.query}
           onHover={onHover}
           onActivate={onActivate}
+          onContextMenu={onContextMenu}
         />
       )}
 
@@ -626,6 +665,7 @@ export function ZenApp() {
 
       {overlays}
       {nav.settingsOpen && <ZenSettings />}
+      <GithubConnectModal />
     </div>
   );
 }
