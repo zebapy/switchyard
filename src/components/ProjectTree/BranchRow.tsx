@@ -10,7 +10,7 @@ import { findLinearIdentifier } from '../../lib/linearIdentifier';
 import { SessionRow } from './SessionRow';
 import { AddMenu } from './AddMenu';
 import { ArchiveConfirmDialog } from './ArchiveConfirmDialog';
-import { ChevronIcon, BaseBranchIcon, WorktreeIcon, CloseIcon, ArchiveIcon, GitHostIcon, LinearIcon } from '../icons';
+import { ChevronIcon, BaseBranchIcon, WorktreeIcon, ArchiveIcon, GitHostIcon, LinearIcon } from '../icons';
 import { openBranchOnRemote, hostLabel } from '../../lib/openBranchOnRemote';
 import type { WorktreeInfo, PrInfo, WorktreeArchiveStatus } from '../../types/project';
 
@@ -176,9 +176,9 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
     fetchArchiveStatus();
   };
 
-  // The row's X is the same archive action as the context menu — confirm first,
-  // refreshing the dirty-line count so the discard warning is accurate.
-  const handleDelete = (e: React.MouseEvent) => {
+  // The row's archive button is the same action as the context menu — confirm
+  // first, refreshing the dirty-line count so the discard warning is accurate.
+  const handleArchiveClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     fetchArchiveStatus();
     setConfirmArchive(true);
@@ -265,11 +265,11 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
             <span
               role="button"
               tabIndex={-1}
-              onClick={handleDelete}
+              onClick={handleArchiveClick}
               title="Archive worktree"
               className="grid size-[18px] cursor-pointer place-items-center rounded-md text-ink-faint opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-del"
             >
-              <CloseIcon size={11} />
+              <ArchiveIcon size={12} />
             </span>
           )}
         </span>
