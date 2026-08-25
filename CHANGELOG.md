@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The **Create worktree** modal is now prompt-first: it opens with a "What do you want to work on?" box, names the branch after the prompt (`Fix the flaky login redirect` → `fix-flaky-login-redirect`, deduped with a `-2` suffix when taken), and hands the prompt to the agent in the new workspace. Enter creates, ⇧Enter adds a line. Seeding from a Linear issue, GitHub issue, branch, or PR now lives behind an **Or start from** row — the list appears only once a source is picked, and anything typed in the prompt box is appended to the issue prompt. Picking a PR now checks the PR head out via `create_worktree_for_pr` instead of creating a plain branch worktree.
+
 ## [0.4.0] - 2026-07-27
 
 ### Added

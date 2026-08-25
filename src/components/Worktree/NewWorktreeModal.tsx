@@ -6,9 +6,10 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import { useUiStore } from '../../stores/ui';
 import { goToWorkspace } from '../../router';
 import type { GhItem } from '../../types/project';
+import { branchNameFromPrompt } from '../../lib/promptBranchName';
 import { loadIssuePrompt, renderIssuePrompt } from './issuePrompt';
 import {
-  LinearIcon, IssueIcon, GitBranchIcon, PrIcon, SearchIcon, CloseIcon,
+  LinearIcon, IssueIcon, GitBranchIcon, PrIcon, SearchIcon, CloseIcon, WorktreeIcon,
 } from '../icons';
 
 type Source = 'linear' | 'issue' | 'branch' | 'pr';
@@ -24,6 +25,13 @@ function lastSegment(branch: string): string {
   return branch.split('/').filter(Boolean).pop() ?? branch;
 }
 
+/** The agent's opening message: the source's issue prompt, then anything the
+ *  user typed in the prompt box. Either half may be empty. */
+function seedCommand(prompt: string, item?: GhItem): string | undefined {
+  const fromItem = item ? renderIssuePrompt(loadIssuePrompt(), item) : '';
+  return [fromItem, prompt.trim()].filter(Boolean).join('\n\n') || undefined;
+}
+
 const tabBase = 'flex items-center gap-1.5 rounded-lg border px-[11px] py-1.5 text-[12.5px] font-medium transition-colors';
 
 export function NewWorktreeModal() {
@@ -31,11 +39,15 @@ export function NewWorktreeModal() {
   const closeModal = useUiStore((s) => s.closeWorktreeModal);
   const openGithubConnect = useUiStore((s) => s.openGithubConnect);
   const createWorktree = useProjectsStore((s) => s.createWorktree);
+  const createWorktreeForPr = useProjectsStore((s) => s.createWorktreeForPr);
+  const quickWorktree = useProjectsStore((s) => s.quickWorktree);
   const expandProject = useProjectsStore((s) => s.expandProject);
   const agents = useProjectsStore((s) => s.agents);
   const addTab = useWorkspaceStore((s) => s.addTab);
 
-  const [src, setSrc] = useState<Source>('linear');
+  const [prompt, setPrompt] = useState('');
+  // null = no source picked; the prompt alone seeds the worktree.
+  const [src, setSrc] = useState<Source | null>(null);
   const [items, setItems] = useState<GhItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -49,11 +61,13 @@ export function NewWorktreeModal() {
   const isLinear = src === 'linear';
   const connected = isLinear ? linearConnected : githubConnected;
   const providerName = isLinear ? 'Linear' : 'GitHub';
+  const derivedName = branchNameFromPrompt(prompt);
 
   // Reset and refresh connection status whenever the modal opens.
   useEffect(() => {
     if (!open) return;
-    setSrc('linear');
+    setPrompt('');
+    setSrc(null);
     setQuery('');
     setShowAll(false);
     setError('');
@@ -64,7 +78,7 @@ export function NewWorktreeModal() {
 
   // Load the source list when the tab, scope, or connection changes.
   useEffect(() => {
-    if (!open || !projectPath || !connected) { setItems([]); return; }
+    if (!open || !src || !projectPath || !connected) { setItems([]); return; }
     const tab = TABS.find((t) => t.src === src);
     let cancelled = false;
     setLoading(true);
@@ -114,19 +128,50 @@ export function NewWorktreeModal() {
     setConnecting(false);
   }
 
-  async function createFrom(item: GhItem) {
-    if (!projectPath || busy || !item.branch) return;
+  /** Prompt-only path: name the worktree after the prompt, then hand the prompt
+   *  straight to the agent in the new workspace. */
+  async function createFromPrompt() {
+    if (!projectPath || busy) return;
     setBusy(true);
     setError('');
-    const newPath = await createWorktree(projectPath, item.branch).catch((e: unknown) => {
+    const created = await quickWorktree(projectPath, derivedName).catch((e: unknown) => {
       setError(String(e));
       return null;
     });
     setBusy(false);
-    if (!newPath) return;
-    const command = renderIssuePrompt(loadIssuePrompt(), item) || undefined;
+    if (!created) return;
     expandProject(projectPath);
-    addTab(newPath, lastSegment(item.branch), { kind: 'Agent', cwd: newPath, agent: agents[0]?.command, command });
+    addTab(created.path, created.label, {
+      kind: 'Agent',
+      cwd: created.path,
+      agent: agents[0]?.command,
+      command: seedCommand(prompt),
+    });
+    goToWorkspace();
+    closeModal();
+  }
+
+  async function createFrom(item: GhItem) {
+    if (!projectPath || busy || !item.branch) return;
+    setBusy(true);
+    setError('');
+    const isPr = src === 'pr';
+    const newPath = isPr
+      ? await createWorktreeForPr({
+          repoPath: projectPath,
+          prNumber: Number(item.id.replace(/\D/g, '')) || 0,
+          branchName: item.branch,
+        }).catch((e: unknown) => { setError(String(e)); return null; })
+      : await createWorktree(projectPath, item.branch).catch((e: unknown) => { setError(String(e)); return null; });
+    setBusy(false);
+    if (!newPath) return;
+    expandProject(projectPath);
+    addTab(newPath, lastSegment(item.branch), {
+      kind: 'Agent',
+      cwd: newPath,
+      agent: agents[0]?.command,
+      command: seedCommand(prompt, item),
+    });
     goToWorkspace();
     closeModal();
   }
@@ -153,12 +198,54 @@ export function NewWorktreeModal() {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-[5px] px-[18px] pt-[13px]">
+        <form
+          onSubmit={(e) => { e.preventDefault(); void createFromPrompt(); }}
+          className="flex flex-col gap-2 border-b border-line-soft px-[18px] py-[14px]"
+        >
+          <label htmlFor="worktree-prompt" className="text-[12.5px] font-medium text-ink-dim">
+            What do you want to work on?
+          </label>
+          <textarea
+            id="worktree-prompt"
+            autoFocus
+            required
+            rows={3}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="Fix the flaky login redirect on Safari…"
+            className="scroll-thin w-full resize-none rounded-[9px] border border-line bg-app px-[11px] py-2 text-[13px] text-ink outline-none transition placeholder:text-ink-ghost focus:border-ember-edge focus:shadow-[0_0_0_3px_var(--color-ember-tint)]"
+          />
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
+              {derivedName
+                ? <>Branch <span className="font-mono text-ink-dim">{derivedName}</span></>
+                : 'The branch is named after your prompt.'}
+            </div>
+            <button
+              type="submit"
+              disabled={busy}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-[9px] border border-ember bg-ember-tint px-[13px] py-[7px] text-[12.5px] font-semibold text-ember transition hover:bg-ember hover:text-[#1a1206] disabled:opacity-50"
+            >
+              <WorktreeIcon size={13} />
+              {busy ? 'Creating…' : 'Create worktree'}
+            </button>
+          </div>
+        </form>
+
+        <div className="flex flex-wrap items-center gap-[5px] px-[18px] pt-[13px]">
+          <span className="mr-1 text-[11.5px] text-ink-faint">Or start from</span>
           {TABS.map((t) => (
             <button
               key={t.src}
               type="button"
-              onClick={() => setSrc(t.src)}
+              aria-pressed={src === t.src}
+              onClick={() => setSrc(src === t.src ? null : t.src)}
               className={
                 `${tabBase} ` +
                 (src === t.src
@@ -172,13 +259,12 @@ export function NewWorktreeModal() {
           ))}
         </div>
 
-        {connected ? (
+        {src && (connected ? (
           <>
             <div className="flex items-center gap-2 px-[18px] pb-2 pt-[13px]">
               <label className="flex flex-1 items-center gap-2 rounded-[9px] border border-line bg-app px-[11px] py-2 transition focus-within:border-ember-edge focus-within:shadow-[0_0_0_3px_var(--color-ember-tint)]">
                 <SearchIcon size={14} className="shrink-0 text-ink-faint" />
                 <input
-                  autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search…"
@@ -255,13 +341,13 @@ export function NewWorktreeModal() {
               {connecting ? 'Connecting…' : `Connect ${providerName}`}
             </button>
           </div>
-        )}
+        ))}
 
         {error && <div className="px-[18px] pt-1.5 text-xs text-del">{error}</div>}
 
         <div className="flex items-center gap-2 border-t border-line-soft px-[18px] py-[11px] text-[11.5px] text-ink-ghost">
           <kbd className="rounded border border-line px-1 font-mono text-ink-dim">esc</kbd> to close
-          {connected && <span>· click a row to create a worktree from it</span>}
+          <span>· <kbd className="rounded border border-line px-1 font-mono text-ink-dim">↵</kbd> to create, <kbd className="rounded border border-line px-1 font-mono text-ink-dim">⇧↵</kbd> for a new line</span>
         </div>
       </div>
     </div>
