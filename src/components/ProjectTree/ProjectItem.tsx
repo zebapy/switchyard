@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ContextMenu } from '@base-ui-components/react/context-menu';
 import { useProjectsStore } from '../../stores/projects';
 import { useUiStore } from '../../stores/ui';
@@ -21,6 +21,10 @@ const menuItemDestructiveClass =
   'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
   'text-del outline-none data-[highlighted]:bg-del/10 data-[highlighted]:text-del';
 const menuSeparatorClass = 'my-[5px] h-px bg-line';
+
+/** Worktrees are revealed a page at a time so a project with hundreds of them
+ *  neither renders hundreds of rows nor fetches PR details for all of them. */
+const WORKTREE_PAGE_SIZE = 10;
 
 interface ProjectItemProps {
   project: ProjectInfo;
@@ -95,17 +99,6 @@ export function ProjectItem({
     }
   }, [isExpanded, project.path, project.is_git, refreshGitInfo]);
 
-  // Each worktree row shows a PR badge for its own branch (open, merged, or
-  // closed, with CI) — fetch per-worktree PR info once the worktree list loads.
-  // Join the paths into a stable primitive so array identity churn from git
-  // refreshes doesn't re-trigger the fetch.
-  const worktreePaths = git?.worktrees?.map((w) => w.path).join('\n');
-  useEffect(() => {
-    if (isExpanded && project.is_git && worktreePaths) {
-      refreshPrInfoForPaths(worktreePaths.split('\n'));
-    }
-  }, [isExpanded, project.is_git, worktreePaths, refreshPrInfoForPaths]);
-
   // Every worktree row shows a PR badge when its branch has an open PR, and the
   // 'pr' sort needs the same data — fetch the project's open PRs on expand.
   useEffect(() => {
@@ -148,6 +141,36 @@ export function ProjectItem({
     const linked = worktrees.filter((w) => !w.is_main);
     return sortWorktrees([...linked, ...placeholders], sort, { prsByBranch });
   }, [worktrees, pending, sort, prsByBranch]);
+
+  // Only the first page of worktrees renders; "Show more" reveals another page.
+  const [visibleCount, setVisibleCount] = useState(WORKTREE_PAGE_SIZE);
+
+  // In-flight placeholders always stay visible, even when the page cuts them off
+  // — hiding the spinner for a worktree the user just asked for reads as a no-op.
+  const visibleBelowMain = useMemo<WorktreeInfo[]>(() => {
+    const page = belowMain.slice(0, visibleCount);
+    const paged = new Set(page.map((w) => w.path));
+    const spilledPending = belowMain
+      .slice(visibleCount)
+      .filter((w) => w.path.startsWith('pending:') && !paged.has(w.path));
+    return [...page, ...spilledPending];
+  }, [belowMain, visibleCount]);
+
+  const hiddenCount = belowMain.length - visibleBelowMain.length;
+
+  // Each rendered worktree row shows a PR badge for its own branch (open, merged,
+  // or closed, with CI) — fetch per-worktree PR info for the rows on screen only.
+  // Join the paths into a stable primitive so array identity churn from git
+  // refreshes doesn't re-trigger the fetch.
+  const mainPath = worktrees.find((w) => w.is_main)?.path;
+  const visiblePaths = [mainPath, ...visibleBelowMain.map((w) => w.path)]
+    .filter((p): p is string => !!p && !p.startsWith('pending:'))
+    .join('\n');
+  useEffect(() => {
+    if (isExpanded && project.is_git && visiblePaths) {
+      refreshPrInfoForPaths(visiblePaths.split('\n'));
+    }
+  }, [isExpanded, project.is_git, visiblePaths, refreshPrInfoForPaths]);
 
   const draggable = index !== undefined;
 
@@ -250,12 +273,26 @@ export function ProjectItem({
               .map((wt) => (
                 <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={prInfo.get(wt.path) ?? null} />
               ))}
-            {belowMain.map((wt) =>
+            {visibleBelowMain.map((wt) =>
               wt.path.startsWith('pending:') ? (
                 <PendingBranchRow key={wt.path} label={wt.branch ?? ''} />
               ) : (
                 <BranchRow key={wt.path} projectPath={project.path} worktree={wt} pr={prInfo.get(wt.path) ?? null} />
               ),
+            )}
+            {hiddenCount > 0 && (
+              <button
+                onClick={() => setVisibleCount((n) => n + WORKTREE_PAGE_SIZE)}
+                className="flex w-full items-center gap-[7px] rounded-lg px-2 py-1.5 text-left text-[12px] text-ink-dim transition-colors hover:bg-hover hover:text-ink"
+              >
+                <span className="grid w-[11px] rotate-90 place-items-center text-ink-faint">
+                  <ChevronIcon size={11} />
+                </span>
+                Show {Math.min(hiddenCount, WORKTREE_PAGE_SIZE)} more
+                {hiddenCount > WORKTREE_PAGE_SIZE && (
+                  <span className="ml-auto font-mono text-[11px] text-ink-faint">{hiddenCount}</span>
+                )}
+              </button>
             )}
           </div>
         </div>
