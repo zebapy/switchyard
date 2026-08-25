@@ -15,6 +15,14 @@ function slugifyBranch(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+/** `login-fix` → `login-fix-2` when the plain label is already a worktree. */
+function uniqueLabel(label: string, taken: string[]): string {
+  if (!label || !taken.includes(label)) return label;
+  let n = 2;
+  while (taken.includes(`${label}-${n}`)) n += 1;
+  return `${label}-${n}`;
+}
+
 /** Where new git worktrees are created. */
 export type WorktreeLocation = 'project' | 'global';
 
@@ -553,7 +561,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       .filter((p) => p.projectPath === repoPath)
       .map((p) => p.label);
     const taken = [...existingNames, ...pendingNames];
-    const label = name ? slugifyBranch(name) : randomWorktreeName(taken);
+    const label = name ? uniqueLabel(slugifyBranch(name), taken) : randomWorktreeName(taken);
     if (!label) throw new Error('Enter a name with at least one letter or number.');
     const id = crypto.randomUUID();
 
