@@ -6,6 +6,7 @@ import { useUiStore } from '../../stores/ui';
 import { goToWorkspace } from '../../router';
 import { openBranchOnRemote, hostLabel } from '../../lib/openBranchOnRemote';
 import { WORKTREE_SORT_OPTIONS, DEFAULT_WORKTREE_SORT } from '../../types/project';
+import { teleportCloudSession } from '../../lib/cloudSessions';
 
 interface PaletteCommand {
   id: string;
@@ -30,7 +31,7 @@ interface BranchTarget {
 }
 
 /** Order categories appear in the list; unknown categories are appended. */
-const CATEGORY_ORDER = ['Workspace', 'Branch', 'Sort', 'Pane', 'Tab', 'Navigation', 'View', 'Settings', 'Window'];
+const CATEGORY_ORDER = ['Workspace', 'Branch', 'Sort', 'Pane', 'Tab', 'Cloud', 'Navigation', 'View', 'Settings', 'Window'];
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -170,6 +171,29 @@ export function CommandPalette({ isOpen, onClose, onFocusTree, onOpenSettings }:
         action: () => { setUseTmux(!useTmux).catch(console.error); },
       },
     ];
+
+    for (const project of projects) {
+      if (!project.is_git) continue;
+      const target = { projectPath: project.path, projectName: project.name };
+      base.push(
+        {
+          id: `cloud-new-${project.path}`,
+          label: 'New cloud session…',
+          category: 'Cloud',
+          hint: project.name,
+          searchText: `New cloud session ${project.name}`,
+          action: () => useUiStore.getState().openCloudSessionModal(target),
+        },
+        {
+          id: `cloud-teleport-${project.path}`,
+          label: 'Teleport cloud session…',
+          category: 'Cloud',
+          hint: project.name,
+          searchText: `Teleport cloud session ${project.name}`,
+          action: () => teleportCloudSession(target),
+        },
+      );
+    }
 
     if (activeWindow) {
       // The active window is keyed by its worktree path; resolve the checked-out
