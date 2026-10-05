@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort, ProjectListSort, PaneSort, PullRequestItem } from '../types/project';
+import type { ProjectInfo, GitInfo, GitRemoteInfo, PrInfo, DiffStat, WorktreeArchiveStatus, WorktreeSort, ProjectListSort, PaneSort, PullRequestItem, GithubAuthSource } from '../types/project';
 import { DEFAULT_PROJECT_LIST_SORT, DEFAULT_PANE_SORT } from '../types/project';
 import type { TmuxSessionInfo } from '../types/tmux';
 import type { AgentConfig } from '../types/agent';
@@ -44,6 +44,7 @@ interface AppSettings {
   added_projects: string[];
   use_tmux: boolean;
   desktop_notifications: boolean;
+  prewarm_agent: boolean;
   project_scripts: Record<string, string[]>;
   project_sort: Record<string, WorktreeSort>;
   project_list_sort: ProjectListSort;
@@ -51,6 +52,7 @@ interface AppSettings {
   agents: AgentConfig[];
   worktree_location: WorktreeLocation;
   linear_issue_prefixes: string[];
+  github_auth_source: GithubAuthSource;
 }
 
 interface ProjectsState {
@@ -64,6 +66,9 @@ interface ProjectsState {
   addedProjects: string[];
   useTmux: boolean;
   desktopNotifications: boolean;
+  /** Whether the default agent is booted ahead of time for the workspace in view,
+   *  so starting a chat attaches to a running agent. Needs tmux. */
+  prewarmAgent: boolean;
   /** Configured AI agents, ordered by preference. First entry is the default. */
   agents: AgentConfig[];
   /** Where new git worktrees are created. */
@@ -113,6 +118,7 @@ interface ProjectsState {
   reorderProjects: (orderedPaths: string[]) => Promise<void>;
   setUseTmux: (value: boolean) => Promise<void>;
   setDesktopNotifications: (value: boolean) => Promise<void>;
+  setPrewarmAgent: (value: boolean) => Promise<void>;
   setAgents: (agents: AgentConfig[]) => Promise<void>;
   setWorktreeLocation: (location: WorktreeLocation) => Promise<void>;
   /** Persist a project's worktree-list sort order. */
@@ -159,6 +165,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
   addedProjects: [],
   useTmux: true,
   desktopNotifications: true,
+  prewarmAgent: true,
   agents: [DEFAULT_AGENT],
   worktreeLocation: 'project',
   projectSort: {},
@@ -186,6 +193,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         addedProjects: settings.added_projects,
         useTmux: settings.use_tmux,
         desktopNotifications: settings.desktop_notifications,
+        prewarmAgent: settings.prewarm_agent ?? true,
         agents,
         worktreeLocation: settings.worktree_location ?? 'project',
         projectSort: settings.project_sort ?? {},
@@ -416,6 +424,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       set({ desktopNotifications: settings.desktop_notifications });
     } catch (e) {
       console.error('Failed to set desktop_notifications:', e);
+      throw e;
+    }
+  },
+
+  setPrewarmAgent: async (value) => {
+    try {
+      const settings = await invoke<AppSettings>('set_prewarm_agent', { value });
+      set({ prewarmAgent: settings.prewarm_agent });
+    } catch (e) {
+      console.error('Failed to set prewarm_agent:', e);
       throw e;
     }
   },
