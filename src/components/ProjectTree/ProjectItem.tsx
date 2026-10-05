@@ -13,6 +13,7 @@ import { ProjectIcon } from './ProjectIcon';
 import { DEFAULT_WORKTREE_SORT, type ProjectInfo, type WorktreeInfo } from '../../types/project';
 import { sortWorktrees } from '../../lib/sortWorktrees';
 import { goToWorkspace } from '../../router';
+import { teleportCloudSession } from '../../lib/cloudSessions';
 
 const menuPopupClass =
   'z-[300] min-w-[180px] rounded-[10px] border border-line bg-side p-[5px] font-ui ' +
@@ -20,6 +21,9 @@ const menuPopupClass =
 const menuItemDestructiveClass =
   'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
   'text-del outline-none data-[highlighted]:bg-del/10 data-[highlighted]:text-del';
+const menuItemClass =
+  'flex items-center gap-[9px] rounded-[7px] px-[9px] py-[7px] cursor-pointer select-none ' +
+  'text-ink-dim outline-none data-[highlighted]:bg-hover data-[highlighted]:text-ink';
 const menuSeparatorClass = 'my-[5px] h-px bg-line';
 
 /** Worktrees are revealed a page at a time so a project with hundreds of them
@@ -69,6 +73,7 @@ export function ProjectItem({
   const addTab = useWorkspaceStore((s) => s.addTab);
   const pendingWorktrees = useProjectsStore((s) => s.pendingWorktrees);
   const openWorktreeModal = useUiStore((s) => s.openWorktreeModal);
+  const openCloudSessionModal = useUiStore((s) => s.openCloudSessionModal);
   const altHeld = useUiStore((s) => s.altHeld);
 
   // ⌥1…9 switch to a project by position; show the hint only on rows that have one.
@@ -251,6 +256,19 @@ export function ProjectItem({
                     sort={sort}
                     onSelect={(next) => setProjectSort(project.path, next)}
                   />
+                  <ContextMenu.Separator className={menuSeparatorClass} />
+                  <ContextMenu.Item
+                    className={menuItemClass}
+                    onClick={() => openCloudSessionModal({ projectPath: project.path, projectName: project.name })}
+                  >
+                    <span className="w-4" /> New cloud session…
+                  </ContextMenu.Item>
+                  <ContextMenu.Item
+                    className={menuItemClass}
+                    onClick={() => teleportCloudSession({ projectPath: project.path, projectName: project.name })}
+                  >
+                    <span className="w-4" /> Teleport cloud session…
+                  </ContextMenu.Item>
                   <ContextMenu.Separator className={menuSeparatorClass} />
                 </>
               )}

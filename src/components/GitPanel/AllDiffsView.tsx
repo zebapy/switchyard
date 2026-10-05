@@ -6,6 +6,8 @@ interface AllDiffsViewProps {
   /** Repo root. */
   path: string;
   source: DiffSource;
+  /** Branch a `base` diff compares against; `null` = repo default. */
+  base?: string | null;
   files: FileStatus[];
   loading: boolean;
   error: string;
@@ -21,7 +23,7 @@ interface AllDiffsViewProps {
 /** PR-style stacked diffs: every changed file's diff shown inline and
  *  collapsible, so the whole change reads top-to-bottom without clicking each
  *  file. Used both in the Git panel (inline view) and the full-width tab. */
-export function AllDiffsView({ path, source, files, loading, error, onOpenFileInTab, paneId, hooks }: AllDiffsViewProps) {
+export function AllDiffsView({ path, source, base = null, files, loading, error, onOpenFileInTab, paneId, hooks }: AllDiffsViewProps) {
   // Track which files the user explicitly collapsed; everything else is open.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -71,6 +73,7 @@ export function AllDiffsView({ path, source, files, loading, error, onOpenFileIn
             path={path}
             file={file}
             source={source}
+            base={base}
             expanded={!collapsed.has(file.path)}
             onToggle={() => toggle(file.path)}
             onOpenInTab={() => onOpenFileInTab(file.path)}

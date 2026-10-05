@@ -34,6 +34,24 @@ export function spawnPane(worktreePath: string, kind: 'Shell' | 'Agent', command
   if (newId) useZenStore.getState().focus(newId);
 }
 
+interface SpawnPaneAtArgs {
+  /** Project to drill into first, when starting from a tier above the workspace. */
+  projectPath?: string;
+  worktreePath: string;
+  kind: 'Shell' | 'Agent';
+}
+
+/** Start a session in `worktreePath` from any tier: Zen's navigation drills into
+ *  the workspace first, so the new pane's Focus view has its context (PR
+ *  indicator, ⌘O directory) rather than sitting under whatever tier was on
+ *  screen when the shortcut was pressed. */
+export function spawnPaneAt({ projectPath, worktreePath, kind }: SpawnPaneAtArgs) {
+  const zen = useZenStore.getState();
+  if (projectPath && zen.projectPath !== projectPath) zen.enterProject(projectPath);
+  if (useZenStore.getState().worktreePath !== worktreePath) zen.enterWorktree(worktreePath);
+  spawnPane(worktreePath, kind);
+}
+
 // Start a Create-PR agent chat in the worktree, seeded with the same prompt the
 // Git panel uses, and focus it. Kept inside Zen (no goToWorkspace) so the flow
 // stays in the single-focus layout.

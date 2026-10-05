@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useProjectsStore } from '../stores/projects';
 import type { AgentConfig } from '../types/agent';
 import { AgentGlyph, PlusIcon, CloseIcon, ChevronIcon } from './icons';
+import { Switch } from './Switch';
 
 const h3Class = 'mb-2.5 text-xs font-semibold text-ink';
 const descClass = 'mb-2.5 text-xs text-ink-faint';
@@ -27,6 +28,9 @@ function makeId(name: string, command: string, taken: Set<string>): string {
 export function AgentSettings() {
   const agents = useProjectsStore((s) => s.agents);
   const setAgents = useProjectsStore((s) => s.setAgents);
+  const useTmux = useProjectsStore((s) => s.useTmux);
+  const prewarmAgent = useProjectsStore((s) => s.prewarmAgent);
+  const setPrewarmAgent = useProjectsStore((s) => s.setPrewarmAgent);
 
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
@@ -179,6 +183,22 @@ export function AgentSettings() {
           </button>
         </div>
       </form>
+
+      <div className="mt-5 border-t border-line pt-4">
+        <label className="mb-1.5 flex cursor-pointer items-center gap-2 text-[13px] text-ink">
+          <span className="flex-1">Start the default agent ahead of time</span>
+          <Switch
+            checked={prewarmAgent}
+            onCheckedChange={setPrewarmAgent}
+            ariaLabel="Start the default agent ahead of time"
+          />
+        </label>
+        <p className={descClass}>
+          {useTmux
+            ? 'Boots the default agent for the workspace you are looking at, so a new chat opens on an agent that is already running. It is a real agent process, so its session-start hooks run even if you never open the chat.'
+            : 'Needs tmux for session persistence, which is turned off under Terminal.'}
+        </p>
+      </div>
     </div>
   );
 }

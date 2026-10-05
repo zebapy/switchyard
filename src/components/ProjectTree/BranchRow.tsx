@@ -312,7 +312,11 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
       <div className={`grid transition-[grid-template-rows] duration-[260ms] ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden">
           <div className="relative pl-[19px] before:absolute before:left-2 before:-top-0.5 before:bottom-2 before:w-px before:bg-guide before:content-['']">
-            {tabs.map((tab, index) => (
+            {/* Preview tabs are left out — the tree lists what the user committed
+                to, not what they glanced at. ⌘N still counts every tab in the
+                strip, so `index` stays the tab's real position and the hints
+                here read 1, 2, 4 when a preview sits between them. */}
+            {tabs.map((tab, index) => (tab.preview ? null : (
               <SessionRow
                 key={tab.id}
                 windowPath={path}
@@ -324,7 +328,7 @@ export function BranchRow({ projectPath, worktree, pr }: BranchRowProps) {
                 tabCount={tabs.length}
                 windowActive={isWindowActive}
               />
-            ))}
+            )))}
             <AddMenu
               windowPath={path}
               label={branchName}

@@ -12,6 +12,9 @@ interface ZenTierListProps {
   cursor: number;
   /** Active toolbar search — drives the "no matches" empty state. */
   query: string;
+  /** Workspaces held back by the collapsed cap — 0 once expanded or under it. */
+  hiddenWorktrees: number;
+  onShowAllWorktrees: () => void;
   onHover: (index: number) => void;
   onActivate: (index: number) => void;
   onContextMenu: (index: number) => void;
@@ -30,6 +33,21 @@ function NoMatches({ query }: { query: string }) {
 const rowBase =
   'group relative flex cursor-pointer items-center gap-3.5 rounded-[9px] px-[18px] py-[13px]';
 const rowSelected = 'bg-signal-dim';
+
+/** The tail row of a capped Workspaces list — reveals the rest in place. Also
+ *  reachable by pressing ↓ on the last visible row (see ZenApp's `move`). */
+function ShowMoreRow({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Show every workspace in this project (↓)"
+      className="flex w-full cursor-pointer items-center gap-3.5 rounded-[9px] px-[18px] py-[13px] text-left font-mono text-[13px] text-ink-dim transition hover:bg-hover hover:text-ink"
+    >
+      Show {count} more…
+    </button>
+  );
+}
 
 /** A group divider between the pinned rows and the rest of a tier's list. */
 function SectionHeading({ label }: { label: string }) {
@@ -112,6 +130,8 @@ export function ZenTierList({
   paneRows,
   cursor,
   query,
+  hiddenWorktrees,
+  onShowAllWorktrees,
   onHover,
   onActivate,
   onContextMenu,
@@ -206,6 +226,7 @@ export function ZenTierList({
             </div>
           </Fragment>
         ))}
+        {hiddenWorktrees > 0 && <ShowMoreRow count={hiddenWorktrees} onClick={onShowAllWorktrees} />}
       </div>
     );
   }

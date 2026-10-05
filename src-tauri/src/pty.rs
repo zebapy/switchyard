@@ -7,10 +7,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
-use crate::projects::{default_agent_command, load_settings};
+use crate::projects::{default_agent_command, load_settings, AppSettings};
 
 // Wrapper script: attach to existing tmux session or create one, hide status bar.
-// Args: $1 session name, $2 cwd, $3 inner command (empty = default shell)
+// Args: $1 session name, $2 cwd, $3 inner command (empty = default shell),
+// $4 cols, $5 rows, $6 attach (1 = attach when done, 0 = leave detached).
+//
+// The size args let a session start at the pane's real geometry instead of
+// tmux's 80x24 default, so an agent TUI paints once instead of reflowing on
+// first attach. Detached mode is what `tmux_prewarm` uses to boot an agent
+// before the user asks for it.
 //
 // set-titles + set-titles-string make tmux forward the inner program's
 // terminal title (OSC 0/2, e.g. Claude's chat rename) out to the host PTY, so
@@ -20,9 +26,10 @@ use crate::projects::{default_agent_command, load_settings};
 // default (the hostname), so we don't clobber the pane's label until a program
 // actually sets a title; the frontend ignores the empty value.
 const TMUX_LAUNCH_SCRIPT: &str = r#"
-SESSION="$1"; CWD="$2"; CMD="$3"
+SESSION="$1"; CWD="$2"; CMD="$3"; COLS="${4:-80}"; ROWS="${5:-24}"; ATTACH="${6:-1}"
 if tmux has-session -t "$SESSION" 2>/dev/null; then
-  exec tmux attach -t "$SESSION"
+  if [ "$ATTACH" = "1" ]; then exec tmux attach -t "$SESSION"; fi
+  exit 0
 fi
 # Forward the zsh title-hook env into the new session explicitly: a pre-existing
 # tmux server otherwise hands panes its own (stale) environment, so ZDOTDIR set
@@ -30,15 +37,15 @@ fi
 # each -e value stays a single quoted arg under both zsh and bash.
 if [ -n "$CMD" ]; then
   if [ -n "$ZDOTDIR" ]; then
-    tmux new-session -d -s "$SESSION" -c "$CWD" -e "ZDOTDIR=$ZDOTDIR" -e "WIP_REAL_ZDOTDIR=$WIP_REAL_ZDOTDIR" "$CMD"
+    tmux new-session -d -s "$SESSION" -c "$CWD" -x "$COLS" -y "$ROWS" -e "ZDOTDIR=$ZDOTDIR" -e "WIP_REAL_ZDOTDIR=$WIP_REAL_ZDOTDIR" "$CMD"
   else
-    tmux new-session -d -s "$SESSION" -c "$CWD" "$CMD"
+    tmux new-session -d -s "$SESSION" -c "$CWD" -x "$COLS" -y "$ROWS" "$CMD"
   fi
 else
   if [ -n "$ZDOTDIR" ]; then
-    tmux new-session -d -s "$SESSION" -c "$CWD" -e "ZDOTDIR=$ZDOTDIR" -e "WIP_REAL_ZDOTDIR=$WIP_REAL_ZDOTDIR"
+    tmux new-session -d -s "$SESSION" -c "$CWD" -x "$COLS" -y "$ROWS" -e "ZDOTDIR=$ZDOTDIR" -e "WIP_REAL_ZDOTDIR=$WIP_REAL_ZDOTDIR"
   else
-    tmux new-session -d -s "$SESSION" -c "$CWD"
+    tmux new-session -d -s "$SESSION" -c "$CWD" -x "$COLS" -y "$ROWS"
   fi
 fi
 tmux set-option -t "$SESSION" status off >/dev/null 2>&1
@@ -46,7 +53,7 @@ tmux set-option -t "$SESSION" set-titles on >/dev/null 2>&1
 tmux set-option -t "$SESSION" set-titles-string '#{?#{==:#T,#{host}},,#T}' >/dev/null 2>&1
 # Let the inner shell pass our custom agent-exit OSC marker through to the host.
 tmux set-option -g allow-passthrough on >/dev/null 2>&1
-exec tmux attach -t "$SESSION"
+if [ "$ATTACH" = "1" ]; then exec tmux attach -t "$SESSION"; fi
 "#;
 
 // Custom OSC code emitted when an agent command exits and drops to a shell.
@@ -118,6 +125,36 @@ fn tmux_session_name(id: &str) -> String {
     format!("wip-{}", id)
 }
 
+/// Prefix of a prewarmed session: an agent booted ahead of the user asking for
+/// one, waiting to be adopted by the next matching pane. Adoption renames it to
+/// the pane's own `wip-<pane id>`, so a session keeping this prefix is one
+/// nobody claimed.
+const WARM_SESSION_PREFIX: &str = "wip-warm-";
+
+fn tmux_has_session(name: &str) -> bool {
+    std::process::Command::new("tmux")
+        .args(["has-session", "-t", name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Hand a prewarmed session over to the pane that claimed it by renaming it to
+/// the pane's canonical session name. After this the pane owns it like any
+/// session it started itself — same name, same kill path — and the attach below
+/// lands on an agent that is already booted.
+fn adopt_warm_session(warm: &str, session: &str) {
+    if warm == session || !warm.starts_with(WARM_SESSION_PREFIX) {
+        return;
+    }
+    if !tmux_has_session(warm) || tmux_has_session(session) {
+        return;
+    }
+    let _ = std::process::Command::new("tmux")
+        .args(["rename-session", "-t", warm, session])
+        .output();
+}
+
 /// Wrap a string in single quotes for safe use in a `sh -c` command line.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -158,7 +195,9 @@ pub fn list_tmux_sessions() -> Result<Vec<TmuxSessionInfo>, String> {
         let path = parts.next().unwrap_or("").to_string();
         let attached = parts.next().map(|s| s != "0").unwrap_or(false);
         let created = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-        if !name.starts_with("wip-") {
+        // Unclaimed prewarmed agents are the app's own scaffolding, not user
+        // work: they must not show up as restorable sessions or block quitting.
+        if !name.starts_with("wip-") || name.starts_with(WARM_SESSION_PREFIX) {
             continue;
         }
         sessions.push(TmuxSessionInfo { name, path, attached, created });
@@ -175,6 +214,30 @@ pub fn kill_tmux_session(name: String) -> Result<(), String> {
         .args(["kill-session", "-t", &name])
         .output()
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Kill every prewarmed session nobody adopted. Called on quit, and at startup
+/// to reap what a crash left behind.
+#[tauri::command]
+pub fn kill_warm_sessions() -> Result<(), String> {
+    if !tmux_available() {
+        return Ok(());
+    }
+    let output = std::process::Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(()); // no server running
+    }
+    for name in String::from_utf8_lossy(&output.stdout).lines() {
+        if name.starts_with(WARM_SESSION_PREFIX) {
+            let _ = std::process::Command::new("tmux")
+                .args(["kill-session", "-t", name])
+                .output();
+        }
+    }
     Ok(())
 }
 
@@ -219,6 +282,114 @@ struct PtyOutputPayload {
     data: String, // base64 encoded
 }
 
+/// The command that runs inside a pane. `None` means a plain login shell.
+/// `command` on an Agent pane is a starting prompt, not a program.
+fn inner_command(
+    kind: &PaneKind,
+    command: Option<&str>,
+    agent: Option<&str>,
+    settings: &AppSettings,
+    shell: &str,
+) -> Option<String> {
+    let base = match (kind, command) {
+        // The chosen agent command (e.g. "claude", "codex"), falling back to the
+        // default agent from settings. A non-empty `command` seeds the agent with
+        // a starting prompt (e.g. from the new-worktree modal).
+        (PaneKind::Agent, prompt) => {
+            let agent_cmd = agent
+                .map(str::trim)
+                .filter(|a| !a.is_empty())
+                .map(|a| a.to_string())
+                .unwrap_or_else(|| default_agent_command(settings));
+            match prompt {
+                Some(p) if !p.trim().is_empty() => Some(format!("{} {}", agent_cmd, shell_quote(p))),
+                _ => Some(agent_cmd),
+            }
+        }
+        (PaneKind::Lazygit, _) => Some("lazygit".to_string()),
+        (PaneKind::Custom, Some(custom_cmd)) => Some(custom_cmd.to_string()),
+        _ => None,
+    };
+
+    // For agents, drop back to an interactive shell once the agent process
+    // exits so the pane stays a live terminal instead of closing on quit. The
+    // OSC marker (swallowed by the frontend's parser) tells the UI to re-label
+    // the pane from agent to plain terminal.
+    match kind {
+        PaneKind::Agent => base.map(|c| format!("{}; {}; exec {} -l -i", c, agent_exit_marker(), shell)),
+        _ => base,
+    }
+}
+
+/// zsh only: the `ZDOTDIR` / `WIP_REAL_ZDOTDIR` pair that installs the
+/// last-command title hook. Returned as env vars so every shell downstream —
+/// including one an agent execs on exit — inherits it.
+fn zsh_title_env(shell: &str) -> Option<(String, String)> {
+    let is_zsh = std::path::Path::new(shell)
+        .file_name()
+        .map(|n| n == "zsh")
+        .unwrap_or(false);
+    if !is_zsh {
+        return None;
+    }
+    let dir = zsh_integration_dir().ok()?;
+    let real = std::env::var("ZDOTDIR")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    Some((real, dir.to_string_lossy().to_string()))
+}
+
+/// Boot an agent in a detached tmux session so a pane can adopt it already
+/// running. Started while the user is still deciding (hovering a workspace,
+/// sitting in one), it turns the agent's multi-second startup into an attach.
+///
+/// Best effort: a `false` return, or a session that dies before anyone claims
+/// it, just means the next pane starts its agent the normal way.
+#[tauri::command]
+pub async fn tmux_prewarm(
+    session: String,
+    cwd: String,
+    agent: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<bool, String> {
+    let settings = load_settings();
+    if !settings.prewarm_agent || !settings.use_tmux || !tmux_available() {
+        return Ok(false);
+    }
+    if !session.starts_with(WARM_SESSION_PREFIX) {
+        return Err(format!("prewarm session must start with {WARM_SESSION_PREFIX}"));
+    }
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let cmd = inner_command(&PaneKind::Agent, None, agent.as_deref(), &settings, &shell)
+        .unwrap_or_default();
+    let zsh_env = zsh_title_env(&shell);
+
+    let started = tauri::async_runtime::spawn_blocking(move || {
+        let mut c = std::process::Command::new(&shell);
+        c.arg("-c")
+            .arg(TMUX_LAUNCH_SCRIPT)
+            .arg("wip-tmux")
+            .arg(&session)
+            .arg(&cwd)
+            .arg(&cmd)
+            .arg(cols.unwrap_or(80).to_string())
+            .arg(rows.unwrap_or(24).to_string())
+            .arg("0"); // create only — nothing attaches until a pane claims it
+        if let Some((real, dir)) = zsh_env {
+            c.env("WIP_REAL_ZDOTDIR", real);
+            c.env("ZDOTDIR", dir);
+        }
+        c.env("TERM", "xterm-256color");
+        c.status().map(|st| st.success()).unwrap_or(false)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(started)
+}
+
 #[tauri::command]
 pub async fn pty_spawn(
     app: AppHandle,
@@ -229,13 +400,18 @@ pub async fn pty_spawn(
     command: Option<String>,
     tmux_session: Option<String>,
     agent: Option<String>,
+    rows: Option<u16>,
+    cols: Option<u16>,
+    warm_session: Option<String>,
 ) -> Result<(), String> {
     let pty_system = native_pty_system();
 
+    // Open at the pane's real geometry when the frontend knows it, so a TUI
+    // paints once instead of drawing at 80x24 and reflowing on the first resize.
     let pair = pty_system
         .openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows: rows.unwrap_or(24),
+            cols: cols.unwrap_or(80),
             pixel_width: 0,
             pixel_height: 0,
         })
@@ -245,39 +421,13 @@ pub async fn pty_spawn(
 
     let settings = load_settings();
 
-    // Inner command (what runs inside the pane). None = login shell.
-    let inner_cmd: Option<String> = match (&kind, &command) {
-        // The chosen agent command (e.g. "claude", "codex"), falling back to the
-        // default agent from settings. A non-empty `command` seeds the agent with
-        // a starting prompt (e.g. from the new-worktree modal).
-        (PaneKind::Agent, prompt) => {
-            let agent_cmd = agent
-                .as_deref()
-                .map(str::trim)
-                .filter(|a| !a.is_empty())
-                .map(|a| a.to_string())
-                .unwrap_or_else(|| default_agent_command(&settings));
-            match prompt {
-                Some(p) if !p.trim().is_empty() => {
-                    Some(format!("{} {}", agent_cmd, shell_quote(p)))
-                }
-                _ => Some(agent_cmd),
-            }
-        }
-        (PaneKind::Lazygit, _) => Some("lazygit".to_string()),
-        (PaneKind::Custom, Some(custom_cmd)) => Some(custom_cmd.clone()),
-        _ => None,
-    };
-
-    // For agents, drop back to an interactive shell once the agent process
-    // exits so the pane stays a live terminal instead of closing on quit. The
-    // OSC marker (swallowed by the frontend's parser) tells the UI to re-label
-    // the pane from agent to plain terminal.
-    let inner_cmd = match &kind {
-        PaneKind::Agent => inner_cmd
-            .map(|c| format!("{}; {}; exec {} -l -i", c, agent_exit_marker(), shell)),
-        _ => inner_cmd,
-    };
+    let inner_cmd = inner_command(
+        &kind,
+        command.as_deref(),
+        agent.as_deref(),
+        &settings,
+        &shell,
+    );
 
     let use_tmux = settings.use_tmux && tmux_available();
 
@@ -286,6 +436,11 @@ pub async fn pty_spawn(
             .clone()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| tmux_session_name(&id));
+        // A prewarmed agent claimed by this pane becomes the pane's own session,
+        // so the attach below finds it already booted.
+        if let Some(warm) = warm_session.as_deref().filter(|w| !w.is_empty()) {
+            adopt_warm_session(warm, &session);
+        }
         let mut c = CommandBuilder::new(&shell);
         c.arg("-c");
         c.arg(TMUX_LAUNCH_SCRIPT);
@@ -293,6 +448,9 @@ pub async fn pty_spawn(
         c.arg(&session);
         c.arg(&cwd);
         c.arg(inner_cmd.clone().unwrap_or_default());
+        c.arg(cols.unwrap_or(80).to_string());
+        c.arg(rows.unwrap_or(24).to_string());
+        c.arg("1"); // attach once the session exists
         c
     } else {
         let mut c = CommandBuilder::new(&shell);
@@ -310,18 +468,9 @@ pub async fn pty_spawn(
 
     // zsh: install the last-command title hook via a private ZDOTDIR. Inherited
     // by any shell this one execs (e.g. the shell an agent drops to on quit).
-    let shell_is_zsh = std::path::Path::new(&shell)
-        .file_name()
-        .map(|n| n == "zsh")
-        .unwrap_or(false);
-    if shell_is_zsh {
-        if let Ok(dir) = zsh_integration_dir() {
-            let real = std::env::var("ZDOTDIR")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_default();
-            cmd.env("WIP_REAL_ZDOTDIR", real);
-            cmd.env("ZDOTDIR", dir.to_string_lossy().to_string());
-        }
+    if let Some((real, dir)) = zsh_title_env(&shell) {
+        cmd.env("WIP_REAL_ZDOTDIR", real);
+        cmd.env("ZDOTDIR", dir);
     }
 
     eprintln!(
@@ -483,4 +632,80 @@ pub fn pty_kill(state: tauri::State<'_, PtyState>, id: String) -> Result<(), Str
         let _ = instance.child.kill();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings_with_agent(command: &str) -> AppSettings {
+        let mut settings = AppSettings::default();
+        settings.agents = vec![crate::projects::AgentConfig {
+            id: "default".into(),
+            name: "Default".into(),
+            command: command.into(),
+        }];
+        settings
+    }
+
+    #[test]
+    fn agent_pane_falls_back_to_the_default_agent() {
+        let cmd = inner_command(
+            &PaneKind::Agent,
+            None,
+            None,
+            &settings_with_agent("claude"),
+            "/bin/zsh",
+        )
+        .unwrap();
+        assert!(cmd.starts_with("claude;"), "{cmd}");
+        // Agents drop to a shell on exit so the pane stays usable.
+        assert!(cmd.ends_with("exec /bin/zsh -l -i"), "{cmd}");
+    }
+
+    #[test]
+    fn agent_prompt_is_quoted_as_a_single_argument() {
+        let cmd = inner_command(
+            &PaneKind::Agent,
+            Some("fix the bug; rm -rf /"),
+            Some("codex"),
+            &settings_with_agent("claude"),
+            "/bin/zsh",
+        )
+        .unwrap();
+        assert!(cmd.starts_with("codex 'fix the bug; rm -rf /';"), "{cmd}");
+    }
+
+    #[test]
+    fn a_prewarmed_agent_starts_with_no_prompt() {
+        // What tmux_prewarm boots: the same agent, minus any starting prompt,
+        // so any chat for that workspace can adopt it.
+        let cmd = inner_command(
+            &PaneKind::Agent,
+            None,
+            Some("claude"),
+            &AppSettings::default(),
+            "/bin/zsh",
+        )
+        .unwrap();
+        assert!(cmd.starts_with("claude;"), "{cmd}");
+    }
+
+    #[test]
+    fn a_cloud_session_task_is_passed_as_one_quoted_argument() {
+        let cmd = inner_command(
+            &PaneKind::Agent,
+            Some("fix Bob's bug; rm -rf /"),
+            Some("claude --cloud"),
+            &AppSettings::default(),
+            "/bin/zsh",
+        )
+        .unwrap();
+        assert!(cmd.starts_with("claude --cloud 'fix Bob'\\''s bug; rm -rf /';"), "{cmd}");
+    }
+
+    #[test]
+    fn shell_panes_run_a_plain_login_shell() {
+        assert!(inner_command(&PaneKind::Shell, None, None, &AppSettings::default(), "/bin/zsh").is_none());
+    }
 }

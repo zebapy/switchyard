@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { CheckRun, DiffSource, FileStatus } from '../../types/gitpanel';
 
-/** Changed files for one diff source. Reloads when path or source changes. */
-export function useChangedFiles(path: string | null, source: DiffSource) {
+/** Changed files for one diff source. Reloads when path, source, or base changes.
+ *  `base` is the branch a `base` diff compares against; `null` = repo default. */
+export function useChangedFiles(path: string | null, source: DiffSource, base: string | null = null) {
   const [files, setFiles] = useState<FileStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -15,14 +16,14 @@ export function useChangedFiles(path: string | null, source: DiffSource) {
     }
     setLoading(true);
     setError('');
-    invoke<FileStatus[]>('git_changed_files', { path, source })
+    invoke<FileStatus[]>('git_changed_files', { path, source, base })
       .then((result) => setFiles(result))
       .catch((e) => {
         setFiles([]);
         setError(String(e));
       })
       .finally(() => setLoading(false));
-  }, [path, source]);
+  }, [path, source, base]);
 
   useEffect(() => {
     reload();
@@ -32,7 +33,12 @@ export function useChangedFiles(path: string | null, source: DiffSource) {
 }
 
 /** Unified-diff text for the selected file. Empty when no file is selected. */
-export function useFileDiff(path: string | null, file: string | null, source: DiffSource) {
+export function useFileDiff(
+  path: string | null,
+  file: string | null,
+  source: DiffSource,
+  base: string | null = null,
+) {
   const [diff, setDiff] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +52,7 @@ export function useFileDiff(path: string | null, file: string | null, source: Di
     let cancelled = false;
     setLoading(true);
     setError('');
-    invoke<string>('git_file_diff', { path, file, source })
+    invoke<string>('git_file_diff', { path, file, source, base })
       .then((result) => {
         if (!cancelled) setDiff(result);
       })
@@ -61,7 +67,7 @@ export function useFileDiff(path: string | null, file: string | null, source: Di
     return () => {
       cancelled = true;
     };
-  }, [path, file, source]);
+  }, [path, file, source, base]);
 
   return { diff, loading, error };
 }

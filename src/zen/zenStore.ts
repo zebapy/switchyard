@@ -32,8 +32,12 @@ interface ZenNavState {
   settingsOpen: boolean;
   /** Toolbar search text — fuzzy-narrows the current tier's list. Cleared on any tier change. */
   query: string;
+  /** True once the Workspaces tier has revealed the rows past its collapsed cap. */
+  worktreesExpanded: boolean;
 
   setCursor: (tier: ZenTier, index: number) => void;
+  /** Reveal the workspaces hidden behind the collapsed cap. */
+  expandWorktrees: () => void;
   /** Update the search query and snap the current tier's cursor back to the top match. */
   setQuery: (query: string) => void;
   enterProject: (projectPath: string) => void;
@@ -74,15 +78,18 @@ export const useZenStore = create<ZenNavState>((set) => ({
   diffPickerOpen: false,
   settingsOpen: false,
   query: '',
+  worktreesExpanded: false,
 
   setCursor: (tier, index) =>
     set((s) => ({ cursor: { ...s.cursor, [tier]: Math.max(0, index) } })),
 
   setQuery: (query) =>
-    set((s) => ({ query, cursor: { ...s.cursor, [s.tier]: 0 } })),
+    set((s) => ({ query, cursor: { ...s.cursor, [s.tier]: 0 }, worktreesExpanded: false })),
+
+  expandWorktrees: () => set({ worktreesExpanded: true }),
 
   enterProject: (projectPath) =>
-    set((s) => ({ tier: 'worktrees', projectPath, worktreePath: null, query: '', cursor: { ...s.cursor, worktrees: 0 } })),
+    set((s) => ({ tier: 'worktrees', projectPath, worktreePath: null, query: '', worktreesExpanded: false, cursor: { ...s.cursor, worktrees: 0 } })),
 
   enterWorktree: (worktreePath) =>
     set((s) => ({ tier: 'panes', worktreePath, query: '', cursor: { ...s.cursor, panes: 0 } })),
@@ -90,11 +97,13 @@ export const useZenStore = create<ZenNavState>((set) => ({
   back: () =>
     set((s) => {
       if (s.tier === 'panes') return { tier: 'worktrees', worktreePath: null, query: '' };
-      if (s.tier === 'worktrees') return { tier: 'projects', projectPath: null, worktreePath: null, query: '' };
+      if (s.tier === 'worktrees') return { tier: 'projects', projectPath: null, worktreePath: null, query: '', worktreesExpanded: false };
       return s;
     }),
 
-  focus: (paneId) => set({ focusedPaneId: paneId }),
+  // Entering a pane leaves the list behind, so the search text goes with it —
+  // same as the tier transitions above. Escaping back lands on an unfiltered list.
+  focus: (paneId) => set({ focusedPaneId: paneId, query: '' }),
   escapeFocus: () => set({ focusedPaneId: null }),
 
   openSortMenu: () => set({ sortMenuOpen: true, actionMenuOpen: false, openInOpen: false, addMenuOpen: false }),

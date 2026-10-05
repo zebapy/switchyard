@@ -4,7 +4,7 @@ import { RootLayout } from './routes/RootLayout';
 
 // Routes are split into their own chunks so the initial load only pulls the
 // app chrome (RootLayout) plus whichever route is shown first — the Dashboard,
-// the whole Workspace pane stack (xterm/diff2html/shiki), and the Settings form
+// the whole Workspace pane stack (xterm/@pierre/diffs/shiki), and the Settings form
 // tree no longer all ship in one eager bundle.
 const Dashboard = lazy(() =>
   import('./components/Dashboard/Dashboard').then((m) => ({ default: m.Dashboard })),

@@ -100,6 +100,8 @@ export interface PrInfo {
   url: string;
   title: string;
   draft: boolean;
+  /** The branch the PR merges into (e.g. "main", or a parent branch when stacked). */
+  base_branch: string;
 }
 
 /** A selectable source row in the new-worktree modal (issue / branch / PR). */
@@ -121,4 +123,21 @@ export interface PullRequestItem {
   url: string;
   draft: boolean;
   updated_at: string;
+}
+
+/** Where the app gets its GitHub credentials. Mirrors the Rust
+ *  `GithubAuthSource`: the local `gh` CLI's token, or an in-app OAuth sign-in. */
+export type GithubAuthSource = 'gh-cli' | 'app';
+
+/** Live state of both credential sources, from `github_auth_status`. Only
+ *  `source` is in play — the other block is shown so the user can see what
+ *  switching would get them. */
+export interface GithubAuthStatus {
+  source: GithubAuthSource;
+  gh_version: string | null;
+  gh_account: string | null;
+  /** Why `gh` can't be used right now, phrased for the user. */
+  gh_error: string | null;
+  app_signed_in: boolean;
+  app_account: string | null;
 }

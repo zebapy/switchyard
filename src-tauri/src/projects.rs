@@ -116,6 +116,21 @@ fn default_pane_sort() -> PaneSort {
     PaneSort::Status
 }
 
+/// Where the app gets the GitHub credentials it calls the API with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum GithubAuthSource {
+    /// Borrow the token the local `gh` CLI already holds (`gh auth token`).
+    GhCli,
+    /// Sign in to the Switchyard OAuth app in-app (device flow), token kept in
+    /// the system keychain.
+    App,
+}
+
+fn default_github_auth_source() -> GithubAuthSource {
+    GithubAuthSource::GhCli
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[schemars(title = "AppSettings", description = "User settings for the Switchyard app.")]
 pub struct AppSettings {
@@ -137,6 +152,13 @@ pub struct AppSettings {
     /// Whether to show desktop notifications when an agent needs input or finishes a turn.
     #[serde(default = "default_true")]
     pub desktop_notifications: bool,
+    /// Whether to boot the default agent ahead of time in a detached tmux
+    /// session for the workspace the user is looking at, so starting a chat
+    /// attaches to a running agent instead of waiting for one to start.
+    /// Requires tmux; the prewarmed agent is a real agent process, so its
+    /// session-start hooks run even if the chat is never opened.
+    #[serde(default = "default_true")]
+    pub prewarm_agent: bool,
     /// Per-project list of package.json absolute paths to show in the Scripts section.
     #[serde(default)]
     pub project_scripts: HashMap<String, Vec<String>>,
@@ -162,6 +184,10 @@ pub struct AppSettings {
     /// can offer to open the related Linear issue.
     #[serde(default)]
     pub linear_issue_prefixes: Vec<String>,
+    /// Where GitHub credentials come from. Defaults to the local `gh` CLI, so a
+    /// machine that already ran `gh auth login` needs no separate sign-in.
+    #[serde(default = "default_github_auth_source")]
+    pub github_auth_source: GithubAuthSource,
 }
 
 impl Default for AppSettings {
@@ -173,6 +199,7 @@ impl Default for AppSettings {
             added_projects: Vec::new(),
             use_tmux: true,
             desktop_notifications: true,
+            prewarm_agent: true,
             project_scripts: HashMap::new(),
             project_sort: HashMap::new(),
             project_list_sort: default_project_list_sort(),
@@ -180,6 +207,7 @@ impl Default for AppSettings {
             agents: default_agents(),
             worktree_location: default_worktree_location(),
             linear_issue_prefixes: Vec::new(),
+            github_auth_source: default_github_auth_source(),
         }
     }
 }
@@ -965,7 +993,7 @@ pub fn load_settings() -> AppSettings {
     loaded
 }
 
-fn save_settings(settings: &AppSettings) -> Result<(), String> {
+pub(crate) fn save_settings(settings: &AppSettings) -> Result<(), String> {
     ensure_config_dir().map_err(|e| e.to_string())?;
     let data = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     fs::write(settings_path(), data).map_err(|e| e.to_string())
@@ -1065,6 +1093,14 @@ pub fn set_use_tmux(value: bool) -> Result<AppSettings, String> {
 pub fn set_desktop_notifications(value: bool) -> Result<AppSettings, String> {
     let mut settings = load_settings();
     settings.desktop_notifications = value;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_prewarm_agent(value: bool) -> Result<AppSettings, String> {
+    let mut settings = load_settings();
+    settings.prewarm_agent = value;
     save_settings(&settings)?;
     Ok(settings)
 }
@@ -1412,7 +1448,25 @@ pub fn set_linear_issue_prefixes(prefixes: Vec<String>) -> Result<AppSettings, S
 
 #[cfg(test)]
 mod tests {
-    use super::{branch_web_url, git_host_from_url, remote_host, remote_owner};
+    use super::{
+        branch_web_url, git_host_from_url, remote_host, remote_owner, AppSettings, GithubAuthSource,
+    };
+
+    #[test]
+    fn github_credentials_default_to_the_gh_cli() {
+        assert_eq!(
+            AppSettings::default().github_auth_source,
+            GithubAuthSource::GhCli
+        );
+    }
+
+    /// Settings files written before this field existed adopt the `gh` CLI too,
+    /// rather than silently keeping the in-app sign-in.
+    #[test]
+    fn settings_without_the_field_adopt_the_gh_cli() {
+        let loaded: AppSettings = serde_json::from_str("{}").expect("defaults fill every field");
+        assert_eq!(loaded.github_auth_source, GithubAuthSource::GhCli);
+    }
 
     #[test]
     fn parses_host_from_url_forms() {

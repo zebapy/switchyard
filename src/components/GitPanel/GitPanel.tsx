@@ -3,19 +3,17 @@ import { useLocation } from 'react-router';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useProjectsStore } from '../../stores/projects';
 import { useGitPanelStore } from '../../stores/gitPanel';
-import type { DiffSource } from '../../types/gitpanel';
 import { PanelHeader } from './PanelHeader';
 import { PanelTabs } from './PanelTabs';
 import { ChangedFiles } from './ChangedFiles';
+import type { DiffTarget } from './DiffSourceMenu';
 import { FileTree } from './FileTree';
 import { ReviewTab } from './ReviewTab';
 import { PrSection } from './PrSection';
 import { ChecksList } from './ChecksList';
 import { useChangedFiles, useChecks, useDefaultBranch, useRepoTree } from './useGitData';
-
-function basename(path: string): string {
-  return path.replace(/\/+$/, '').split('/').pop() ?? path;
-}
+import { openAllDiffsTab, openDiffTab, openFileTab } from '../../lib/viewerTabs';
+import type { ViewerIntent } from '../../lib/viewerTabs';
 
 /** Branch name for a worktree path, derived from cached git info (as TabBar does).
  *  Memoized so it only re-scans gitInfo when the map or path actually changes,
@@ -32,56 +30,29 @@ function useBranchForPath(path: string | null): string | null {
   }, [gitInfo, path]);
 }
 
-/** Open the file's diff as a workspace tab, reusing an existing matching tab. */
-function openDiffInTab(repoPath: string, file: string, source: DiffSource): void {
-  const store = useWorkspaceStore.getState();
-  for (const pane of store.panes.values()) {
-    if (pane.kind === 'Diff' && pane.cwd === repoPath && pane.diffFile === file && pane.diffSource === source) {
-      store.focusPane(pane.id);
-      return;
-    }
-  }
-  store.addTab(repoPath, basename(file), {
-    kind: 'Diff',
-    cwd: repoPath,
-    diffFile: file,
-    diffSource: source,
-    label: basename(file),
-  });
+/** A compare-branch pick only sticks to the worktree it was made in. */
+interface DiffTargetChoice {
+  path: string;
+  target: DiffTarget;
 }
 
-/** Open every changed file's diff stacked in one workspace tab, reusing a match. */
-function openAllDiffsInTab(repoPath: string, source: DiffSource): void {
-  const store = useWorkspaceStore.getState();
-  for (const pane of store.panes.values()) {
-    if (pane.kind === 'DiffAll' && pane.cwd === repoPath && pane.diffSource === source) {
-      store.focusPane(pane.id);
-      return;
-    }
-  }
-  store.addTab(repoPath, 'All changes', {
-    kind: 'DiffAll',
-    cwd: repoPath,
-    diffSource: source,
-    label: 'All changes',
-  });
-}
-
-/** Open the file's contents as a workspace viewer tab, reusing a matching tab. */
-function openFileInTab(repoPath: string, file: string): void {
-  const store = useWorkspaceStore.getState();
-  for (const pane of store.panes.values()) {
-    if (pane.kind === 'File' && pane.cwd === repoPath && pane.filePath === file) {
-      store.focusPane(pane.id);
-      return;
-    }
-  }
-  store.addTab(repoPath, basename(file), {
-    kind: 'File',
-    cwd: repoPath,
-    filePath: file,
-    label: basename(file),
-  });
+/** Resolve what the panel diffs against. A `base` diff compares against the
+ *  user's picked branch, else the PR's base branch, else the repo default. */
+function resolveDiffTarget({
+  choice,
+  path,
+  prBase,
+  defaultBranch,
+}: {
+  choice: DiffTargetChoice | null;
+  path: string | null;
+  prBase: string | null;
+  defaultBranch: string | null;
+}): DiffTarget {
+  const picked = choice?.path === path ? choice.target : null;
+  if (picked?.source === 'base') return { source: 'base', branch: picked.branch ?? prBase ?? defaultBranch };
+  if (picked) return picked;
+  return { source: 'unstaged', branch: null };
 }
 
 export function GitPanel() {
@@ -107,10 +78,18 @@ export function GitPanel() {
   const prInfo = useProjectsStore((s) => (path ? s.prInfo.get(path) ?? null : null));
   const refreshPrInfo = useProjectsStore((s) => s.refreshPrInfo);
 
-  const [source, setSource] = useState<DiffSource>('unstaged');
+  const prBase = prInfo?.base_branch || null;
+  const [diffChoice, setDiffChoice] = useState<DiffTargetChoice | null>(null);
+  const diffTarget = resolveDiffTarget({ choice: diffChoice, path, prBase, defaultBranch });
+  const { source, branch: compareBranch } = diffTarget;
 
-  const { files, loading: filesLoading, error: filesError, reload: reloadFiles } = useChangedFiles(path, source);
-  const baseFiles = useChangedFiles(path, 'base');
+  const { files, loading: filesLoading, error: filesError, reload: reloadFiles } = useChangedFiles(
+    path,
+    source,
+    compareBranch,
+  );
+  // Files the PR would contain — against the PR's base when there is one.
+  const baseFiles = useChangedFiles(path, 'base', prBase);
   const { checks, loading: checksLoading, error: checksError, reload: reloadChecks } = useChecks(path);
   const repoTree = useRepoTree(path, tab === 'files');
 
@@ -120,9 +99,14 @@ export function GitPanel() {
 
   if (!open || !inWorkspace) return null;
 
-  const handleSelectFile = (file: string) => {
+  const handleSelectFile = (file: string, intent: ViewerIntent) => {
     if (!path) return;
-    openDiffInTab(path, file, source);
+    openDiffTab({ repoPath: path, file, source, base: compareBranch, intent });
+  };
+
+  const handleSelectRepoFile = (file: string, intent: ViewerIntent) => {
+    if (!path) return;
+    openFileTab({ repoPath: path, file, intent });
   };
 
   const handleResizerMouseDown = (e: React.MouseEvent) => {
@@ -184,8 +168,9 @@ export function GitPanel() {
             <div className="flex min-h-0 flex-1 flex-col">
               <ChangedFiles
                 path={path}
-                source={source}
-                onSourceChange={setSource}
+                diffTarget={diffTarget}
+                onDiffTargetChange={(target) => setDiffChoice({ path, target })}
+                prBase={prBase}
                 defaultBranch={defaultBranch}
                 files={files}
                 loading={filesLoading}
@@ -193,7 +178,7 @@ export function GitPanel() {
                 onSelectFile={handleSelectFile}
                 fileView={fileView}
                 onFileViewChange={setFileView}
-                onOpenAllInTab={() => openAllDiffsInTab(path, source)}
+                onOpenAllInTab={() => openAllDiffsTab({ repoPath: path, source, base: compareBranch })}
               />
             </div>
 
@@ -215,7 +200,7 @@ export function GitPanel() {
               paths={repoTree.paths}
               loading={repoTree.loading}
               error={repoTree.error}
-              onOpenFile={(file) => openFileInTab(path, file)}
+              onOpenFile={handleSelectRepoFile}
             />
           </div>
         ) : (

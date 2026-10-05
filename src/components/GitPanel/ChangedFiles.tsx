@@ -1,52 +1,35 @@
 import { useMemo, useState } from 'react';
-import type { DiffSource, FileStatus } from '../../types/gitpanel';
+import type { FileStatus } from '../../types/gitpanel';
 import type { FileView } from '../../stores/gitPanel';
 import { ChevronIcon, ExternalLinkIcon, FolderIcon, ListIcon, RowsIcon, TreeIcon } from '../icons';
 import { STATUS_COLOR, STATUS_SHORT, basename, dirname } from './fileStatus';
 import { AllDiffsView } from './AllDiffsView';
+import { DiffSourceMenu, type DiffTarget } from './DiffSourceMenu';
+import type { ViewerIntent } from '../../lib/viewerTabs';
 
 interface ChangedFilesProps {
   /** Repo root — needed by the inline view to fetch each file's diff. */
   path: string;
-  source: DiffSource;
-  onSourceChange: (source: DiffSource) => void;
+  diffTarget: DiffTarget;
+  onDiffTargetChange: (next: DiffTarget) => void;
+  /** The open PR's base branch, suggested first in the compare list. */
+  prBase: string | null;
   defaultBranch: string | null;
   files: FileStatus[];
   loading: boolean;
   error: string;
   selectedFile?: string | null;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, intent: ViewerIntent) => void;
   fileView: FileView;
   onFileViewChange: (view: FileView) => void;
   /** Open every changed file's diff stacked in one full-width workspace tab. */
   onOpenAllInTab: () => void;
 }
 
-interface SegmentProps {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}
-
-function Segment({ active, onClick, children }: SegmentProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        'flex-1 rounded-md px-2 py-1 text-[11.5px] transition-colors ' +
-        (active ? 'bg-active text-ink' : 'text-ink-faint hover:bg-hover hover:text-ink-dim')
-      }
-    >
-      {children}
-    </button>
-  );
-}
-
 interface FileRowProps {
   file: FileStatus;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ViewerIntent) => void;
   /** Left padding in px (tree indentation). */
   indent: number;
   /** Show the parent directory after the name (used by the flat list). */
@@ -57,7 +40,8 @@ function FileRow({ file, selected, onSelect, indent, showDir }: FileRowProps) {
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => onSelect('glance')}
+      onDoubleClick={() => onSelect('choose')}
       title={file.path}
       style={{ paddingLeft: indent }}
       className={
@@ -140,7 +124,7 @@ interface TreeRowsProps {
   collapsed: Set<string>;
   onToggle: (path: string) => void;
   selectedFile?: string | null;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, intent: ViewerIntent) => void;
 }
 
 function TreeRows({ nodes, depth, collapsed, onToggle, selectedFile, onSelectFile }: TreeRowsProps) {
@@ -154,7 +138,7 @@ function TreeRows({ nodes, depth, collapsed, onToggle, selectedFile, onSelectFil
               key={node.path}
               file={node.file}
               selected={selectedFile === node.path}
-              onSelect={() => onSelectFile(node.path)}
+              onSelect={(intent) => onSelectFile(node.path, intent)}
               indent={indent + 16}
               showDir={false}
             />
@@ -226,8 +210,9 @@ function ViewToggle({ fileView, onFileViewChange }: ViewToggleProps) {
 
 export function ChangedFiles({
   path,
-  source,
-  onSourceChange,
+  diffTarget,
+  onDiffTargetChange,
+  prBase,
   defaultBranch,
   files,
   loading,
@@ -253,17 +238,13 @@ export function ChangedFiles({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-none items-center gap-1.5 px-2 pt-2">
-        <div className="flex flex-1 gap-1">
-          <Segment active={source === 'unstaged'} onClick={() => onSourceChange('unstaged')}>
-            Unstaged
-          </Segment>
-          <Segment active={source === 'staged'} onClick={() => onSourceChange('staged')}>
-            Staged
-          </Segment>
-          <Segment active={source === 'base'} onClick={() => onSourceChange('base')}>
-            vs {defaultBranch ?? 'main'}
-          </Segment>
-        </div>
+        <DiffSourceMenu
+          path={path}
+          value={diffTarget}
+          prBase={prBase}
+          defaultBranch={defaultBranch}
+          onValueChange={onDiffTargetChange}
+        />
         <ViewToggle fileView={fileView} onFileViewChange={onFileViewChange} />
         <button
           type="button"
@@ -279,11 +260,12 @@ export function ChangedFiles({
       {fileView === 'inline' ? (
         <AllDiffsView
           path={path}
-          source={source}
+          source={diffTarget.source}
+          base={diffTarget.branch}
           files={files}
           loading={loading}
           error={error}
-          onOpenFileInTab={onSelectFile}
+          onOpenFileInTab={(file) => onSelectFile(file, 'choose')}
         />
       ) : (
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
@@ -301,7 +283,7 @@ export function ChangedFiles({
               key={file.path}
               file={file}
               selected={selectedFile === file.path}
-              onSelect={() => onSelectFile(file.path)}
+              onSelect={(intent) => onSelectFile(file.path, intent)}
               indent={8}
               showDir
             />

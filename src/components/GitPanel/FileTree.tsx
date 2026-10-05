@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronIcon, FolderIcon } from '../icons';
+import type { ViewerIntent } from '../../lib/viewerTabs';
 
 interface FileTreeProps {
   /** Repo-relative file paths (forward-slashed). */
@@ -7,7 +8,7 @@ interface FileTreeProps {
   loading: boolean;
   error: string;
   /** Open a file (repo-relative path) — e.g. as a workspace viewer tab. */
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, intent: ViewerIntent) => void;
 }
 
 // ── Tree model ────────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ interface FileRowProps {
   row: FlatRow;
   isOpen: boolean;
   onToggle: (path: string) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, intent: ViewerIntent) => void;
 }
 
 function FileRow({ row, isOpen, onToggle, onOpenFile }: FileRowProps) {
@@ -103,7 +104,8 @@ function FileRow({ row, isOpen, onToggle, onOpenFile }: FileRowProps) {
     return (
       <button
         type="button"
-        onClick={() => onOpenFile(node.path)}
+        onClick={() => onOpenFile(node.path, 'glance')}
+        onDoubleClick={() => onOpenFile(node.path, 'choose')}
         title={node.path}
         style={{ paddingLeft: indent + 16, height: ROW_HEIGHT }}
         className="flex w-full items-center gap-2 rounded-md pr-2 text-left text-[12.5px] text-ink-dim transition-colors hover:bg-hover hover:text-ink"

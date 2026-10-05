@@ -36,6 +36,8 @@ export interface PaneInfo {
   diffFile?: string;
   /** For Diff panes: which diff to show (unstaged | staged | base). */
   diffSource?: string;
+  /** For `base` Diff panes: the branch compared against. Absent = repo default. */
+  diffBase?: string;
   /** For File panes: the repo-relative file shown in the viewer. The repo is `cwd`. */
   filePath?: string;
 }
@@ -44,6 +46,10 @@ export interface Tab {
   id: string;
   label: string;
   paneTree: PaneTree;
+  /** False for an ordinary (stuck) Tab. True while this is the Workspace's
+   *  single preview tab: one read-only viewer pane the user glanced at, which
+   *  the next file open takes over. See CONTEXT.md. */
+  preview: boolean;
 }
 
 export interface Window {

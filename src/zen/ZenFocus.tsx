@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import type { PaneInfo } from '../types/pane';
 
 // The same heavy pane components the standard layout uses — lazy so Zen only
-// pulls xterm / diff2html / shiki for the kind actually focused. We render the
+// pulls xterm / @pierre/diffs / shiki for the kind actually focused. We render the
 // body without PaneContainer's toolbar (no split/close) to keep Focus quiet.
 const TerminalPane = lazy(() =>
   import('../components/Terminal/TerminalPane').then((m) => ({ default: m.TerminalPane })),

@@ -7,9 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Start and teleport Claude Code cloud sessions from a project.** Right-click a git project, or search **Cloud** in ⌘K, for **New cloud session…** (prompts for a task, then runs `claude --cloud` against the project's GitHub remote at its current branch) and **Teleport cloud session…** (runs `claude --teleport` to pick a cloud session and pull its branch and conversation into the project checkout). Both run in a tab so the CLI's progress and the claude.ai/code link stay visible.
+
+- **Clicking a file now opens it as a preview tab.** Single-clicking a row in the changed-files list or the file tree opens the file in an italic preview tab: one per workspace, taken over by the next file you click, so browsing a diff no longer leaves a trail of tabs to close. The tab sticks — becomes an ordinary tab — when you click it again while it's active, double-click the row that opened it, or split it. Preview tabs are left out of the sidebar tree, which now lists only the sessions you committed to, while ⌘N keeps numbering every tab in the strip. The per-file open-in-tab button and **All changes** still open stuck tabs, since reaching for them is already a deliberate act. See `docs/adr/0003-preview-tabs-hidden-from-project-tree.md`.
+
+- **New agent chats start on an agent that is already running.** While a workspace is selected — a row under the cursor in Zen Mode, or the active window in the Standard layout — Switchyard boots the default agent for it in a detached tmux session. Starting a chat there adopts that session instead of waiting for the agent to start, so the wait moves off the keystroke and onto time you were spending reading a list anyway. Only one agent is kept warm at a time, it starts after a short dwell (not on every arrow key), and it's killed when the selection moves or the app quits. Requires tmux; the prewarmed agent is a real agent process, so its session-start hooks run even if you never open the chat — turn it off under **Settings → Agents → Start the default agent ahead of time**. See `docs/adr/0004-prewarmed-agents.md`.
+
+- **⌘⇧T (new agent) and ⌘T (new terminal) now work from every Zen Mode tier.** On the Projects and Workspaces tiers they start the session in the row under the cursor and drill into it, replacing navigate-then-spawn with one keystroke. The bottom-left **New…** menu (⌘⇧K) likewise offers _New agent_ / _New terminal_ on the Projects tier, where it previously only offered _Add folder as project…_.
+
 ### Changed
 
 - The **Create worktree** modal is now prompt-first: it opens with a "What do you want to work on?" box, names the branch after the prompt (`Fix the flaky login redirect` → `fix-flaky-login-redirect`, deduped with a `-2` suffix when taken), and hands the prompt to the agent in the new workspace. Enter creates, ⇧Enter adds a line. Seeding from a Linear issue, GitHub issue, branch, or PR now lives behind an **Or start from** row — the list appears only once a source is picked, and anything typed in the prompt box is appended to the issue prompt. Picking a PR now checks the PR head out via `create_worktree_for_pr` instead of creating a plain branch worktree.
+
+- **The Git panel's diff picker is now a dropdown that compares against any branch.** The Unstaged / Staged / vs main buttons become one searchable menu: Unstaged, Staged, and _vs &lt;branch&gt;_ for every local branch. When the worktree has a PR, the menu suggests its base branch first, and the branch diff defaults to it. Previously "vs main" always meant the repo's default branch, which showed the wrong changes for stacked PRs or PRs targeting another branch. Diff tabs opened from the panel remember the branch they compare against.
+
+- **Diffs now render with [`@pierre/diffs`](https://diffs.com) instead of diff2html.** Diffs get Shiki syntax highlighting and word-level change emphasis. To comment on lines, hover a line number and click **+**, or drag across line numbers to select a range. The comment composer opens inline under the selection and now has its own **Explain** button, which replaces the right-click _Explain this line_ menu.
+
+- **GitHub now uses your local `gh` CLI by default.** Switchyard borrows the token `gh auth token` already holds, so a machine that ran `gh auth login` needs no separate sign-in. Settings → GitHub gains a two-way choice between **GitHub CLI (gh)** and **App sign-in** (the OAuth device flow), showing the detected `gh` version and the account each source resolves to. The sources never substitute for each other: if the chosen one has no usable token, GitHub features fail with advice naming both remedies (`gh auth login`, or switch in Settings) rather than quietly authenticating as someone else. Existing installs switch to the `gh` CLI on upgrade; the device-flow token stays in the keychain, ready if you switch back.
+
+- Zen Mode's Workspaces tier now shows at most 10 workspaces, with a **Show n more…** row at the bottom that reveals the rest. Pressing ↓ on the last visible row expands the list too, so keyboard navigation still reaches everything. The list re-collapses when you switch projects or type a new search.
+
+### Fixed
+
+- Terminals and agent chats now open at the pane's real size instead of starting at 80x24 and being resized a moment later, so an agent's interface paints once rather than drawing narrow and reflowing. Registering a pane's output listener also now overlaps building the terminal instead of following it.
+- New terminals and agent chats now actually run inside tmux when "Use tmux" is on. Launched from Finder or the Dock, macOS hands the app a bare `PATH` with no Homebrew directories, so `tmux` (and `lazygit`, `claude`, and anything else installed outside `/usr/bin`) couldn't be found and every pane silently fell back to a plain shell. The app now recovers the login shell's `PATH` at startup.
+- Pressing Enter on Zen Mode's Terminals & chats tier with search text that matched no pane now starts a new agent chat seeded with that text (what ⇥ already did), instead of opening an empty chat and dropping what you typed.
+- Settings' **Back** button (and the section header's close button) now leaves Settings entirely instead of stepping one entry back through the sections you visited. In the Standard layout it returns to the view Settings was opened from; in Zen Mode it dismisses the Settings overlay.
+- Zen Mode's toolbar search now clears when you open a terminal or agent chat from the Terminals & chats tier, matching every other navigation step. Escaping back out lands on the unfiltered list with the cursor parked on the pane you were just in.
 
 ## [0.4.0] - 2026-07-27
 

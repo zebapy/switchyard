@@ -3,7 +3,8 @@
 //! `source` discriminator:
 //!   - `unstaged`: index → working tree (includes untracked files)
 //!   - `staged`:   HEAD tree → index
-//!   - `base`:     merge-base(HEAD, default branch) → working tree (PR-style)
+//!   - `base`:     merge-base(HEAD, base branch) → working tree (PR-style). The
+//!     base branch is the caller's `base`, or the repo's default branch.
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -118,6 +119,7 @@ fn merge_base_commit<'a>(
 fn build_diff<'a>(
     repo: &'a git2::Repository,
     source: &str,
+    base: Option<&str>,
     file: Option<&str>,
 ) -> Result<git2::Diff<'a>, String> {
     let mut opts = git2::DiffOptions::new();
@@ -135,8 +137,10 @@ fn build_diff<'a>(
                 .map_err(|e| e.to_string())
         }
         "base" => {
-            let base = resolve_default_branch(repo)
-                .ok_or("Couldn't determine the default branch (main/master).")?;
+            let base = base
+                .map(str::to_string)
+                .or_else(|| resolve_default_branch(repo))
+                .ok_or("Couldn't determine the default branch (main/master). Pick a branch to compare against.")?;
             let base_tree = merge_base_commit(repo, &base)?
                 .tree()
                 .map_err(|e| e.to_string())?;
@@ -151,10 +155,15 @@ fn build_diff<'a>(
 }
 
 /// Changed files for one of the three diff sources, with per-file line counts.
+/// `base` picks the branch a `base` diff compares against (default branch when absent).
 #[tauri::command(async)]
-pub fn git_changed_files(path: String, source: String) -> Result<Vec<FileStatus>, String> {
+pub fn git_changed_files(
+    path: String,
+    source: String,
+    base: Option<String>,
+) -> Result<Vec<FileStatus>, String> {
     let repo = open_repo(&path)?;
-    let diff = build_diff(&repo, &source, None)?;
+    let diff = build_diff(&repo, &source, base.as_deref(), None)?;
     let counts = line_counts(&diff);
 
     let mut out: Vec<FileStatus> = diff
@@ -177,9 +186,14 @@ pub fn git_changed_files(path: String, source: String) -> Result<Vec<FileStatus>
 /// Unified-diff patch text for a single file under one diff source. Feeds the
 /// frontend diff renderer.
 #[tauri::command(async)]
-pub fn git_file_diff(path: String, file: String, source: String) -> Result<String, String> {
+pub fn git_file_diff(
+    path: String,
+    file: String,
+    source: String,
+    base: Option<String>,
+) -> Result<String, String> {
     let repo = open_repo(&path)?;
-    let diff = build_diff(&repo, &source, Some(&file))?;
+    let diff = build_diff(&repo, &source, base.as_deref(), Some(&file))?;
 
     let mut buf = String::new();
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
