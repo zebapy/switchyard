@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useProjectsStore } from '../stores/projects';
 import { useZenStore, type ZenTier } from './zenStore';
-import { spawnPane } from './ZenActionMenu';
+import { spawnPaneAt } from './ZenActionMenu';
 import { ZenNewWorktreeMenu } from './ZenNewWorktreeMenu';
 import { ZenMenu, type ZenMenuItem } from './ZenMenu';
 
@@ -19,10 +19,9 @@ interface AddItem {
 }
 
 /**
- * The items the bottom-left "New…" menu offers for the current tier. On the
- * Projects tier it adds a project; on the Workspaces/Panes tiers it starts a new
- * session in the selected workspace (falling back to add-project when there's no
- * workspace to spawn into).
+ * The items the bottom-left "New…" menu offers for the current tier: a new
+ * session in the selected workspace, plus add-a-project on the Projects tier
+ * (where the selected row is a project and its own main workspace).
  */
 function addItemsFor(tier: ZenTier, spawnPath: string | null): AddItem[] {
   const addProject: AddItem = {
@@ -31,12 +30,17 @@ function addItemsFor(tier: ZenTier, spawnPath: string | null): AddItem[] {
     run: () => { void addFolderAsProject(); },
   };
 
-  if (tier === 'projects' || !spawnPath) return [addProject];
+  if (!spawnPath) return [addProject];
 
-  return [
-    { id: 'new-chat', label: 'New agent', shortcut: '⌘⇧T', run: () => spawnPane(spawnPath, 'Agent') },
-    { id: 'new-term', label: 'New terminal', shortcut: '⌘T', run: () => spawnPane(spawnPath, 'Shell') },
+  const target =
+    tier === 'projects'
+      ? { projectPath: spawnPath, worktreePath: spawnPath }
+      : { worktreePath: spawnPath };
+  const sessions: AddItem[] = [
+    { id: 'new-chat', label: 'New agent', shortcut: '⌘⇧T', run: () => spawnPaneAt({ ...target, kind: 'Agent' }) },
+    { id: 'new-term', label: 'New terminal', shortcut: '⌘T', run: () => spawnPaneAt({ ...target, kind: 'Shell' }) },
   ];
+  return tier === 'projects' ? [...sessions, addProject] : sessions;
 }
 
 /** The menu header / trigger label names the tier it acts in — matching the tier list. */

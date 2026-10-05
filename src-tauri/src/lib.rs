@@ -4,6 +4,7 @@ mod linear;
 mod projects;
 mod pty;
 mod session;
+mod shell_env;
 mod token_store;
 mod traffic_lights;
 mod usage;
@@ -15,6 +16,11 @@ use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Launched from Finder/Dock, launchd gives us a bare PATH with no Homebrew
+    // dirs, so tmux and agent binaries can't be found. Do this before the app
+    // (and its PTYs) start looking for them.
+    shell_env::hydrate_path_from_login_shell();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -27,6 +33,9 @@ pub fn run() {
             // Rename the legacy `cc-tui` config dir to `switchyard` before any
             // config file is read or written, so existing settings/tokens carry over.
             projects::migrate_legacy_config_dir();
+            // A crash can leave prewarmed agents running with nothing to adopt
+            // them; reap them before this run starts making its own.
+            let _ = pty::kill_warm_sessions();
             if let Err(e) = projects::write_settings_schema() {
                 eprintln!("failed to write settings schema: {e}");
             }
@@ -98,6 +107,8 @@ pub fn run() {
             pty::pty_kill,
             pty::list_tmux_sessions,
             pty::kill_tmux_session,
+            pty::tmux_prewarm,
+            pty::kill_warm_sessions,
             // Project commands
             projects::scan_projects,
             projects::get_git_info,
@@ -123,6 +134,7 @@ pub fn run() {
             projects::reorder_projects,
             projects::set_use_tmux,
             projects::set_desktop_notifications,
+            projects::set_prewarm_agent,
             projects::set_agents,
             projects::set_worktree_location,
             projects::discover_scripts,
@@ -144,11 +156,14 @@ pub fn run() {
             linear::linear_issue_url,
             linear::linear_logout,
             linear::linear_is_connected,
-            // GitHub commands (OAuth device flow + API, replacing the `gh` CLI)
+            // GitHub commands (`gh` CLI token or in-app OAuth device flow + API)
             github::github_login,
             github::github_logout,
             github::github_is_connected,
             github::github_account,
+            github::github_auth_status,
+            github::github_recheck,
+            github::set_github_auth_source,
             github::get_pr_info,
             github::gh_list_prs,
             github::gh_list_pull_requests,

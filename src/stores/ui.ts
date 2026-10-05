@@ -35,6 +35,17 @@ interface OpenScriptPaletteArgs {
   label: string;
 }
 
+interface CloudSessionModalState {
+  open: boolean;
+  projectPath: string | null;
+  projectName: string | null;
+}
+
+interface OpenCloudSessionModalArgs {
+  projectPath: string;
+  projectName: string;
+}
+
 interface UiState {
   worktreeModal: WorktreeModalState;
   openWorktreeModal: (projectPath: string, baseBranch: string | null) => void;
@@ -57,6 +68,11 @@ interface UiState {
   scriptPalette: ScriptPaletteState;
   openScriptPalette: (args: OpenScriptPaletteArgs) => void;
   closeScriptPalette: () => void;
+
+  /** "New cloud session" task prompt that runs `claude --cloud` for a project. */
+  cloudSessionModal: CloudSessionModalState;
+  openCloudSessionModal: (args: OpenCloudSessionModalArgs) => void;
+  closeCloudSessionModal: () => void;
 
   /** True while the Option/Alt key is held — drives the ⌥N project-switch hints in the tree. */
   altHeld: boolean;
@@ -110,6 +126,12 @@ export const useUiStore = create<UiState>((set) => ({
     set({ scriptPalette: { open: true, projectPath, windowPath, label } }),
   closeScriptPalette: () =>
     set({ scriptPalette: { open: false, projectPath: null, windowPath: null, label: null } }),
+
+  cloudSessionModal: { open: false, projectPath: null, projectName: null },
+  openCloudSessionModal: ({ projectPath, projectName }) =>
+    set({ cloudSessionModal: { open: true, projectPath, projectName } }),
+  closeCloudSessionModal: () =>
+    set({ cloudSessionModal: { open: false, projectPath: null, projectName: null } }),
 
   altHeld: false,
   setAltHeld: (v) => set((s) => (s.altHeld === v ? s : { altHeld: v })),

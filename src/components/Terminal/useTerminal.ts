@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { PaneKind } from '../../types/pane';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { pendingPaneInput } from './pendingInput';
+import { consumeWarmSession, rememberAgentSize } from '../../lib/agentPrewarm';
 
 // Patterns that indicate the agent is waiting for user input
 const WAITING_PATTERNS = [
@@ -135,8 +136,30 @@ export function useTerminal({
     // Prompt to "type" into this pane once the agent has booted (e.g. from the
     // diff-comment composer). Consumed once, then dropped from the registry.
     const initial = pendingPaneInput.get(paneId);
+    // A prewarmed agent this pane claimed. The backend hands the session over to
+    // this pane and attaches to the already-booted agent inside it.
+    const warmSession = consumeWarmSession(paneId);
 
-    const terminal = new Terminal({
+    // Registering the output listener is an IPC round-trip and the PTY can't
+    // spawn until it lands, so start it now and let it overlap the (synchronous)
+    // xterm + WebGL construction below. `terminal` is assigned in this same tick,
+    // long before any output event can arrive.
+    let terminal!: Terminal;
+    const listening = listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
+      const bytes = base64ToBytes(event.payload.data);
+      terminal.write(bytes);
+      // Drive the initial-input timing off real output so we type only once the
+      // agent's TUI has rendered and gone quiet.
+      if (initial) {
+        noteOutputForInitial();
+      }
+      // Decode for agent status detection
+      if (kind === 'Agent') {
+        detectAgentStatus(textDecoder.decode(bytes));
+      }
+    });
+
+    terminal = new Terminal({
       fontSize: 13,
       fontFamily: "'IBM Plex Mono', 'JetBrains Mono', Menlo, Monaco, monospace",
       theme: {
@@ -368,21 +391,9 @@ export function useTerminal({
       invoke('pty_write', { id: paneId, data: bytes }).catch(console.error);
     });
 
-    // Listen for PTY output BEFORE spawning to avoid losing early output
+    // Spawn only once the output listener is live, so no early output is lost.
     let unlisten: (() => void) | undefined;
-    listen<PtyOutputPayload>(`pty-output-${paneId}`, (event) => {
-      const bytes = base64ToBytes(event.payload.data);
-      terminal.write(bytes);
-      // Drive the initial-input timing off real output so we type only once the
-      // agent's TUI has rendered and gone quiet.
-      if (initial) {
-        noteOutputForInitial();
-      }
-      // Decode for agent status detection
-      if (kind === 'Agent') {
-        detectAgentStatus(textDecoder.decode(bytes));
-      }
-    }).then((fn) => {
+    listening.then((fn) => {
       if (disposed) {
         fn();
         return;
@@ -390,9 +401,12 @@ export function useTerminal({
 
       unlisten = fn;
 
-      // Spawn PTY only after listener is registered
+      // Size the PTY to the pane before anything runs in it: a TUI that starts
+      // at tmux's 80x24 and is resized afterwards paints twice and reflows.
+      fit();
       const rows = terminal.rows;
       const cols = terminal.cols;
+      if (kind === 'Agent') rememberAgentSize(cols, rows);
       invoke('pty_spawn', {
         id: paneId,
         kind,
@@ -400,8 +414,15 @@ export function useTerminal({
         command: command ?? null,
         tmuxSession: tmuxSession ?? null,
         agent: agent ?? null,
+        rows,
+        cols,
+        warmSession: warmSession ?? null,
       }).then(() => {
-        invoke('pty_resize', { id: paneId, rows, cols }).catch(console.error);
+        // The pane can be resized while the spawn is in flight; a pty_resize
+        // fired then found no instance yet, so re-send the current size.
+        if (terminal.rows !== rows || terminal.cols !== cols) {
+          invoke('pty_resize', { id: paneId, rows: terminal.rows, cols: terminal.cols }).catch(console.error);
+        }
       }).catch((err) => {
         terminal.writeln(`\r\nFailed to spawn: ${err}`);
       });
@@ -411,6 +432,7 @@ export function useTerminal({
 
     // Handle resize
     const resizeDisposable = terminal.onResize(({ rows, cols }) => {
+      if (kind === 'Agent') rememberAgentSize(cols, rows);
       invoke('pty_resize', { id: paneId, rows, cols }).catch(console.error);
     });
 

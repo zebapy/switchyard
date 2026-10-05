@@ -11,6 +11,8 @@ import type {
   Window,
 } from '../types/pane';
 import { maybeNotifyTransition } from '../notifications';
+import { claimWarmSession } from '../lib/agentPrewarm';
+import { pendingPaneInput } from '../components/Terminal/pendingInput';
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -62,6 +64,44 @@ function updateRatioInTree(tree: PaneTree, splitPath: number[], ratio: number): 
   return tree;
 }
 
+interface AdoptWarmAgentArgs {
+  paneId: string;
+  kind: PaneKind;
+  cwd: string;
+  agent?: string;
+  /** For Agent panes this is a starting prompt, not a program. */
+  command?: string;
+  tmuxSession?: string;
+}
+
+/**
+ * Let a new Agent pane adopt a prewarmed agent when one is warm for its
+ * workspace, turning the agent's startup into an attach.
+ *
+ * Returns the launch command the pane keeps. An already-running agent can't
+ * take a starting prompt as a launch argument, so an adopted pane's prompt is
+ * re-routed to {@link pendingPaneInput} and typed into the agent instead.
+ */
+function adoptWarmAgent({ paneId, kind, cwd, agent, command, tmuxSession }: AdoptWarmAgentArgs): string | undefined {
+  if (kind !== 'Agent' || tmuxSession) return command;
+  if (!claimWarmSession(paneId, cwd, agent)) return command;
+  const prompt = command?.trim();
+  if (prompt) pendingPaneInput.set(paneId, prompt);
+  return undefined;
+}
+
+/** Swap `tab` into the Workspace's preview slot, or append it when there is no
+ *  preview tab yet. Returns the pane ids the swap displaced. A preview tab
+ *  always holds a single read-only viewer pane — splitting one sticks it first
+ *  — so what it displaces owns no process and needs no teardown. */
+function placePreviewTab(tabs: Tab[], tab: Tab): { tabs: Tab[]; displacedPaneIds: string[] } {
+  const slot = tabs.findIndex((t) => t.preview);
+  if (slot === -1) return { tabs: [...tabs, tab], displacedPaneIds: [] };
+  const next = [...tabs];
+  next[slot] = tab;
+  return { tabs: next, displacedPaneIds: findAllLeaves(tabs[slot].paneTree) };
+}
+
 function paneSessionName(pane: PaneInfo): string {
   return pane.tmuxSession ?? `wip-${pane.id}`;
 }
@@ -87,8 +127,12 @@ interface AddTabOptions {
   diffFile?: string;
   /** For Diff panes: which diff to show (unstaged | staged | base). */
   diffSource?: string;
+  /** For `base` Diff panes: the branch compared against. Absent = repo default. */
+  diffBase?: string;
   /** For File panes: repo-relative file shown in the viewer. */
   filePath?: string;
+  /** Open as the Workspace's preview tab, taking over any existing one. */
+  preview?: boolean;
 }
 
 interface WorkspaceState {
@@ -118,6 +162,8 @@ interface WorkspaceState {
   removeTab: (tabId: string) => Promise<void>;
   setActiveTab: (tabId: string) => void;
   renameTab: (tabId: string, label: string) => void;
+  /** Commit to a preview tab so the next file open no longer takes it over. */
+  stickTab: (tabId: string) => void;
   nextTab: () => void;
   prevTab: () => void;
 
@@ -295,21 +341,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   addTab: (projectPath, label, opts) => {
     const tabId = generateId();
     const paneId = generateId();
+    const kind = opts?.kind ?? 'Shell';
+    const cwd = opts?.cwd ?? projectPath;
     const paneInfo: PaneInfo = {
       id: paneId,
-      kind: opts?.kind ?? 'Shell',
-      cwd: opts?.cwd ?? projectPath,
-      command: opts?.command,
+      kind,
+      cwd,
+      command: adoptWarmAgent({
+        paneId,
+        kind,
+        cwd,
+        agent: opts?.agent,
+        command: opts?.command,
+        tmuxSession: opts?.tmuxSession,
+      }),
       tmuxSession: opts?.tmuxSession,
       agent: opts?.agent,
       diffFile: opts?.diffFile,
       diffSource: opts?.diffSource,
+      diffBase: opts?.diffBase,
       filePath: opts?.filePath,
     };
     const tab: Tab = {
       id: tabId,
       label: opts?.label ?? label,
       paneTree: createLeaf(paneId),
+      preview: opts?.preview === true,
     };
 
     set((state) => {
@@ -324,9 +381,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activePaneId: null,
         lastActiveAt: Date.now(),
       };
+      const placed = tab.preview
+        ? placePreviewTab(baseWindow.tabs, tab)
+        : { tabs: [...baseWindow.tabs, tab], displacedPaneIds: [] };
+      for (const id of placed.displacedPaneIds) nextPanes.delete(id);
+
       const nextWindow: Window = {
         ...baseWindow,
-        tabs: [...baseWindow.tabs, tab],
+        tabs: placed.tabs,
         activeTabId: tabId,
         activePaneId: paneId,
         lastActiveAt: Date.now(),
@@ -419,6 +481,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
+  stickTab: (tabId) => {
+    const win = findWindowForTabId(get().windows, tabId);
+    if (!win) return;
+    if (!win.tabs.some((t) => t.id === tabId && t.preview)) return;
+    set((state) => {
+      const nextWindows = withWindow(state.windows, win.projectPath, (w) => ({
+        ...w,
+        tabs: w.tabs.map((t) => (t.id === tabId ? { ...t, preview: false } : t)),
+      }));
+      return { windows: nextWindows };
+    });
+  },
+
   nextTab: () => {
     set((state) => {
       const win = state.activeWindowId ? state.windows.get(state.activeWindowId) : null;
@@ -455,7 +530,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const win = findWindowForTabId(get().windows, tabId);
     if (!win) return '';
     const paneId = generateId();
-    const paneInfo: PaneInfo = { id: paneId, kind, cwd, command, tmuxSession, agent };
+    const paneInfo: PaneInfo = {
+      id: paneId,
+      kind,
+      cwd,
+      command: adoptWarmAgent({ paneId, kind, cwd, agent, command, tmuxSession }),
+      tmuxSession,
+      agent,
+    };
 
     set((state) => {
       const tab = win.tabs.find((t) => t.id === tabId);
@@ -476,9 +558,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       };
       const newTree = replaceInTree(tab.paneTree, targetLeaf, splitNode);
 
+      // A tab holding more than the one viewer pane is no longer glanceable —
+      // sticking it here keeps a preview tab safe to replace without asking.
       const nextWindows = withWindow(state.windows, win.projectPath, (w) => ({
         ...w,
-        tabs: w.tabs.map((t) => (t.id === tabId ? { ...t, paneTree: newTree } : t)),
+        tabs: w.tabs.map((t) => (t.id === tabId ? { ...t, paneTree: newTree, preview: false } : t)),
         activePaneId: paneId,
       }));
       return { windows: nextWindows, panes: nextPanes };
@@ -491,7 +575,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const win = findWindowForPaneId(get().windows, paneId);
     if (!win) return '';
     const newPaneId = generateId();
-    const paneInfo: PaneInfo = { id: newPaneId, kind, cwd, command, tmuxSession, agent };
+    const paneInfo: PaneInfo = {
+      id: newPaneId,
+      kind,
+      cwd,
+      command: adoptWarmAgent({ paneId: newPaneId, kind, cwd, agent, command, tmuxSession }),
+      tmuxSession,
+      agent,
+    };
 
     set((state) => {
       const nextPanes = new Map(state.panes);
@@ -506,10 +597,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       const nextWindows = withWindow(state.windows, win.projectPath, (w) => ({
         ...w,
-        tabs: w.tabs.map((t) => ({
-          ...t,
-          paneTree: replaceInTree(t.paneTree, paneId, splitNode),
-        })),
+        tabs: w.tabs.map((t) => {
+          // Only the tab that owns the split pane gains one — and gaining one
+          // sticks it, so a preview tab is always a lone viewer pane at the
+          // moment the next file open replaces it.
+          const owns = findAllLeaves(t.paneTree).includes(paneId);
+          if (!owns) return t;
+          return { ...t, paneTree: replaceInTree(t.paneTree, paneId, splitNode), preview: false };
+        }),
         activePaneId: newPaneId,
       }));
       return { windows: nextWindows, panes: nextPanes };
@@ -688,6 +783,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         id: tab.id,
         label: tab.label,
         pane_tree: serializePaneTree(tab.paneTree, state.panes),
+        preview: tab.preview,
       })),
       active_tab_id: win.activeTabId,
       active_pane_id: win.activePaneId,
@@ -713,6 +809,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         id: tabData.id,
         label: tabData.label,
         paneTree: deserializePaneTree(tabData.pane_tree, panes),
+        // Sessions written before preview tabs existed have no flag: stuck.
+        preview: tabData.preview ?? false,
       }));
       windows.set(winData.project_path, {
         projectPath: winData.project_path,
@@ -798,6 +896,7 @@ interface SessionTabData {
   id: string;
   label: string;
   pane_tree: SerializedPaneTree;
+  preview?: boolean;
 }
 
 type SerializedPaneTree =
@@ -812,6 +911,7 @@ type SerializedPaneTree =
       agent?: string;
       diff_file?: string;
       diff_source?: string;
+      diff_base?: string;
       file_path?: string;
     }
   | {
@@ -835,6 +935,7 @@ function serializePaneTree(tree: PaneTree, panes: Map<string, PaneInfo>): Serial
       agent: pane?.agent,
       diff_file: pane?.diffFile,
       diff_source: pane?.diffSource,
+      diff_base: pane?.diffBase,
       file_path: pane?.filePath,
     };
   }
@@ -865,6 +966,7 @@ function deserializePaneTree(
       agent: data.agent,
       diffFile: data.diff_file,
       diffSource: data.diff_source,
+      diffBase: data.diff_base,
       filePath: data.file_path,
     });
     return { type: 'leaf', paneId };

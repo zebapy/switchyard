@@ -17,7 +17,7 @@ import {
 import { ZenTierList } from './ZenTierList';
 import { ZenFocus } from './ZenFocus';
 import { ZenSortMenu } from './ZenSortMenu';
-import { ZenActionMenu, spawnPane, type ZenActionTarget } from './ZenActionMenu';
+import { ZenActionMenu, spawnPane, spawnPaneAt, type ZenActionTarget } from './ZenActionMenu';
 import { ZenDiffView } from './ZenDiffView';
 import { ZenDiffToolbar } from './ZenDiffToolbar';
 import { ZenActionsCluster, type ClusterAction } from './ZenActionsCluster';
@@ -28,12 +28,17 @@ import { ZenSettings } from './ZenSettings';
 import { GithubConnectModal } from '../components/Github/GithubConnectModal';
 import { UsageBars } from '../components/Sidebar/UsageBars';
 import { fuzzyMatch } from '../components/CommandPalette/fuzzyMatch';
+import { disposeWarmSessions, requestAgentPrewarm } from '../lib/agentPrewarm';
 import {
   DEFAULT_WORKTREE_SORT,
   WORKTREE_SORT_OPTIONS,
   PROJECT_LIST_SORT_OPTIONS,
   PANE_SORT_OPTIONS,
 } from '../types/project';
+
+/** How many workspaces the Workspaces tier shows before the "Show n more…" row.
+ *  A project with dozens of worktrees otherwise buries its live work. */
+const WORKTREE_COLLAPSED_LIMIT = 10;
 
 /** Fuzzy-narrow a tier's rows by the toolbar query, best matches first. */
 function filterRows<T>(rows: T[], query: string, toText: (row: T) => string): T[] {
@@ -104,7 +109,10 @@ export function ZenApp() {
   // Best-effort session save if the app closes while Zen is the active layout
   // (the standard layout owns the richer close-confirm flow).
   useEffect(() => {
-    const save = () => { useWorkspaceStore.getState().saveSession(); };
+    const save = () => {
+      useWorkspaceStore.getState().saveSession();
+      void disposeWarmSessions();
+    };
     window.addEventListener('beforeunload', save);
     return () => window.removeEventListener('beforeunload', save);
   }, []);
@@ -174,13 +182,21 @@ export function ZenApp() {
   // keyboard nav, ⌘K target, ⌘O dir, the rendered list — reads the filtered rows
   // so the cursor and actions always track what's actually visible.
   const projectRows = filterRows(allProjectRows, nav.query, (r) => r.name);
-  const worktreeRows = filterRows(allWorktreeRows, nav.query, (r) => `${r.name} ${r.branch ?? ''}`);
+  const matchedWorktreeRows = filterRows(allWorktreeRows, nav.query, (r) => `${r.name} ${r.branch ?? ''}`);
   const paneRows = filterRows(allPaneRows, nav.query, (r) => paneLabel(r.info));
+
+  // The Workspaces tier is capped until expanded. Cutting the list here — rather
+  // than in the view — keeps the cursor, ⌘K target and ⌘O dir agreeing with
+  // what's actually on screen.
+  const hiddenWorktrees = nav.worktreesExpanded
+    ? 0
+    : Math.max(0, matchedWorktreeRows.length - WORKTREE_COLLAPSED_LIMIT);
+  const worktreeRows = hiddenWorktrees > 0 ? matchedWorktreeRows.slice(0, WORKTREE_COLLAPSED_LIMIT) : matchedWorktreeRows;
 
   // Keep the latest derived lists in a ref so the once-registered key handler
   // always reads fresh data without re-binding the listener.
-  const listRef = useRef({ projectRows, worktreeRows, paneRows });
-  listRef.current = { projectRows, worktreeRows, paneRows };
+  const listRef = useRef({ projectRows, worktreeRows, paneRows, hiddenWorktrees });
+  listRef.current = { projectRows, worktreeRows, paneRows, hiddenWorktrees };
 
   const move = useCallback((delta: number) => {
     const st = useZenStore.getState();
@@ -190,7 +206,56 @@ export function ZenApp() {
       : st.tier === 'worktrees' ? list.worktreeRows.length
       : list.paneRows.length;
     if (len === 0) return;
-    st.setCursor(st.tier, Math.min(len - 1, Math.max(0, st.cursor[st.tier] + delta)));
+    const next = st.cursor[st.tier] + delta;
+    // ↓ on the last visible workspace reveals the capped rest and lands on the
+    // first of them, so keyboard nav never dead-ends at the "Show n more…" row.
+    if (st.tier === 'worktrees' && next > len - 1 && list.hiddenWorktrees > 0) {
+      st.expandWorktrees();
+      st.setCursor('worktrees', len);
+      return;
+    }
+    st.setCursor(st.tier, Math.min(len - 1, Math.max(0, next)));
+  }, []);
+
+  // Tab on a non-empty search turns the typed text into a new thing for the
+  // current tier: a fresh agent chat (panes) seeded with the text as its prompt,
+  // or a new worktree (worktrees) whose branch is the slugified text. Projects
+  // has no such action. Clears the query so the new item isn't left filtered out.
+  const sendTabAction = useCallback(() => {
+    const st = useZenStore.getState();
+    const text = st.query.trim();
+    if (st.tier === 'panes' && st.worktreePath) {
+      spawnPane(st.worktreePath, 'Agent', text || undefined);
+      st.setQuery('');
+      return;
+    }
+    if (st.tier === 'worktrees' && st.projectPath) {
+      void startWorktreeFromText(st.projectPath, text);
+      st.setQuery('');
+    }
+  }, []);
+
+  // ⌘T / ⌘⇧T target: the workspace in view, or — on the outer tiers — the row
+  // under the cursor. Starting a session from Projects or Workspaces drills into
+  // the workspace on the way, so one keystroke replaces navigate-then-spawn.
+  const startPaneAtCursor = useCallback((kind: 'Agent' | 'Shell') => {
+    const st = useZenStore.getState();
+    const list = listRef.current;
+
+    if (st.focusedPaneId || st.tier === 'panes') {
+      if (st.worktreePath) spawnPane(st.worktreePath, kind);
+      return;
+    }
+    if (st.tier === 'worktrees') {
+      const row = list.worktreeRows[st.cursor.worktrees];
+      if (row) spawnPaneAt({ worktreePath: row.path, kind });
+      return;
+    }
+    // A project row is also its own main workspace.
+    const project = list.projectRows[st.cursor.projects];
+    if (!project) return;
+    useProjectsStore.getState().refreshGitInfo(project.path);
+    spawnPaneAt({ projectPath: project.path, worktreePath: project.path, kind });
   }, []);
 
   const enterAtCursor = useCallback(() => {
@@ -217,6 +282,12 @@ export function ZenApp() {
       st.focus(row.paneId);
       return;
     }
+    // Nothing under the cursor. A search that matched no pane is a prompt, not a
+    // filter: seed a new chat with it, same as ⇥.
+    if (st.query.trim()) {
+      sendTabAction();
+      return;
+    }
     // Empty worktree → start the default agent there (mirrors standard openTarget).
     const path = st.worktreePath;
     if (!path) return;
@@ -224,25 +295,7 @@ export function ZenApp() {
     useWorkspaceStore.getState().addTab(path, basename(path), { kind: 'Agent', cwd: path, agent });
     const newId = useWorkspaceStore.getState().windows.get(path)?.activePaneId;
     if (newId) st.focus(newId);
-  }, []);
-
-  // Tab on a non-empty search turns the typed text into a new thing for the
-  // current tier: a fresh agent chat (panes) seeded with the text as its prompt,
-  // or a new worktree (worktrees) whose branch is the slugified text. Projects
-  // has no such action. Clears the query so the new item isn't left filtered out.
-  const sendTabAction = useCallback(() => {
-    const st = useZenStore.getState();
-    const text = st.query.trim();
-    if (st.tier === 'panes' && st.worktreePath) {
-      spawnPane(st.worktreePath, 'Agent', text || undefined);
-      st.setQuery('');
-      return;
-    }
-    if (st.tier === 'worktrees' && st.projectPath) {
-      void startWorktreeFromText(st.projectPath, text);
-      st.setQuery('');
-    }
-  }, []);
+  }, [sendTabAction]);
 
   // Whether ⌘K has something to act on in the current context.
   const hasActionTarget = useCallback(() => {
@@ -284,13 +337,13 @@ export function ZenApp() {
   }, [computeOpenDir]);
 
   // The workspace the bottom-left "New…" menu spawns a session into: the focused
-  // pane's / cursor worktree's / drilled-in worktree path. Null on the Projects
-  // tier, where the menu offers add-project instead.
+  // pane's / cursor row's / drilled-in path. On the Projects tier that's the
+  // selected project, which is also its own main workspace.
   const computeAddSpawnPath = useCallback((): string | null => {
     const st = useZenStore.getState();
     const list = listRef.current;
     if (st.focusedPaneId) return st.worktreePath;
-    if (st.tier === 'projects') return null;
+    if (st.tier === 'projects') return list.projectRows[st.cursor.projects]?.path ?? null;
     if (st.tier === 'worktrees') return list.worktreeRows[st.cursor.worktrees]?.path ?? null;
     return st.worktreePath;
   }, []);
@@ -350,11 +403,11 @@ export function ZenApp() {
       }
       if (st.sortMenuOpen || st.actionMenuOpen || st.openInOpen || st.addMenuOpen) return; // an overlay owns the keyboard
 
-      // ⌘T new terminal / ⌘⇧T new agent in the current worktree (panes tier or focus).
+      // ⌘T new terminal / ⌘⇧T new agent, wherever the cursor is (see startPaneAtCursor).
       if (e.metaKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
         e.stopPropagation();
-        if (st.worktreePath) spawnPane(st.worktreePath, e.shiftKey ? 'Agent' : 'Shell');
+        startPaneAtCursor(e.shiftKey ? 'Agent' : 'Shell');
         return;
       }
 
@@ -391,12 +444,38 @@ export function ZenApp() {
 
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [move, enterAtCursor, sendTabAction, toggleActionMenu, toggleSortMenu, toggleOpenIn, toggleAddMenu]);
+  }, [move, enterAtCursor, sendTabAction, startPaneAtCursor, toggleActionMenu, toggleSortMenu, toggleOpenIn, toggleAddMenu]);
+
+  // Where a new chat would start right now — the same target as ⌘⇧T. Booting its
+  // agent while the row is merely selected turns starting the chat into an
+  // attach; only one agent is kept warm, and it dies when the selection moves.
+  const prewarmPath =
+    nav.focusedPaneId || nav.tier === 'panes'
+      ? nav.worktreePath
+      : nav.tier === 'worktrees'
+        ? worktreeRows[nav.cursor.worktrees]?.path ?? null
+        : projectRows[nav.cursor.projects]?.path ?? null;
+  useEffect(() => {
+    requestAgentPrewarm(prewarmPath);
+  }, [prewarmPath]);
+  useEffect(() => () => { requestAgentPrewarm(null); }, []);
 
   // Drop Focus if the pane disappears (closed elsewhere).
   useEffect(() => {
     if (nav.focusedPaneId && !panes.get(nav.focusedPaneId)) useZenStore.getState().escapeFocus();
   }, [nav.focusedPaneId, panes]);
+
+  // Focusing a pane clears the search, so the list behind Focus mode is the full
+  // one — park the cursor on the focused pane's real row so escaping back lands
+  // on it rather than on whatever row the filtered index used to mean.
+  const focusedPaneIndex = nav.focusedPaneId
+    ? paneRows.findIndex((r) => r.paneId === nav.focusedPaneId)
+    : -1;
+  useEffect(() => {
+    if (focusedPaneIndex < 0) return;
+    const st = useZenStore.getState();
+    if (st.cursor.panes !== focusedPaneIndex) st.setCursor('panes', focusedPaneIndex);
+  }, [focusedPaneIndex]);
 
   // Keep the toolbar search always focused so typing narrows the list right away —
   // yielding only while an overlay or Focus mode owns the keyboard.
@@ -612,6 +691,8 @@ export function ZenApp() {
           paneRows={paneRows}
           cursor={nav.cursor[nav.tier]}
           query={nav.query}
+          hiddenWorktrees={hiddenWorktrees}
+          onShowAllWorktrees={nav.expandWorktrees}
           onHover={onHover}
           onActivate={onActivate}
           onContextMenu={onContextMenu}
@@ -624,10 +705,17 @@ export function ZenApp() {
           actions={
             nav.tier === 'panes' && nav.worktreePath
               ? [
-                  { keys: '⌘⇧T', label: 'New agent', onClick: () => spawnPane(nav.worktreePath!, 'Agent'), title: 'New agent chat here (⌘⇧T)' },
-                  { keys: '⌘T', label: 'New terminal', onClick: () => spawnPane(nav.worktreePath!, 'Shell'), title: 'New terminal here (⌘T)' },
+                  { keys: '⌘⇧T', label: 'New agent', onClick: () => startPaneAtCursor('Agent'), title: 'New agent chat here (⌘⇧T)' },
+                  { keys: '⌘T', label: 'New terminal', onClick: () => startPaneAtCursor('Shell'), title: 'New terminal here (⌘T)' },
                 ]
-              : [{ keys: '⌘⇧K', label: TIER_TITLE[nav.tier], onClick: toggleAddMenu, title: 'New… (⌘⇧K)' }]
+              // The outer tiers keep their ⌘⇧K menu (add project, new worktree)
+              // and gain the one-keystroke chat for the row under the cursor.
+              : addSpawnPath
+                ? [
+                    { keys: '⌘⇧T', label: 'New agent', onClick: () => startPaneAtCursor('Agent'), title: 'New agent chat in the selected workspace (⌘⇧T)' },
+                    { keys: '⌘⇧K', label: TIER_TITLE[nav.tier], onClick: toggleAddMenu, title: 'New… (⌘⇧K)' },
+                  ]
+                : [{ keys: '⌘⇧K', label: TIER_TITLE[nav.tier], onClick: toggleAddMenu, title: 'New… (⌘⇧K)' }]
           }
         />
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
