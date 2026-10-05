@@ -2,13 +2,14 @@ import { useEffect, useMemo } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { SettingsNav } from '../components/Sidebar/SettingsNav';
 import { SettingsPage } from '../components/SettingsPage';
+import { SettingsExitProvider } from '../components/SettingsExitContext';
 import { useZenStore } from './zenStore';
 
 /**
  * The standard Settings surfaces (nav + section pages) reuse react-router for
- * section routing and back navigation, but Zen mounts instead of the router.
- * Rather than fork those components, host them inside a private in-memory router
- * so ⌘, opens Settings without leaving Zen.
+ * section routing, but Zen mounts instead of the router. Rather than fork those
+ * components, host them inside a private in-memory router so ⌘, opens Settings
+ * without leaving Zen.
  */
 function SettingsShell() {
   return (
@@ -27,29 +28,13 @@ function SettingsShell() {
   );
 }
 
-/**
- * The router's oldest history entry. Both `SettingsNav`'s Back button and
- * `SettingsPage`'s close button `navigate(-1)`, so stepping past the first
- * Settings entry lands here and dismisses the overlay.
- */
-function CloseSentinel() {
-  useEffect(() => {
-    useZenStore.getState().closeSettings();
-  }, []);
-  return null;
-}
-
 export function ZenSettings() {
   const router = useMemo(
     () =>
-      createMemoryRouter(
-        [
-          { path: '/__close', element: <CloseSentinel /> },
-          { path: '/settings', element: <SettingsShell /> },
-          { path: '/settings/:section', element: <SettingsShell /> },
-        ],
-        { initialEntries: ['/__close', '/settings'], initialIndex: 1 },
-      ),
+      createMemoryRouter([
+        { path: '/settings', element: <SettingsShell /> },
+        { path: '/settings/:section', element: <SettingsShell /> },
+      ], { initialEntries: ['/settings'] }),
     [],
   );
 
@@ -66,7 +51,9 @@ export function ZenSettings() {
 
   return (
     <div className="fixed inset-0 z-50 bg-app">
-      <RouterProvider router={router} />
+      <SettingsExitProvider exit={() => useZenStore.getState().closeSettings()}>
+        <RouterProvider router={router} />
+      </SettingsExitProvider>
     </div>
   );
 }

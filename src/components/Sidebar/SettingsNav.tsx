@@ -1,11 +1,13 @@
 import { useNavigate, useParams } from 'react-router';
 import { ChevronIcon } from '../icons';
+import { useExitSettings } from '../SettingsExitContext';
 import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '../settingsSections';
 
 const navItemClass = 'block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] transition';
 
 export function SettingsNav() {
   const navigate = useNavigate();
+  const exitSettings = useExitSettings();
   const { section } = useParams();
   const activeSection = section ?? SETTINGS_SECTIONS[0].id;
 
@@ -18,7 +20,7 @@ export function SettingsNav() {
       <div className="border-b border-line-soft px-3 pb-3 pt-3">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={exitSettings}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-[7px] text-[13px] font-semibold text-ink-dim transition-colors hover:bg-hover hover:text-ink"
         >
           <span className="grid place-items-center text-ink-faint">
