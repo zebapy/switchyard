@@ -23,6 +23,10 @@ pub struct TabData {
     pub id: String,
     pub label: String,
     pub pane_tree: serde_json::Value,
+    /// True for the Workspace's preview tab. Absent in sessions written before
+    /// preview tabs existed, so it defaults to a stuck tab.
+    #[serde(default)]
+    pub preview: bool,
 }
 
 fn session_path() -> PathBuf {

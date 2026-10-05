@@ -36,6 +36,7 @@ export function TabBar() {
   const panes = useWorkspaceStore((s) => s.panes);
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const removeTab = useWorkspaceStore((s) => s.removeTab);
+  const stickTab = useWorkspaceStore((s) => s.stickTab);
   const renameTab = useWorkspaceStore((s) => s.renameTab);
   const gitInfo = useProjectsStore((s) => s.gitInfo);
   const gitPanelOpen = useGitPanelStore((s) => s.open);
@@ -141,8 +142,9 @@ export function TabBar() {
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); if (active) stickTab(tab.id); }}
             onDoubleClick={() => setEditingTabId(tab.id)}
+            title={tab.preview ? 'Preview — click again to keep this tab open' : undefined}
             className={
               'group flex max-w-[200px] flex-none items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px] transition-colors ' +
               (active
@@ -153,7 +155,7 @@ export function TabBar() {
             <span className={`grid shrink-0 place-items-center ${isAi ? 'text-ai' : 'text-ink-faint'}`}>
               {isSplit ? <SplitIcon size={13} /> : isAi ? <AiIcon size={13} /> : <TermIcon size={13} />}
             </span>
-            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+            <span className={`min-w-0 flex-1 truncate text-left ${tab.preview ? 'italic' : ''}`}>{label}</span>
             {running && <span className="size-1.5 shrink-0 rounded-full bg-green animate-pulse-dot" title="running" />}
             {switchHint && (
               <kbd className="shrink-0 rounded border border-line bg-app px-1 py-px font-mono text-[11px] leading-none text-ember">
