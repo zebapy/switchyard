@@ -3,9 +3,9 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import { AiIcon, TermIcon, SplitSquareIcon, CloseIcon, CodeIcon } from '../icons';
 import type { PaneInfo } from '../../types/pane';
 
-// Each pane type carries a heavy dependency (xterm, diff2html, shiki/markdown).
+// Each pane type carries a heavy dependency (xterm, @pierre/diffs, shiki/markdown).
 // Splitting them means opening a workspace pulls only what the open panes need —
-// a terminal-only tab never loads diff2html or the shiki highlighter.
+// a terminal-only tab never loads @pierre/diffs or the shiki highlighter.
 const TerminalPane = lazy(() =>
   import('../Terminal/TerminalPane').then((m) => ({ default: m.TerminalPane })),
 );
