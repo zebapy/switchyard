@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-05
+
 ### Added
 
 - **Start and teleport Claude Code cloud sessions from a project.** Right-click a git project, or search **Cloud** in ⌘K, for **New cloud session…** (prompts for a task, then runs `claude --cloud` against the project's GitHub remote at its current branch) and **Teleport cloud session…** (runs `claude --teleport` to pick a cloud session and pull its branch and conversation into the project checkout). Both run in a tab so the CLI's progress and the claude.ai/code link stay visible.
